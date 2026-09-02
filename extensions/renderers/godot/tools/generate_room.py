@@ -23,6 +23,22 @@ regeneratable on demand and the workflow is auditable.
   # byte-identical to the plain single-pass img2img above.
   python3 generate_room.py --room crypt --base-plate <png> --layered --out <dir>
 
+  # PLATE SPRINT Phase 3 (#1462 follow-up): --drift-gate is ON BY DEFAULT for a REGEN of a room that
+  # already has an adopted canonical_plate (room_recipes.json) with a committed drift manifest
+  # (qa/room_manifests/*.cells.json) — the freshly generated plate is checked against that manifest
+  # (qa/check_plate_drift.py) and the run fails loud on DRIFT. No-op (identical behavior) for any
+  # room without a canonical_plate/manifest yet. Opt out with --no-drift-gate.
+  python3 generate_room.py --room crypt --base-plate <png> --out <dir> --no-drift-gate
+
+  # OPTIONAL --controlnet (W6.3b, #1470): condition the base/layout pass on the greybox as a
+  # ControlNet depth|canny control image (Pipeline A, scenario_gen._cmd_controlnet, proven
+  # 2026-06-22) instead of unconditioned img2img — locks the paint to the authored geometry so
+  # paint-vs-grid drift goes to ~zero. Default OFF — absent flag = byte-identical img2img. Composes
+  # with --layered (conditioning applies to the base pass; the Gemini detail/staging passes ride on
+  # top unchanged, restoring paint quality). The greybox = the --base-plate (or --refine-from asset).
+  python3 generate_room.py --room camp_clearing_night --base-plate <greybox.png> \
+      --controlnet depth --layered --out <dir>
+
 Design notes:
 - The lever from L6 6.5 -> 8 is LIGHTING DRAMA (single warm key, deep blue-violet
   shadows, hard cast shadows), NOT more texture. Keep `strength` low (~0.30-0.45) so
@@ -32,6 +48,8 @@ Design notes:
 - Engine = sole writer; this is a generation/view-layer tool only. It never writes
   engine state; it produces a PNG the renderer/registry later consume by slot.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -52,6 +70,7 @@ from scenario_gen import (  # noqa: E402
     _download_job_assets,
     _upload_image,
     _write_meta,
+    guard_flux_lora_compat,
 )
 
 RECIPE_PATH = os.path.normpath(
@@ -212,9 +231,25 @@ def _build_prompt(recipe: dict, room: str, lighting: str = "firelit") -> tuple:
     rc = rooms[room]
     # day/night dimension: same camera-pinned greybox, swapped lighting prompt (zero-drift regen). The
     # firelit (night) template is the default; daylight floods the room cool with a stained-glass shaft.
-    if lighting == "daylight":
+    # daylight_outdoor (backdrop-cadence restart, HV5) is a THIRD sibling for OPEN-AIR daylight rooms
+    # (market squares, roads, camps-by-day) — the existing "daylight" template is interior-specific
+    # ("tall windows", "stained-glass shaft"), which is wrong for an exterior plate; this keeps that
+    # interior template untouched (church/tavern's adopted day variants are unaffected) and adds a
+    # sibling with open-sky/sun wording instead. Falls back to the interior daylight template if the
+    # manifest hasn't been given the outdoor template yet (forward/backward compatible).
+    if lighting == "daylight_outdoor":
+        template = recipe.get("daylight_outdoor_positive_template",
+                              recipe.get("daylight_positive_template", recipe["firelit_positive_template"]))
+        negative = recipe.get("daylight_negative", recipe["washout_negative"])
+    elif lighting == "daylight":
         template = recipe.get("daylight_positive_template", recipe["firelit_positive_template"])
         negative = recipe.get("daylight_negative", recipe["washout_negative"])
+    elif lighting == "firelit_outdoor":
+        # night EXTERIOR sibling of the (interior-worded) firelit default — same "single warm key +
+        # deep blue-violet shadow" chiaroscuro law, minus the "interior"/"walls" phrasing that's wrong
+        # for an open-air room (backdrop-cadence restart, HV5; e.g. camp_clearing_night).
+        template = recipe.get("firelit_outdoor_positive_template", recipe["firelit_positive_template"])
+        negative = recipe["washout_negative"]
     else:
         template = recipe["firelit_positive_template"]
         negative = recipe["washout_negative"]
@@ -229,6 +264,364 @@ def _build_prompt(recipe: dict, room: str, lighting: str = "firelit") -> tuple:
         room_detail_tokens=rc["room_detail_tokens"],
     )
     return positive, negative
+
+
+# Default ControlNet base model + strength for the --controlnet base/layout pass (W6.3b, #1470).
+# These mirror the PROVEN Pipeline A recipe (scenario_gen._cmd_controlnet, validated 2026-06-22:
+# model_bfl-flux-1-dev with canny/depth modality at controlStrength 0.7 — the only controlnet-proven
+# model on the account; our default img2img base_model is model_z-image, whose controlnet support is
+# unproven). Overridable per-manifest via a top-level `controlnet` block ({"model", "control_strength",
+# optional "loras"/"lora_scales"}) or per-invocation via --control-model / --control-strength.
+_CONTROLNET_DEFAULT_MODEL = "model_bfl-flux-1-dev"
+_CONTROLNET_DEFAULT_STRENGTH = 0.7
+
+
+def _resolve_controlnet(recipe: dict, args) -> dict | None:
+    """Resolve {model, modality, strength, loras, lora_scales} for the --controlnet base pass, or
+    None when it's off.
+
+    Returns None whenever args.controlnet is unset so callers keep the byte-identical unconditioned
+    img2img path. Precedence for model/strength: CLI flag > recipe `controlnet` block > proven
+    Pipeline A default.
+
+    LoRA handling INTENTIONALLY differs from the img2img path: the img2img painterly LoRA is trained
+    on the z-image base model and the default ControlNet model (flux.1-dev) REJECTS it with HTTP 400
+    ("Allowed model types: flux.1-lora, flux.1-composition"). So the ControlNet pass does NOT inherit
+    recipe.lora — it applies ONLY LoRAs explicitly declared model-compatible in the recipe
+    `controlnet` block. Default: none (the base pass locks geometry; --layered's Gemini passes
+    restore paint).
+    """
+    if not getattr(args, "controlnet", None):
+        return None
+    cn_block = recipe.get("controlnet", {})
+    model = args.control_model or cn_block.get("model") or _CONTROLNET_DEFAULT_MODEL
+    if args.control_strength is not None:
+        strength = args.control_strength
+    elif "control_strength" in cn_block:
+        strength = cn_block["control_strength"]
+    else:
+        strength = _CONTROLNET_DEFAULT_STRENGTH
+    loras = list(cn_block.get("loras") or [])
+    lora_scales = list(cn_block.get("lora_scales") or [])
+    if lora_scales and len(lora_scales) != len(loras):
+        # Symmetry with scenario_gen._cmd_controlnet's --loras/--loras-scale check and this file's own
+        # _resolve_style_pass loras/lorasScale check: a length mismatch here would silently misalign
+        # scales to the wrong LoRAs rather than erroring the way the sibling paths already do.
+        sys.exit(
+            "[generate_room] ERROR: recipe controlnet.loras (%d) and controlnet.lora_scales (%d) must "
+            "be the same length." % (len(loras), len(lora_scales))
+        )
+    # Same guard scenario_gen.py's --controlnet command applies: reject loudly (before any credits are
+    # spent) if a recipe-declared controlnet LoRA is a known z-image-only LoRA being pointed at a flux
+    # model (HTTP 400 on the live API). The passive default above (loras=[] unless explicitly declared
+    # compatible) already avoids the common case; this catches a recipe author declaring it by mistake.
+    guard_flux_lora_compat(model, loras)
+    return {"model": model, "modality": args.controlnet, "strength": float(strength),
+            "loras": loras, "lora_scales": lora_scales}
+
+
+def _parse_style_pass(value: str) -> dict:
+    """Parse the --style-pass value, which is EITHER a JSON string OR a path to a JSON file.
+
+    plate_loop.py forwards a temp file path (`--style-pass <dir>/style_pass.json`); a human can pass an
+    inline `'{"strength": 0.35}'`. Both resolve here. Fails loud on malformed JSON / a non-object so a
+    typo never silently skips the pass."""
+    text = value
+    if os.path.isfile(value):
+        with open(value, "r") as f:
+            text = f.read()
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as e:
+        sys.exit("[generate_room] ERROR: --style-pass must be JSON (an inline string or a file path): %s" % e)
+    if not isinstance(obj, dict):
+        sys.exit("[generate_room] ERROR: --style-pass JSON must be an object {model,loras,lorasScale,strength}")
+    return obj
+
+
+def _resolve_style_pass(recipe: dict, args) -> dict | None:
+    """Resolve {model, loras, lora_scales, strength} for the ARM A style pass, or None when it's off.
+
+    The style pass is a SECOND img2img run — on the style model (default recipe base_model = z-image)
+    with the painterly LoRA — over the REGISTERED base plate, re-painting the controlnet-locked geometry
+    in the house style at a low denoise strength (the strength is the drift/beauty knob ARM A sweeps).
+    Every field defaults to the recipe painterly recipe (model_z-image + model_MB22… @ 0.78), so a
+    minimal `{"strength": 0.35}` is a complete config; explicit fields win. Accepts either `lorasScale`
+    (the packet/Scenario spelling) or `lora_scales` for the scales list."""
+    if not getattr(args, "style_pass", None):
+        return None
+    raw = _parse_style_pass(args.style_pass)
+    model = raw.get("model") or recipe["base_model"]
+    # Distinguish an ABSENT `loras` key (default to the recipe painterly LoRA) from a PRESENT empty
+    # list (an intentional no-LoRA run on a custom style model — honor it, don't re-add the recipe LoRA).
+    loras = raw.get("loras")
+    loras = list(loras) if loras is not None else [recipe["lora"]]
+    scales = raw.get("lorasScale", raw.get("lora_scales"))
+    scales = list(scales) if scales is not None else [recipe["lora_scale"]] * len(loras)
+    if len(scales) != len(loras):
+        sys.exit("[generate_room] ERROR: --style-pass loras (%d) and lorasScale (%d) must be the same "
+                 "length" % (len(loras), len(scales)))
+    strength = float(raw.get("strength", args.strength))
+    # The gate the sample-selector targets (max style subject to recall >= min_recall); mirrors
+    # plate_loop's registration.min_recall default so the two agree on what "registered" means.
+    min_recall = float(raw.get("min_recall", 0.95))
+    # Optional selection greybox: plate_loop forwards the registration gate's greybox here so the
+    # selector scores samples against the SAME image the gate will (they diverge from --base-plate when
+    # a config sets registration.greybox or uses --refine-from). Absent -> selector uses --base-plate.
+    greybox = raw.get("greybox")
+    return {"model": model, "loras": loras, "lora_scales": scales, "strength": strength,
+            "min_recall": min_recall, "greybox": greybox}
+
+
+_PLATE_OVERLAYS_RECALL = None  # cached qa/plate_overlays.registration_recall (or False if absent)
+
+
+def _edge_recall(greybox: str, candidate: str):
+    """Edge-alignment recall of a plate vs the greybox, reusing qa/plate_overlays (the SAME signal
+    plate_loop's registration gate uses). Returns a float, or None if the scorer can't be imported/run
+    (graceful — style-sample selection then falls back to the first sample)."""
+    global _PLATE_OVERLAYS_RECALL
+    if _PLATE_OVERLAYS_RECALL is None:
+        try:
+            qa_dir = os.path.normpath(os.path.join(_HERE, "..", "..", "..", "..", "qa"))
+            if qa_dir not in sys.path:
+                sys.path.insert(0, qa_dir)
+            from plate_overlays import registration_recall as _rr  # noqa: E402
+            _PLATE_OVERLAYS_RECALL = _rr
+        except Exception:
+            _PLATE_OVERLAYS_RECALL = False
+    if not _PLATE_OVERLAYS_RECALL:
+        return None
+    try:
+        return float(_PLATE_OVERLAYS_RECALL(greybox, candidate))
+    except Exception:
+        return None
+
+
+def _select_style_sample(samples: list, greybox: str | None, min_recall: float) -> dict:
+    """Choose which style-pass sample to promote as the final ARM A plate.
+
+    The z-image style endpoint returns N samples that differ in how far the low-strength repaint drifted
+    the ControlNet-locked geometry. Score each by edge-recall vs the greybox and pick the MOST-STYLIZED
+    sample that still registers — the LOWEST recall at/above `min_recall` (maximum painterly headroom
+    while staying locked). If none clear the gate, keep the HIGHEST-recall sample (the best attempt —
+    plate_loop's gate then FAILs it and the loop reject-retries at a lower strength). Falls back to
+    samples[0] when recall can't be scored (no greybox / scorer unavailable), preserving single-sample
+    behavior. Annotates each sample in place with `edge_recall_vs_greybox`; the winner with `selected_by`."""
+    scored: list = []  # (sample, UNROUNDED recall) — compare unrounded so a 0.94996 doesn't round up
+    if greybox and os.path.isfile(greybox):                #   past a 0.95 gate the plate_loop gate then FAILs
+        for s in samples:
+            r = _edge_recall(greybox, s["path"])
+            s["edge_recall_vs_greybox"] = round(r, 4) if r is not None else None  # rounded for display only
+            if r is not None:
+                scored.append((s, r))
+    if not scored:
+        samples[0]["selected_by"] = "first-sample (recall unavailable)"
+        return samples[0]
+    passing = [(s, r) for s, r in scored if r >= min_recall]
+    if passing:
+        chosen = min(passing, key=lambda t: t[1])[0]  # most style headroom while still registered
+        chosen["selected_by"] = "max-style-above-min_recall"
+    else:
+        chosen = max(scored, key=lambda t: t[1])[0]     # best attempt; gate will fail -> reject-retry
+        chosen["selected_by"] = "best-attempt-below-min_recall"
+    return chosen
+
+
+def _build_style_pass_request(recipe: dict, args, positive: str, negative: str,
+                               image_ref, sp: dict) -> tuple:
+    """Build (endpoint, body) for the ARM A style pass — an img2img run on the style model.
+
+    Same img2img shape as the unconditioned base pass (`image` + `strength` seed, LoRA on
+    `loras`/`lorasScale`, style model in the PATH), but seeded from the REGISTERED base plate
+    (`image_ref` = the base pass output asset id) and carrying the painterly LoRA the flux ControlNet
+    base could not (flux.1-dev rejects the z-image LoRA — HTTP 400). Requests `numSamples`=num_outputs
+    so `_select_style_sample` has a real pool to pick the most-stylized-yet-registered sample from
+    (the style endpoint drifts each sample differently off the locked geometry); the ONE selected sample
+    becomes the final plate the registration gate + reject-retry contract score per config."""
+    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=sp["model"])
+    body = {
+        "prompt": positive,
+        "negativePrompt": negative,
+        "image": image_ref,
+        "strength": sp["strength"],
+        "numInferenceSteps": args.steps,
+        "guidance": args.guidance,
+        "numSamples": args.num_outputs,
+        "width": args.width,
+        "height": args.height,
+        "loras": list(sp["loras"]),
+        "lorasScale": list(sp["lora_scales"]),
+    }
+    if args.seed is not None:
+        body["seed"] = args.seed
+    return endpoint, body
+
+
+def _build_base_pass_request(recipe: dict, args, positive: str, negative: str,
+                              image_ref, cn: dict | None) -> tuple:
+    """Build (endpoint, body) for the base/layout pass — two shapes on the SAME custom endpoint.
+
+    cn is None (DEFAULT): unconditioned img2img — `image` + `strength` seed, BYTE-IDENTICAL to the
+      pre-W6.3b request (the LoRA rides `loras`/`lorasScale`; the base model is in the PATH).
+    cn set (--controlnet): ControlNet conditioning (Pipeline A) — the greybox rides as `controlImage`
+      with a depth|canny `controlModality` + `controlStrength`, locking the paint to the authored
+      geometry. Same prompt/negative/steps/guidance/size knobs; the image-conditioning fields, the
+      PATH model, and the LoRA set differ (see _resolve_controlnet on why the z-image LoRA is dropped
+      here). --layered's Gemini passes ride on top of this pass unchanged.
+    `image_ref` is the uploaded greybox/base asset id (or None for a dry-run preview).
+    """
+    if cn is None:
+        endpoint = API_BASE + CONTROLNET_PATH.format(model_id=recipe["base_model"])
+        body = {
+            "prompt": positive,
+            "negativePrompt": negative,
+            "image": image_ref,
+            "strength": args.strength,
+            "numInferenceSteps": args.steps,
+            "guidance": args.guidance,
+            "numSamples": args.num_outputs,
+            "width": args.width,
+            "height": args.height,
+            "loras": [recipe["lora"]],
+            "lorasScale": [recipe["lora_scale"]],
+        }
+        if args.seed is not None:
+            body["seed"] = args.seed
+        return endpoint, body
+    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=cn["model"])
+    body = {
+        "prompt": positive,
+        "negativePrompt": negative,
+        "controlImage": image_ref,
+        "controlModality": cn["modality"],
+        "controlStrength": cn["strength"],
+        "numInferenceSteps": args.steps,
+        "guidance": args.guidance,
+        "numSamples": args.num_outputs,
+        "width": args.width,
+        "height": args.height,
+    }
+    if cn["loras"]:
+        body["loras"] = list(cn["loras"])
+        if cn["lora_scales"]:
+            body["lorasScale"] = list(cn["lora_scales"])
+    if args.seed is not None:
+        body["seed"] = args.seed
+    return endpoint, body
+
+
+def _find_manifest_path_lightweight(room: str, canonical_plate: str, manifests_dir: str) -> str | None:
+    """A json/os-only mirror of qa/check_plate_drift.py's `_find_manifest_for_recipe` (match by
+    `recipe_key`, else fall back to a `<plate-stem>.cells.json` filename twin) — deliberately reimplemented
+    here rather than imported so a canonical room with NO committed manifest (e.g. market_square today)
+    can be recognized as a no-op WITHOUT ever importing check_plate_drift (whose module-level numpy/PIL
+    imports would otherwise make even a manifestless room fail in a plain, non-qa-image interpreter)."""
+    if not os.path.isdir(manifests_dir):
+        return None
+    names = sorted(n for n in os.listdir(manifests_dir) if n.endswith(".cells.json"))
+    for name in names:
+        path = os.path.join(manifests_dir, name)
+        try:
+            with open(path, "r") as f:
+                m = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if m.get("recipe_key") == room:
+            return path
+    twin = os.path.join(manifests_dir, "%s.cells.json" % os.path.splitext(canonical_plate)[0])
+    return twin if os.path.isfile(twin) else None
+
+
+def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: bool) -> None:
+    """Gate a freshly-generated plate against its committed drift manifest (qa/check_plate_drift.py),
+    PLATE SPRINT Phase 3 (#1462 follow-up). ON BY DEFAULT for a REGEN of a canonical room — one that
+    already carries an adopted `canonical_plate` in room_recipes.json, i.e. there's an established
+    baseline worth protecting from a prop sliding off its authored cell. A no-op for any room WITHOUT a
+    canonical_plate (a brand-new/ad-hoc room being iterated on has nothing to gate against yet) and for
+    any canonical room that has no committed qa/room_manifests/*.cells.json manifest — behavior is
+    IDENTICAL in both cases whether or not --drift-gate is set. `--no-drift-gate` opts out even when a
+    manifest is found (this is what qa/plate_loop.py forwards, since it runs its own non-fatal drift
+    check separately). Fails LOUD (sys.exit) on: missing check_plate_drift deps (Pillow/numpy — a silent
+    skip here would make a "default-on safety gate" quietly do nothing in the common non-qa-image-venv
+    environment), a manifest with ZERO fingerprintable props and no resolvable baseline (a bare
+    checked=0 PASS is false confidence, not a real check), or an actual DRIFT verdict.
+    """
+    if not enabled:
+        return
+    rc = recipe.get("rooms", {}).get(room, {})
+    canonical_plate = rc.get("canonical_plate")
+    if not canonical_plate:
+        return  # not-yet-adopted/ad-hoc room: nothing to gate against, behavior unchanged
+    qa_dir = os.path.normpath(os.path.join(_HERE, "..", "..", "..", "..", "qa"))
+    manifests_dir = os.path.join(qa_dir, "room_manifests")
+    # Lightweight manifest lookup FIRST (json only, no numpy/PIL) — mirrors check_plate_drift.
+    # _find_manifest_for_recipe's own match-by-recipe_key-then-plate-stem-twin logic, so a canonical
+    # room with NO committed manifest (e.g. market_square today) is recognized as a no-op WITHOUT ever
+    # importing check_plate_drift and paying its Pillow/numpy cost in a plain interpreter.
+    if _find_manifest_path_lightweight(room, canonical_plate, manifests_dir) is None:
+        print("[generate_room] --drift-gate: room '%s' has a canonical_plate but no committed "
+              "manifest under %s — skipping (nothing to gate against)." % (room, manifests_dir))
+        return
+    if qa_dir not in sys.path:
+        sys.path.insert(0, qa_dir)
+    try:
+        import check_plate_drift as _cpd  # noqa: E402
+    except Exception as e:
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate is enabled and room '%s' has an adopted canonical_plate "
+            "(%s) with a committed manifest, but qa/check_plate_drift.py could not be imported (%s) — "
+            "its Pillow+numpy deps are likely missing from this interpreter (see the ci.yml "
+            "paint-drift-gate .venv-qa-image lane). Run under an interpreter with pillow+numpy "
+            "installed, or pass --no-drift-gate to explicitly skip the gate for this run."
+            % (room, canonical_plate, e)
+        )
+    manifest_path = _cpd._find_manifest_for_recipe(room, canonical_plate, _cpd._MANIFESTS_DIR)
+    if manifest_path is None:
+        # Should not happen (the lightweight lookup above just found one) unless the two lookups
+        # somehow disagree — fail loud rather than silently trust the lightweight pre-check.
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate: lightweight manifest lookup found a manifest for "
+            "room '%s' but check_plate_drift._find_manifest_for_recipe did not -- the two lookups have "
+            "drifted apart; treat as a bug, not a no-op." % room
+        )
+    manifest = _cpd.load_manifest(manifest_path)
+    # A manifest can carry authored geometry with no embedded ref_fp (e.g. crypt_dense_v1.cells.json) —
+    # check_plate_drift then needs an explicit --baseline to fingerprint against. Try the same known
+    # local plate dirs check_plate_drift.gate_room_recipes() already searches before giving up.
+    baseline = None
+    plates_dirs = [qa_dir + "/evidence/plate-audit", qa_dir + "/native_palette", qa_dir + "/screenshot_baselines"]
+    for d in plates_dirs:
+        for stem_variant in (canonical_plate, os.path.splitext(canonical_plate)[0] + ".jpg"):
+            cand = os.path.join(d, stem_variant)
+            if os.path.isfile(cand):
+                baseline = cand
+                break
+        if baseline:
+            break
+    result = _cpd.check_plate_drift(plate_path, manifest, baseline=baseline)
+    print("[generate_room] %s" % result.summary())
+    # Check `not passed` BEFORE `checked == 0`: a wrong-size candidate (or an actual per-prop DRIFT)
+    # already comes back with passed=False and the REAL reason in result.reasons — surfacing that
+    # first avoids masking it behind the generic "zero fingerprintable props" message below, which is
+    # reserved for the separate "PASSED but nothing was actually verified" false-confidence case.
+    if not result.passed:
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate DRIFT on room '%s' (manifest %s): %s. Use "
+            "--no-drift-gate to override once you've confirmed the drift is intentional (e.g. a "
+            "deliberate canonical_plate replacement, gated separately by check_plate_drift.py "
+            "gate-recipes before promotion)."
+            % (room, manifest_path.name, "; ".join(result.reasons) or "no reason given")
+        )
+    if result.checked == 0:
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate found manifest %s for room '%s' but it has ZERO "
+            "fingerprintable props (no embedded ref_fp, and no local baseline found for '%s') — a PASS "
+            "here would be false confidence, nothing was actually verified. Use --no-drift-gate to "
+            "proceed consciously, or seed the manifest's ref_fp / make a baseline plate locally "
+            "available once one exists."
+            % (manifest_path.name, room, canonical_plate)
+        )
 
 
 def main(argv=None) -> None:
@@ -246,8 +639,11 @@ def main(argv=None) -> None:
     ap.add_argument("--width", type=int, default=d["width"])
     ap.add_argument("--height", type=int, default=d["height"])
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--lighting", choices=["firelit", "daylight"], default="firelit",
-                    help="day/night dimension: firelit (night, default) or daylight (cool sunlit, stained-glass shaft)")
+    ap.add_argument("--lighting", choices=["firelit", "daylight", "daylight_outdoor", "firelit_outdoor"],
+                    default="firelit",
+                    help="day/night dimension: firelit (night interior, default), daylight (cool sunlit "
+                         "interior, stained-glass shaft), daylight_outdoor (open-sky sun for exterior "
+                         "rooms), or firelit_outdoor (night exterior, e.g. a campfire clearing)")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--layered", action="store_true",
                     help="OPTIONAL 3-pass pipeline: after the img2img layout pass, chain a Gemini "
@@ -260,10 +656,51 @@ def main(argv=None) -> None:
                          "rooms.<room>.layered_day.pass3_slots) instead of the night chiaroscuro staging law. "
                          "No effect without --layered (day/night only differs in the layered pipeline's "
                          "staging pass + pass1 lighting).")
+    ap.add_argument("--controlnet", choices=["depth", "canny"], default=None,
+                    help="W6.3b (#1470): condition the base/layout pass on the greybox as a ControlNet "
+                         "depth|canny control image (Pipeline A, scenario_gen._cmd_controlnet, proven "
+                         "2026-06-22) instead of unconditioned img2img — locks paint to the authored "
+                         "geometry (paint-vs-grid drift -> ~0). The greybox = the --base-plate (or "
+                         "--refine-from asset). Default OFF; absent flag = byte-identical img2img. "
+                         "Composes with --layered (conditioning applies to the base pass only; the "
+                         "Gemini detail/staging passes ride on top unchanged).")
+    ap.add_argument("--control-strength", type=float, default=None,
+                    help="ControlNet conditioning strength 0.0-1.0 for --controlnet (default: recipe "
+                         "controlnet.control_strength, else 0.7). No effect without --controlnet.")
+    ap.add_argument("--control-model", default=None,
+                    help="Scenario model id for the --controlnet base pass (default: recipe "
+                         "controlnet.model, else the proven model_bfl-flux-1-dev). No effect without "
+                         "--controlnet.")
+    ap.add_argument("--style-pass", default=None,
+                    help="ARM A (PLATE SPRINT): after the base/layout pass (typically a --controlnet depth "
+                         "REGISTERED base), run a SECOND img2img STYLE pass on the style model (default recipe "
+                         "base_model=z-image) + the painterly LoRA over that base, re-painting the geometry in "
+                         "the house style at the given denoise strength (the drift/beauty knob). Value = a JSON "
+                         "string OR a path to a JSON file: {model,loras,lorasScale,strength,min_recall} — all "
+                         "optional; model/loras/lorasScale default to the recipe painterly recipe (model_z-image "
+                         "+ the painterly LoRA @ its recipe scale), min_recall defaults to 0.95 (the gate the "
+                         "best-sample selector targets). Default OFF; absent flag = byte-identical behavior. "
+                         "Composes after the base pass (and after --layered if set).")
+    ap.add_argument("--drift-gate", dest="drift_gate", default=True, action=argparse.BooleanOptionalAction,
+                    help="PLATE SPRINT Phase 3 (#1462 follow-up): after generating the final plate, gate it "
+                         "against qa/check_plate_drift.py's committed manifest for this room (ON by default). "
+                         "Only fires for a REGEN of a room that already has an adopted `canonical_plate` in "
+                         "room_recipes.json AND a committed qa/room_manifests/*.cells.json manifest — a "
+                         "no-op (identical behavior) for any ad-hoc/not-yet-adopted room or a canonical room "
+                         "with no committed manifest. Fails loud (nonzero exit) on DRIFT, on a manifest with "
+                         "no fingerprintable props/baseline (false-confidence PASS), or if check_plate_drift's "
+                         "Pillow+numpy deps aren't importable. Use --no-drift-gate to opt out (e.g. a "
+                         "deliberate canonical_plate replacement in progress, or qa/plate_loop.py's own "
+                         "exploratory loop, which forwards this and runs its own non-fatal drift check).")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
-    if args.day:
+    if args.day and args.lighting != "daylight_outdoor":
+        # Don't clobber an explicit outdoor choice (backdrop-cadence restart) — --day's whole-manifest
+        # default remains the INTERIOR daylight template (byte-identical for existing --day callers:
+        # church/tavern/bosshall), but --day --lighting daylight_outdoor lets an exterior room (e.g.
+        # market_square) keep its open-sky pass1 template while still routing pass2/pass3 through the
+        # day-state layered pipeline (layered_pipeline_day_2026_07_03).
         args.lighting = "daylight"
 
     # Require EXACTLY ONE image source up front so an ambiguous/missing combo fails fast (incl. on --dry-run),
@@ -283,30 +720,27 @@ def main(argv=None) -> None:
         )
 
     positive, negative = _build_prompt(recipe, args.room, args.lighting)
+    # W6.3b (#1470): --controlnet swaps the unconditioned img2img seed for greybox ControlNet
+    # conditioning on the base/layout pass. cn is None (default) -> byte-identical img2img below.
     # Standalone base models (model_z-image) run img2img via POST /generate/custom/{modelId}
     # with `image` + `strength` (the txt2img endpoint rejects standalone models). The base model
     # is in the PATH; the painterly LoRA rides `loras`/`lorasScale` (string ids, per the proven job).
-    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=recipe["base_model"])
-    body = {
-        "prompt": positive,
-        "negativePrompt": negative,
-        "image": None,  # filled below (asset id)
-        "strength": args.strength,
-        "numInferenceSteps": args.steps,
-        "guidance": args.guidance,
-        "numSamples": args.num_outputs,
-        "width": args.width,
-        "height": args.height,
-        "loras": [recipe["lora"]],
-        "lorasScale": [recipe["lora_scale"]],
-    }
-    if args.seed is not None:
-        body["seed"] = args.seed
+    cn = _resolve_controlnet(recipe, args)
+    # ARM A (PLATE SPRINT): resolve the optional second (style) img2img pass now so a malformed
+    # --style-pass JSON fails fast (even on --dry-run), before any billed base job runs. None = off.
+    sp = _resolve_style_pass(recipe, args)
+    endpoint, body = _build_base_pass_request(recipe, args, positive, negative, None, cn)
 
     if args.dry_run:
         preview = dict(body)
-        preview["image"] = args.refine_from or ("<upload:%s>" % args.base_plate)
-        print("[generate_room] DRY-RUN img2img (%s)" % args.room)
+        img_src = args.refine_from or ("<upload:%s>" % args.base_plate)
+        if cn is None:
+            preview["image"] = img_src
+            print("[generate_room] DRY-RUN img2img (%s)" % args.room)
+        else:
+            preview["controlImage"] = img_src
+            print("[generate_room] DRY-RUN --controlnet %s base pass (%s, model=%s, strength=%.2f)"
+                  % (cn["modality"], args.room, cn["model"], cn["strength"]))
         print(json.dumps(preview, indent=2))
         print("  endpoint  : %s" % endpoint)
         print("  recipe    : %s" % RECIPE_PATH)
@@ -335,6 +769,10 @@ def main(argv=None) -> None:
                 print("    %s" % pass2_prompt[:160] + " ...")
                 print("  pass3 prompt (rendered for room=%s, room_recipes.json:layered_pipeline_2026_07_02.pass3_staging_last):" % args.room)
                 print("    %s" % pass3_prompt[:160] + " ...")
+        if sp:
+            print("[generate_room] DRY-RUN --style-pass: would additionally run an img2img STYLE pass "
+                  "on model=%s (loras=%s, lorasScale=%s) over the base plate at strength=%.2f"
+                  % (sp["model"], sp["loras"], sp["lora_scales"], sp["strength"]))
         return
 
     out_dir = args.out or os.path.join(os.getcwd(), "room_gen_%s" % args.room)
@@ -348,20 +786,36 @@ def main(argv=None) -> None:
         image_ref = _upload_image(headers, os.path.expanduser(args.base_plate))
     else:
         sys.exit("[generate_room] ERROR: need --base-plate <png> or --refine-from <asset_id>.")
-    body["image"] = image_ref
+    # Rebuild with the resolved greybox/base asset id filled into the image-conditioning field
+    # (image for img2img, controlImage for --controlnet).
+    endpoint, body = _build_base_pass_request(recipe, args, positive, negative, image_ref, cn)
 
     res = _post_json(endpoint, headers, body)
-    job_id = _job_id_from_create(res, "img2img create")
-    print("[generate_room] %s img2img job submitted: %s (strength=%s)" % (args.room, job_id, args.strength))
-    job = _poll_job(headers, job_id, "img2img", args.timeout)
+    if cn is None:
+        job_id = _job_id_from_create(res, "img2img create")
+        print("[generate_room] %s img2img job submitted: %s (strength=%s)" % (args.room, job_id, args.strength))
+    else:
+        job_id = _job_id_from_create(res, "controlnet create")
+        print("[generate_room] %s --controlnet %s job submitted: %s (model=%s, controlStrength=%.2f)"
+              % (args.room, cn["modality"], job_id, cn["model"], cn["strength"]))
+    job = _poll_job(headers, job_id, "controlnet" if cn else "img2img", args.timeout)
     saved = _download_job_assets(headers, job, out_dir, "room_%s" % args.room)
     meta = {
         "room": args.room, "image_ref": image_ref, "strength": args.strength,
         "steps": args.steps, "guidance": args.guidance, "num_outputs": args.num_outputs,
-        "model_id": recipe["base_model"], "lora": recipe["lora"], "lora_scale": recipe["lora_scale"],
+        "model_id": cn["model"] if cn else recipe["base_model"],
+        "lora": recipe["lora"], "lora_scale": recipe["lora_scale"],
         "prompt": positive, "negative_prompt": negative, "job_id": job_id,
-        "assets": saved, "source": "generate_room-img2img",
+        "assets": saved,
+        "source": "generate_room-controlnet" if cn else "generate_room-img2img",
     }
+    if cn:
+        # W6.3b (#1470): record the ControlNet conditioning so the plate's greybox-lock is auditable.
+        meta["controlnet"] = {
+            "modality": cn["modality"], "control_strength": cn["strength"],
+            "control_model": cn["model"], "control_image_ref": image_ref,
+            "loras": cn["loras"],
+        }
 
     if args.layered and saved:
         # OPTIONAL 3-pass pipeline (room_recipes.json:layered_pipeline_2026_07_02). ORDER LAW:
@@ -434,7 +888,54 @@ def main(argv=None) -> None:
         print("[generate_room] --layered%s OK — final staged plate: %s"
               % (" --day" if args.day else "", pass3_saved[0]))
 
+    if sp and saved:
+        # ARM A (PLATE SPRINT): the base pass produced the REGISTERED geometry (typically --controlnet
+        # depth); now re-paint it in the house style with a SECOND img2img pass on the style model +
+        # painterly LoRA at a low strength (drift-gated by plate_loop's registration gate afterward).
+        # The style input is the base pass output that already lives on Scenario, so chain its asset id
+        # (no re-upload). When --layered also ran, style the fully-staged pass3 plate; otherwise style
+        # the first base sample. Sequential job (never concurrent with the base/layered paints).
+        style_input = meta["layered"]["final_plate"] if meta.get("layered") else saved[0]
+        style_input_ref = style_input["asset_id"]
+        endpoint_sp, body_sp = _build_style_pass_request(recipe, args, positive, negative, style_input_ref, sp)
+        res_sp = _post_json(endpoint_sp, headers, body_sp)
+        sp_job = _job_id_from_create(res_sp, "style-pass create")
+        print("[generate_room] %s --style-pass img2img job submitted: %s (model=%s, strength=%s)"
+              % (args.room, sp_job, sp["model"], sp["strength"]))
+        sp_job_obj = _poll_job(headers, sp_job, "style-pass", args.timeout)
+        sp_saved = _download_job_assets(headers, sp_job_obj, out_dir, "room_%s_stylepass" % args.room)
+        if not sp_saved:
+            sys.exit("[generate_room] ERROR: --style-pass produced no assets")
+        # The style endpoint returns N samples (varying drift off the locked geometry). Promote the
+        # most-stylized one that still registers vs the greybox (the --base-plate); plate_loop reads
+        # this declared final_plate rather than picking the newest file by mtime.
+        # Prefer the gate's greybox (forwarded by plate_loop) so selection scores the same image the
+        # registration gate will; fall back to --base-plate (the conditioning greybox) standalone.
+        gate_greybox = sp.get("greybox") or args.base_plate
+        greybox = os.path.expanduser(gate_greybox) if gate_greybox else None
+        final_sample = _select_style_sample(sp_saved, greybox, sp["min_recall"])
+        _downscale_to_plate(final_sample["path"], args.width, args.height)
+        meta["style_pass"] = {
+            "model": sp["model"], "loras": sp["loras"], "lora_scales": sp["lora_scales"],
+            "strength": sp["strength"], "min_recall": sp["min_recall"], "input_ref": style_input_ref,
+            "job_id": sp_job, "assets": sp_saved, "final_plate": final_sample,
+        }
+        print("[generate_room] --style-pass OK — final styled plate: %s (recall=%s, %s)"
+              % (final_sample["path"], final_sample.get("edge_recall_vs_greybox"),
+                 final_sample.get("selected_by")))
+
+    # Write the audit trail (job_id, image_ref, assets, controlnet/style_pass/layered provenance,
+    # prompts) BEFORE the drift gate: the gate can sys.exit, and a gate-failing run is exactly the run
+    # an operator most needs scenario_meta.json for (to reproduce/inspect why it drifted) — losing it
+    # on the failure path would defeat the auditability the gate itself is meant to protect.
     _write_meta(out_dir, meta)
+
+    if saved:
+        final_plate = (meta.get("style_pass") or {}).get("final_plate") \
+            or (meta.get("layered") or {}).get("final_plate") \
+            or saved[0]
+        _maybe_run_drift_gate(args.room, recipe, final_plate["path"], enabled=args.drift_gate)
+
     print("[generate_room] OK — room=%s job=%s assets=%d -> %s" % (args.room, job_id, len(saved), out_dir))
 
 

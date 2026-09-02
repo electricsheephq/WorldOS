@@ -736,3 +736,93 @@ def test_motion_columns_alter_into_an_old_db(tmp_path):
     assert legacy["visual_overall"] == 6.5
     for col in ("motion_overall", "motion_dims_json", "motion_reel_ref", "milestone"):
         assert legacy[col] is None, f"{col} should read NULL on a pre-migration row after _ensure_schema()"
+
+
+# ---------------------------------------------------------------------------
+# #1415 ledger unification: render_markdown folds `artifacts` + `library_metrics` into the SAME
+# qa/scores_ledger.md the `runs` table renders into (RUNBOOK-INDEX gap 2). Red-first: a fixture db
+# with rows in all three stores must show all three sections; a db with only `runs` must OMIT the
+# other two sections entirely (no stray header for an empty store).
+# ---------------------------------------------------------------------------
+def test_render_markdown_omits_artifact_and_library_sections_when_stores_empty(tmp_path):
+    db = tmp_path / "t.db"
+    md = tmp_path / "led.md"
+    scores_db.add_run("solo-run", db_path=db, surface="engine-duo", story_overall=4.0)
+    text = scores_db.render_markdown(db, md)
+    assert "## Artifact panels" not in text
+    assert "## Library metrics" not in text
+
+
+def test_render_markdown_includes_artifact_panels_section(tmp_path):
+    db = tmp_path / "t.db"
+    md = tmp_path / "led.md"
+    scores_db.add_run("r1", db_path=db, surface="engine-duo")
+    # two scored quests in the same panel + one disguised control anchored at 3.5
+    scores_db.add_artifact("quest:a", db_path=db, **{"class": "quest"}, overall=4.0,
+                           panel_id="cal-quest-1", ts="2026-07-01T00:00:00+00:00")
+    scores_db.add_artifact("quest:b", db_path=db, **{"class": "quest"}, overall=3.6,
+                           panel_id="cal-quest-1", ts="2026-07-01T00:05:00+00:00")
+    scores_db.add_artifact("quest:control", db_path=db, **{"class": "quest"}, is_control=True,
+                           control_anchor=3.5, panel_id="cal-quest-1",
+                           ts="2026-07-01T00:06:00+00:00")
+    text = scores_db.render_markdown(db, md)
+    assert "## Artifact panels" in text
+    assert "cal-quest-1" in text and "quest" in text
+    assert "IN-BAND" in text  # median 3.8 vs anchor 3.5 -> within +/-1.2
+
+
+def test_render_markdown_artifact_panel_out_of_band_verdict(tmp_path):
+    db = tmp_path / "t.db"
+    md = tmp_path / "led.md"
+    scores_db.add_artifact("npc:a", db_path=db, **{"class": "npc"}, overall=1.5,
+                           panel_id="cal-npc-1")
+    scores_db.add_artifact("npc:control", db_path=db, **{"class": "npc"}, is_control=True,
+                           control_anchor=4.0, panel_id="cal-npc-1")
+    text = scores_db.render_markdown(db, md)
+    assert "OUT-OF-BAND" in text
+
+
+def test_render_markdown_artifact_panel_no_control_verdict(tmp_path):
+    db = tmp_path / "t.db"
+    md = tmp_path / "led.md"
+    scores_db.add_artifact("loc:a", db_path=db, **{"class": "location"}, overall=4.0,
+                           panel_id="cal-loc-1")
+    text = scores_db.render_markdown(db, md)
+    assert "NO-CONTROL" in text
+
+
+def test_artifact_panel_rows_excludes_unpanelled_artifacts(tmp_path):
+    """An artifact score with no panel_id has no group to summarize into — it stays fully visible
+    in qa/artifacts_ledger.md, but is excluded from this per-panel roll-up."""
+    db = tmp_path / "t.db"
+    scores_db.add_artifact("quest:standalone", db_path=db, **{"class": "quest"}, overall=4.2)
+    assert scores_db._artifact_panel_rows(db) == []
+
+
+def test_render_markdown_includes_library_metrics_trend_section(tmp_path):
+    db = tmp_path / "t.db"
+    md = tmp_path / "led.md"
+    scores_db.add_run("r1", db_path=db, surface="engine-duo")
+    scores_db.add_library_metrics(
+        db_path=db, ts="2026-07-01T00:00:00+00:00", library_sha="aaa1111", size_total=5,
+        size_by_class_json={"quest": 3, "npc": 2}, size_by_tier_json={"stable": 5},
+        reuse_count_sum=3, notes="first snapshot",
+    )
+    scores_db.add_library_metrics(
+        db_path=db, ts="2026-07-05T00:00:00+00:00", library_sha="bbb2222", size_total=8,
+        size_by_class_json={"quest": 5, "npc": 3}, size_by_tier_json={"stable": 8},
+        reuse_count_sum=9, notes="after curation pass",
+    )
+    text = scores_db.render_markdown(db, md)
+    assert "## Library metrics" in text
+    assert "first snapshot" in text and "after curation pass" in text
+    # chronological (oldest first): the first snapshot's SHA appears before the second's
+    assert text.index("aaa1111") < text.index("bbb2222")
+
+
+def test_render_markdown_library_metrics_backlink_falls_back_to_source_path(tmp_path):
+    db = tmp_path / "t.db"
+    md = tmp_path / "led.md"
+    scores_db.add_library_metrics(db_path=db, size_total=1, source_path="library/")
+    text = scores_db.render_markdown(db, md)
+    assert "library/" in text

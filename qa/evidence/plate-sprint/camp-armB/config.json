@@ -1,0 +1,19 @@
+{
+  "name": "armB-camp-cn-depth092-085-gemini-noref-styleedit-iter3-g3",
+  "room": "camp_clearing_night",
+  "generate": {
+    "controlnet": "depth",
+    "control_strength": 0.85,
+    "seed": 42
+  },
+  "registration": {
+    "greybox": "/Users/lume/WorldOS/qa/evidence/1470/greybox_control_1344x768.png",
+    "min_recall": 0.95,
+    "manifest": "/Users/lume/WorldOS/qa/room_manifests/camp_clearing_night_v2.cells.json"
+  },
+  "panel": {
+    "incumbent": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg",
+    "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg",
+    "house_anchor": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg"
+  }
+}

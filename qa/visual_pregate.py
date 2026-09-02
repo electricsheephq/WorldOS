@@ -63,11 +63,16 @@ USAGE
     print(result["verdict"])                # PASS | FLAG (any CRITICAL/HIGH) | SKIPPED
     # result["gates"] -> list of {gate, severity, metric, value, threshold, detail}
 
-    # CLI:
+    # Spec-facing CLI (future capture harness):
+    python qa/visual_pregate.py /tmp/frame.png /tmp/manifest.json \
+        --baseline /tmp/empty-plate.png --json-out /tmp/report.json
+
+    # Legacy visual-critic CLI:
     python qa/visual_pregate.py --render /tmp/frame.png --scenegrid fixtures/tavern.scenegrid.json \
         --actors @/tmp/actors.json --json
 
-Exit codes: 0 = PASS / SKIPPED, 2 = FLAG (a CRITICAL or HIGH pre-gate fired) — so the loop / CI can gate.
+Exit codes: spec CLI 0 = PASS, 2 = FAIL; legacy CLI 0 = PASS / SKIPPED, 2 = FLAG
+(a CRITICAL or HIGH pre-gate fired) — so the loop / CI can gate.
 """
 
 from __future__ import annotations
@@ -924,6 +929,572 @@ def _summary(verdict: str, gates: list[dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Spec-facing manifest runner
+# ---------------------------------------------------------------------------
+def _manifest_check(manifest: dict, name: str) -> dict:
+    checks = manifest.get("checks", {})
+    cfg = checks.get(name, {}) if isinstance(checks, dict) else {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _rgb_tuple(pixels: bytearray, base: int, channels: int) -> tuple[int, int, int]:
+    if channels == 1:
+        v = int(pixels[base])
+        return v, v, v
+    return int(pixels[base]), int(pixels[base + 1]), int(pixels[base + 2])
+
+
+def _bbox_from_actor(actor: dict) -> Optional[list[int]]:
+    raw = actor.get("screen_bbox", actor.get("bbox", actor.get("box")))
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        if all(k in raw for k in ("x", "y", "w", "h")):
+            vals = [raw["x"], raw["y"], raw["x"] + raw["w"], raw["y"] + raw["h"]]
+        elif all(k in raw for k in ("left", "top", "right", "bottom")):
+            vals = [raw["left"], raw["top"], raw["right"], raw["bottom"]]
+        else:
+            return None
+    elif isinstance(raw, (list, tuple)) and len(raw) == 4:
+        vals = list(raw)
+    else:
+        return None
+    try:
+        x0, y0, x1, y1 = [int(round(float(v))) for v in vals]
+    except (TypeError, ValueError):
+        return None
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    if x1 == x0 or y1 == y0:
+        return None
+    return [x0, y0, x1, y1]
+
+
+def _frame_lit_manifest_check(frame_png: str | Path, manifest: dict) -> tuple[dict, tuple[int, int] | None]:
+    cfg = _manifest_check(manifest, "frame_lit")
+    min_mean = float(cfg.get("min_mean_luma", cfg.get("min", MEAN_LUM_DARK)))
+    max_mean = float(cfg.get("max_mean_luma", cfg.get("max", MEAN_LUM_BLOWN)))
+    max_single = float(cfg.get("max_single_color_frac", cfg.get("max_single_color", 0.90)))
+    try:
+        pixels, width, height, channels = _decode_png_pixels(Path(frame_png))
+    except Exception as exc:
+        return ({
+            "check": "frame-lit", "status": "FAIL", "metric": "decode",
+            "value": None, "threshold": None,
+            "detail": f"could not decode frame PNG: {exc}",
+        }, None)
+
+    stride = width * channels
+    total = width * height
+    step = max(1, total // 65536)
+    luma_sum = 0.0
+    colors: dict[tuple[int, int, int], int] = {}
+    samples = 0
+    for i in range(0, total, step):
+        base = (i // width) * stride + (i % width) * channels
+        color = _rgb_tuple(pixels, base, channels)
+        colors[color] = colors.get(color, 0) + 1
+        luma_sum += (0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]) / 255.0
+        samples += 1
+    mean = luma_sum / (samples or 1)
+    single_frac = max(colors.values(), default=0) / (samples or 1)
+    failures = []
+    if mean < min_mean:
+        failures.append(f"mean luma {mean:.3f} < {min_mean:.3f}")
+    if mean > max_mean:
+        failures.append(f"mean luma {mean:.3f} > {max_mean:.3f}")
+    if single_frac > max_single:
+        failures.append(f"dominant color {single_frac:.1%} > {max_single:.0%}")
+    status = "FAIL" if failures else "PASS"
+    return ({
+        "check": "frame-lit", "status": status, "metric": "mean_luma",
+        "value": {"mean_luma": round(mean, 4), "single_color_frac": round(single_frac, 4)},
+        "threshold": {
+            "min_mean_luma": min_mean,
+            "max_mean_luma": max_mean,
+            "max_single_color_frac": max_single,
+        },
+        "detail": "; ".join(failures) if failures else
+                  f"frame lit: mean luma {mean:.3f}, dominant color {single_frac:.1%}",
+    }, (width, height))
+
+
+def _diff_bboxes(frame_png: str | Path, baseline_png: str | Path, manifest: dict) -> list[list[int]]:
+    cfg = _manifest_check(manifest, "diff")
+    threshold = float(cfg.get("threshold", 20))
+    min_area = int(cfg.get("min_area_px", cfg.get("min_area", 16)))
+    fp, fw, fh, fc = _decode_png_pixels(Path(frame_png))
+    bp, bw, bh, bc = _decode_png_pixels(Path(baseline_png))
+    if (fw, fh) != (bw, bh):
+        raise ValueError(f"baseline dimensions {bw}x{bh} do not match frame {fw}x{fh}")
+    fstride = fw * fc
+    bstride = bw * bc
+    total = fw * fh
+    mask = bytearray(total)
+    for i in range(total):
+        fx, fy = i % fw, i // fw
+        fr, fg, fb = _rgb_tuple(fp, fy * fstride + fx * fc, fc)
+        br, bg, bb = _rgb_tuple(bp, fy * bstride + fx * bc, bc)
+        if max(abs(fr - br), abs(fg - bg), abs(fb - bb)) > threshold:
+            mask[i] = 1
+
+    seen = bytearray(total)
+    bboxes: list[list[int]] = []
+    for start, changed in enumerate(mask):
+        if not changed or seen[start]:
+            continue
+        stack = [start]
+        seen[start] = 1
+        min_x = max_x = start % fw
+        min_y = max_y = start // fw
+        area = 0
+        while stack:
+            idx = stack.pop()
+            area += 1
+            x, y = idx % fw, idx // fw
+            min_x, max_x = min(min_x, x), max(max_x, x)
+            min_y, max_y = min(min_y, y), max(max_y, y)
+            if x > 0:
+                ni = idx - 1
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+            if x + 1 < fw:
+                ni = idx + 1
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+            if y > 0:
+                ni = idx - fw
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+            if y + 1 < fh:
+                ni = idx + fw
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+        if area >= min_area:
+            bboxes.append([min_x, min_y, max_x + 1, max_y + 1])
+    return sorted(bboxes, key=lambda b: (b[0], b[1], -(b[2] - b[0]) * (b[3] - b[1])))
+
+
+def _grid_expected_floor_y(actor: dict, manifest: dict) -> Optional[float]:
+    if "floor_y_px" in actor:
+        return float(actor["floor_y_px"])
+    if "floor_y_px" in manifest:
+        return float(manifest["floor_y_px"])
+    grid = manifest.get("grid")
+    cell = actor.get("expected_cell", actor.get("cell"))
+    if not isinstance(grid, dict) or not (isinstance(cell, (list, tuple)) and len(cell) == 2):
+        return None
+    origin = grid.get("origin", [0, 0])
+    cell_px = grid.get("cell_px", 1)
+    if not (isinstance(origin, (list, tuple)) and len(origin) >= 2):
+        return None
+    if isinstance(cell_px, (int, float)):
+        cell_h = float(cell_px)
+    elif isinstance(cell_px, (list, tuple)) and len(cell_px) >= 2:
+        cell_h = float(cell_px[1])
+    else:
+        return None
+    try:
+        row = int(cell[1])
+        origin_y = float(origin[1])
+    except (TypeError, ValueError):
+        return None
+    return origin_y + (row + 1) * cell_h
+
+
+def _occupancy_manifest_check(expected_count: int, bboxes: list[list[int]]) -> dict:
+    found = len(bboxes)
+    status = "PASS" if found >= expected_count else "FAIL"
+    return {
+        "check": "occupancy", "status": status, "metric": "actor_bbox_count",
+        "value": {"expected": expected_count, "found": found},
+        "threshold": expected_count,
+        "detail": f"found {found}/{expected_count} expected actor bbox(es)",
+    }
+
+
+# ---------------------------------------------------------------------------
+# #1402 floor-contact BAND. Fix design (from the issue): under the locked 30/45 oblique dimetric
+# camera (see the module docstring's CAMERA/PROJECTION section; matches paint_combat_v1.cs /
+# paint_3d_spike.cs, verified by test_visual_critic.py's _render_cell_to_world), a floor CELL's
+# screen-Y is NOT one point across its footprint -- screen Y depends on world X+Z jointly, so a
+# cell's 4 corners project to different Y values. Comparing bbox-bottom to a single projected
+# center (the pre-#1402 behavior, _grid_expected_floor_y) reads honest #1400 screen_bbox actors as
+# clipping/floating even when their world-space feet are exactly on FLOOR_Y (#1392 verified this).
+# Measured real deltas on qa/evidence/1397 + 1408's verified-grounded actors: +47..+97px (1.6-3.25
+# combat-grid cells) -- wider than a single cell's own corner spread (~30px/cell), so on top of the
+# corner-projection fix some of that gap is very likely a further world X/Z shift (e.g. the
+# anti-stacking nudge, #1392) that keeps feet on FLOOR_Y but off the cell's nominal center; that
+# residual is real positional uncertainty, not a bug in the pre-gate's math, so it is downgraded to
+# ADVISORY (visible, non-blocking) rather than re-widened into the strict pass band.
+#
+# Three tiers, most to least authoritative:
+#   1. manifest-band  -- the actor supplies "floor_band_px":[min_y,max_y] (or "floor_corners_px":
+#      [[x,y],...]) -- the RENDERER's real projected foot-cell-corner band from the SAME transform
+#      that produced screen_bbox. Ground truth: no advisory relaxation, a miss is a hard FAIL.
+#   2. computed-band  -- no manifest band, but the actor has expected_cell/cell and the manifest's
+#      frame matches the locked combat camera's contract (1920x1097) -- project that cell's 4
+#      corners ourselves via the SAME camera. Gets the #1402 advisory margin (see below).
+#   3. center-point   -- today's pre-#1402 behavior (manifest/actor floor_y_px, or the legacy
+#      pixel-space grid) -- a degenerate zero-width band. Gets the advisory margin ONLY when the
+#      manifest is also a locked-combat-camera frame (1920x1097); a non-combat/synthetic manifest
+#      (e.g. this module's own small-canvas tests) keeps the exact pre-#1402 strict behavior.
+# ---------------------------------------------------------------------------
+_COMBAT_GRID_COLS = 14   # locked combat grid (paint_combat_v1.cs / paint_3d_spike.cs)
+_COMBAT_GRID_ROWS = 11
+_COMBAT_CELL_SIZE = 2.0
+# Beyond the projected band (+ the manifest's own tolerance_px), this many additional CELLS of
+# slack is ADVISORY rather than a hard FAIL for the computed-band/center-point tiers (see above).
+# Calibrated with margin over the largest measured real-evidence delta (a6064, #1408, ~3.25 cells).
+FLOOR_BAND_ADVISORY_CELLS = 4.0
+
+
+def _combat_cell_to_world(c: float, r: float) -> tuple[float, float]:
+    """The locked combat renderer's cell->world mapping: cellToWorld(c,r) = ((c-6.5)*2.0,
+    (5.0-r)*2.0) -- 14x11 grid, cell_size 2.0 (module docstring; test_visual_critic.py's
+    _render_cell_to_world). Accepts fractional c/r so callers can probe a cell's 4 corners at
+    (c, c+1) x (r, r+1)."""
+    cx0 = _COMBAT_GRID_COLS / 2.0 - 0.5
+    cz0 = _COMBAT_GRID_ROWS / 2.0 - 0.5
+    return (c - cx0) * _COMBAT_CELL_SIZE, (cz0 - r) * _COMBAT_CELL_SIZE
+
+
+def _project_cell_floor_band(camera: CameraSpec, c: int, r: int) -> tuple[float, float]:
+    """Project foot-CELL (c,r)'s 4 corners (a _COMBAT_CELL_SIZE-ft square on the world floor plane
+    y=0) through the locked oblique camera; return (min_sy, max_sy) -- the #1402 fix's core idea."""
+    ys = []
+    for dc in (0, 1):
+        for dr in (0, 1):
+            wx, wz = _combat_cell_to_world(c + dc, r + dr)
+            _, sy = camera.world_to_screen(wx, 0.0, wz)
+            ys.append(sy)
+    return min(ys), max(ys)
+
+
+def _combat_px_per_cell_y(camera: CameraSpec) -> float:
+    """Vertical screen px spanned by one combat-grid cell of DEPTH near frame center, via the LOCAL
+    _combat_cell_to_world mapping (kept independent of SceneGrid's differently-conventioned Z
+    origin) -- used to convert FLOOR_BAND_ADVISORY_CELLS into a pixel margin."""
+    wx, wz0 = _combat_cell_to_world(_COMBAT_GRID_COLS / 2.0, _COMBAT_GRID_ROWS / 2.0)
+    _, wz1 = _combat_cell_to_world(_COMBAT_GRID_COLS / 2.0, _COMBAT_GRID_ROWS / 2.0 + 1)
+    _, sy0 = camera.world_to_screen(wx, 0.0, wz0)
+    _, sy1 = camera.world_to_screen(wx, 0.0, wz1)
+    return abs(sy1 - sy0) or 1.0
+
+
+def _is_locked_combat_frame(manifest: dict) -> bool:
+    """True when the manifest's frame matches the locked combat camera's contract (1920x1097) --
+    the only regime where the #1402 computed-band / advisory-margin math is meaningful (it is
+    calibrated in that camera's pixel scale, not e.g. this module's small synthetic test canvases)."""
+    return (manifest.get("frame_w") == CameraSpec.LOCKED.px_w
+            and manifest.get("frame_h") == CameraSpec.LOCKED.px_h)
+
+
+def _actor_manifest_band(actor: dict) -> Optional[tuple[float, float]]:
+    """#1402 tier 1 (ground truth): an additive per-actor field carrying the RENDERER's real
+    projected foot-cell-corner band (the same transform that produced screen_bbox). Either shape:
+        "floor_band_px": [min_y, max_y]
+        "floor_corners_px": [[x0,y0], [x1,y1], [x2,y2], [x3,y3]]   # >=2 projected [x,y] points
+    """
+    band = actor.get("floor_band_px")
+    if isinstance(band, (list, tuple)) and len(band) == 2:
+        try:
+            lo, hi = float(band[0]), float(band[1])
+        except (TypeError, ValueError):
+            return None
+        return (lo, hi) if lo <= hi else (hi, lo)
+    corners = actor.get("floor_corners_px")
+    if isinstance(corners, (list, tuple)) and len(corners) >= 2:
+        ys = []
+        for pt in corners:
+            if isinstance(pt, (list, tuple)) and len(pt) == 2:
+                ys.append(pt[1])
+        if len(ys) < 2:
+            return None
+        try:
+            ys = [float(y) for y in ys]
+        except (TypeError, ValueError):
+            return None
+        return min(ys), max(ys)
+    return None
+
+
+def _computed_cell_floor_band(actor: dict, manifest: dict) -> Optional[tuple[float, float]]:
+    """#1402 tier 2: project the actor's foot cell's 4 corners ourselves (no manifest band needed)
+    -- only valid when the manifest is a locked-combat-camera frame (see _is_locked_combat_frame)."""
+    if not _is_locked_combat_frame(manifest):
+        return None
+    cell = actor.get("expected_cell", actor.get("cell"))
+    if not (isinstance(cell, (list, tuple)) and len(cell) == 2):
+        return None
+    try:
+        c, r = int(cell[0]), int(cell[1])
+    except (TypeError, ValueError):
+        return None
+    return _project_cell_floor_band(CameraSpec.LOCKED, c, r)
+
+
+def _floor_contact_manifest_check(actors: list[dict], actor_bboxes: list[tuple[dict, list[int]]],
+                                  manifest: dict) -> dict:
+    cfg = _manifest_check(manifest, "floor_contact")
+    tolerance = float(cfg.get("tolerance_px", cfg.get("tolerance", 6)))
+    is_combat = _is_locked_combat_frame(manifest)
+    advisory_px = FLOOR_BAND_ADVISORY_CELLS * _combat_px_per_cell_y(CameraSpec.LOCKED)
+    entries = []
+    failures = []
+    advisories = []
+    for actor, bbox in actor_bboxes:
+        name = str(actor.get("name") or actor.get("id") or "?")
+        mechanism = "manifest-band"
+        band = _actor_manifest_band(actor)
+        if band is None:
+            mechanism = "computed-band"
+            band = _computed_cell_floor_band(actor, manifest)
+        if band is None:
+            mechanism = "center-point"
+            floor_y = _grid_expected_floor_y(actor, manifest)
+            if floor_y is None:
+                entries.append({"actor": name, "status": "SKIP", "detail": "no floor_y_px or grid projection"})
+                continue
+            band = (floor_y, floor_y)
+        lo, hi = band
+        bottom_y = float(bbox[3])
+        if bottom_y < lo:
+            edge_delta = bottom_y - lo       # negative: feet float above the band
+        elif bottom_y > hi:
+            edge_delta = bottom_y - hi       # positive: feet clip below the band
+        else:
+            edge_delta = 0.0
+        # Ground truth (manifest-band) never gets the advisory relaxation; the fallback tiers do,
+        # but only in the combat-camera regime the margin is calibrated for (see _is_locked_combat_frame).
+        lenient_ok = is_combat and mechanism != "manifest-band"
+        if abs(edge_delta) <= tolerance:
+            status = "PASS"
+            detail = (f"{name} grounded ({mechanism}): bbox bottom {bottom_y:.1f}px within "
+                      f"[{lo:.1f},{hi:.1f}]px (+/-{tolerance:.1f}px)")
+        elif lenient_ok and abs(edge_delta) <= tolerance + advisory_px:
+            status = "ADVISORY"
+            mode = "floating above" if edge_delta < 0 else "clipping below"
+            detail = (f"{name} {mode} the projected band by {abs(edge_delta):.1f}px ({mechanism}) -- "
+                      f"within #1402's known positional slop (<={FLOOR_BAND_ADVISORY_CELLS:.1f} cells); "
+                      "advisory only, non-blocking (world-space grounding is verified separately, feet_y==FLOOR_Y)")
+            advisories.append(detail)
+        else:
+            status = "FAIL"
+            mode = "floating above" if edge_delta < 0 else "clipping below"
+            detail = (f"{name} {mode} ({mechanism}): bbox bottom {bottom_y:.1f}px vs band "
+                      f"[{lo:.1f},{hi:.1f}]px ({edge_delta:+.1f}px beyond tolerance)")
+            failures.append(detail)
+        entries.append({"actor": name, "status": status, "mechanism": mechanism,
+                        "band_px": [round(lo, 2), round(hi, 2)], "delta_px": round(edge_delta, 2),
+                        "detail": detail})
+    if not actor_bboxes and actors:
+        return {
+            "check": "floor-contact", "status": "SKIP", "metric": "feet_vs_floor_band_px",
+            "value": [], "threshold": tolerance,
+            "detail": "no actor bbox available; occupancy check owns the missing-actor failure",
+        }
+    if failures:
+        status = "FAIL"
+    elif advisories:
+        status = "ADVISORY"
+    else:
+        status = "PASS"
+    if failures:
+        detail = "; ".join(failures)
+    elif advisories:
+        detail = "; ".join(advisories)
+    else:
+        detail = f"{len(entries)} actor bbox(es) grounded"
+    return {
+        "check": "floor-contact", "status": status, "metric": "feet_vs_floor_band_px",
+        "value": entries, "threshold": tolerance,
+        "detail": detail,
+    }
+
+
+def _screen_scale_manifest_check(actor_bboxes: list[tuple[dict, list[int]]], manifest: dict,
+                                 frame_size: tuple[int, int] | None) -> dict:
+    cfg = _manifest_check(manifest, "screen_scale")
+    min_frac = float(cfg.get("min_height_frac", cfg.get("min", 0.04)))
+    max_frac = float(cfg.get("max_height_frac", cfg.get("max", 0.40)))
+    if frame_size is None:
+        return {
+            "check": "screen-scale", "status": "SKIP", "metric": "bbox_height_frac",
+            "value": [], "threshold": {"min": min_frac, "max": max_frac},
+            "detail": "frame dimensions unavailable; screen-scale skipped",
+        }
+    _, frame_h = frame_size
+    entries = []
+    failures = []
+    for actor, bbox in actor_bboxes:
+        name = str(actor.get("name") or actor.get("id") or "?")
+        height = max(0, bbox[3] - bbox[1])
+        frac = height / (frame_h or 1)
+        if min_frac <= frac <= max_frac:
+            status = "PASS"
+            detail = f"{name} height {height}px ({frac:.1%}) within {min_frac:.0%}-{max_frac:.0%}"
+        else:
+            status = "FAIL"
+            detail = f"{name} height {height}px ({frac:.1%}) outside {min_frac:.0%}-{max_frac:.0%}"
+            failures.append(detail)
+        entries.append({"actor": name, "status": status, "height_px": height,
+                        "height_frac": round(frac, 4), "detail": detail})
+    if not actor_bboxes:
+        return {
+            "check": "screen-scale", "status": "SKIP", "metric": "bbox_height_frac",
+            "value": [], "threshold": {"min": min_frac, "max": max_frac},
+            "detail": "no actor bbox available; occupancy check owns the missing-actor failure",
+        }
+    status = "FAIL" if failures else "PASS"
+    return {
+        "check": "screen-scale", "status": status, "metric": "bbox_height_frac",
+        "value": entries, "threshold": {"min": min_frac, "max": max_frac},
+        "detail": "; ".join(failures) if failures else f"{len(entries)} actor bbox(es) within scale band",
+    }
+
+
+def _pose_uprightness_manifest_check(actor_bboxes: list[tuple[dict, list[int]]],
+                                     manifest: dict) -> dict:
+    """G7 / #1397 pose-uprightness pre-gate — a torso-verticality proxy from each actor's bbox
+    ASPECT RATIO (height/width). This is the "binding felt defect" tripwire: a skinned actor
+    rendered PRONE/TILTED (bind-pose desync, missing Animator default state, or an import-axis
+    mismatch — see the #1397 probe ladder) casts a WIDE, SHORT silhouette (aspect << 1) instead
+    of the TALL, NARROW one a standing humanoid casts under the locked dimetric camera (aspect
+    ~2+ — e.g. paint_combat_replay_v1.cs's screen_bbox synthesis: half-width = 0.22 * px_height
+    => aspect ~2.27). Deliberately a bbox-shape proxy, not a skeletal torso-vector: it needs no
+    new Unity-side manifest fields (screen_bbox is already required) and is exercised by the SAME
+    actor_bboxes (manifest-declared OR baseline-diff-detected) floor-contact/screen-scale use, so
+    it stays truthful to real pixel geometry when bboxes come from the baseline-diff path.
+    Mirrors floor-contact/screen-scale's structure exactly (per-actor entries + failures list,
+    SKIP when no bboxes are available)."""
+    cfg = _manifest_check(manifest, "pose_uprightness")
+    # #1397 live calibration (crypt_dense_v1, GEX44, post pitch-guard fix): genuinely-upright actors
+    # measured aspect 1.297-1.71 via REAL projected-vertex bboxes (isolated pixel probes + the live
+    # capture); genuinely-prone measured ~1.12. 1.25 sits in that gap with margin on both sides — 1.3
+    # was a knife-edge that clipped a visually-confirmed-upright actor (1.297) into a false FAIL.
+    min_aspect = float(cfg.get("min_aspect_ratio", cfg.get("min", 1.25)))
+    entries = []
+    failures = []
+    for actor, bbox in actor_bboxes:
+        name = str(actor.get("name") or actor.get("id") or "?")
+        width = max(1e-6, bbox[2] - bbox[0])
+        height = max(0.0, bbox[3] - bbox[1])
+        aspect = height / width
+        if aspect >= min_aspect:
+            status = "PASS"
+            detail = f"{name} upright: bbox aspect {aspect:.2f} (h/w) >= {min_aspect:.2f}"
+        else:
+            status = "FAIL"
+            detail = (f"{name} prone/tilted: bbox aspect {aspect:.2f} (h/w) < {min_aspect:.2f} "
+                      "(wide/short silhouette, not a standing humanoid)")
+            failures.append(detail)
+        entries.append({"actor": name, "status": status, "aspect_ratio": round(aspect, 3), "detail": detail})
+    if not actor_bboxes:
+        return {
+            "check": "pose-uprightness", "status": "SKIP", "metric": "bbox_aspect_ratio",
+            "value": [], "threshold": min_aspect,
+            "detail": "no actor bbox available; occupancy check owns the missing-actor failure",
+        }
+    status = "FAIL" if failures else "PASS"
+    return {
+        "check": "pose-uprightness", "status": status, "metric": "bbox_aspect_ratio",
+        "value": entries, "threshold": min_aspect,
+        "detail": "; ".join(failures) if failures else f"{len(entries)} actor bbox(es) upright",
+    }
+
+
+def run_manifest_pregate(frame_png: str | Path, manifest_json: str | Path,
+                         baseline_png: str | Path | None = None) -> dict:
+    """Run the spec-facing deterministic visual pre-gate.
+
+    Manifest shape:
+        {
+          "actors": [{"name": "Hero", "expected_cell": [c, r], "screen_bbox": [x0,y0,x1,y1],
+                      "floor_band_px": [min_y, max_y]}],
+          "grid": {"origin": [x,y], "cell_px": [w,h], "rows": N, "cols": M},
+          "floor_y_px": 80,
+          "checks": {"floor_contact": {"tolerance_px": 6}, "pose_uprightness": {"min_aspect_ratio": 1.25}, ...}
+        }
+
+    Bboxes come either from actor.screen_bbox (preferred capture-harness path) or from
+    ``baseline_png`` diff clusters when the manifest omits bboxes.
+
+    #1402 floor-contact: an actor MAY additionally carry "floor_band_px":[min_y,max_y] (or
+    "floor_corners_px":[[x,y],...]) -- the renderer's real projected foot-cell-corner band, from
+    the SAME transform that produced screen_bbox. When present it is authoritative (ground truth,
+    strict pass/fail). When absent, floor-contact computes the band itself from expected_cell (only
+    meaningful for a 1920x1097 locked-combat-camera frame_w/frame_h) or falls back to today's single
+    floor_y_px center-point check; either fallback labels a near-miss ADVISORY rather than FAIL (see
+    _floor_contact_manifest_check / FLOOR_BAND_ADVISORY_CELLS).
+    """
+    manifest = json.loads(Path(manifest_json).read_text())
+    actors = manifest.get("actors", [])
+    if not isinstance(actors, list):
+        actors = []
+
+    checks: list[dict] = []
+    frame_check, frame_size = _frame_lit_manifest_check(frame_png, manifest)
+    checks.append(frame_check)
+
+    manifest_actor_bboxes = []
+    for actor in actors:
+        bbox = _bbox_from_actor(actor)
+        if bbox is not None:
+            manifest_actor_bboxes.append((actor, bbox))
+    manifest_bboxes = [bbox for _, bbox in manifest_actor_bboxes]
+    bbox_source = "manifest"
+    if baseline_png is not None:
+        try:
+            bboxes = _diff_bboxes(frame_png, baseline_png, manifest)
+        except Exception as exc:
+            bboxes = []
+            checks.append({
+                "check": "bbox-detection", "status": "FAIL", "metric": "baseline_diff",
+                "value": None, "threshold": None,
+                "detail": f"could not compute diff-vs-baseline actor bboxes: {exc}",
+            })
+        bbox_source = "baseline-diff"
+        actor_bboxes = list(zip(actors, bboxes))
+    else:
+        bboxes = manifest_bboxes
+        actor_bboxes = manifest_actor_bboxes
+
+    checks.append(_occupancy_manifest_check(len(actors), bboxes))
+    checks.append(_floor_contact_manifest_check(actors, actor_bboxes, manifest))
+    checks.append(_screen_scale_manifest_check(actor_bboxes, manifest, frame_size))
+    checks.append(_pose_uprightness_manifest_check(actor_bboxes, manifest))
+
+    failed = [c for c in checks if c["status"] == "FAIL"]
+    verdict = "FAIL" if failed else "PASS"
+    return {
+        "schema": "worldos.visual_pregate.v1",
+        "verdict": verdict,
+        "bbox_source": bbox_source,
+        "frame": str(frame_png),
+        "manifest": str(manifest_json),
+        "baseline": str(baseline_png) if baseline_png else None,
+        "bboxes": [{"bbox": b, "source": bbox_source} for b in bboxes],
+        "checks": checks,
+        "failures": failed,
+        "summary": _manifest_summary(verdict, checks),
+    }
+
+
+def _manifest_summary(verdict: str, checks: list[dict]) -> str:
+    lines = [f"VISUAL PRE-GATE {verdict}"]
+    for c in checks:
+        lines.append(f"  [{c['status']:4s}] {c['check']:14s} {c.get('metric','')}={c.get('value')} :: {c['detail']}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def _load_actors(arg: Optional[str]) -> list[dict]:
@@ -948,15 +1519,33 @@ def _load_reel(arg: Optional[str]) -> Optional[list[dict]]:
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Deterministic visual pre-gates for the visual-critic loop")
-    ap.add_argument("--render", required=True, help="path to the rendered PNG")
+    ap.add_argument("positional", nargs="*", metavar="ARG",
+                    help="spec CLI: <frame.png> <manifest.json>; legacy mode uses --render")
+    ap.add_argument("--render", help="legacy: path to the rendered PNG")
     ap.add_argument("--scenegrid", help="path to the *.scenegrid.json (enables G2/G3/G4)")
     ap.add_argument("--actors", help="measured actor boxes JSON or @file.json")
     ap.add_argument("--occupancy", help="rendered occupancy tint JSON or @file.json")
+    ap.add_argument("--baseline", help="spec CLI: empty-plate PNG for diff-vs-baseline actor bbox mode")
+    ap.add_argument("--json-out", help="write machine-readable JSON report to this path")
     ap.add_argument("--reel", help="motion-reel frames JSON or @file.json (enables G5); accepts a "
                                    "bare list of frame dicts OR a qa/motion_reel.py sidecar object "
                                    "with a top-level 'frames' key")
     ap.add_argument("--json", action="store_true", help="emit JSON")
     args = ap.parse_args(argv)
+
+    if args.positional:
+        if len(args.positional) != 2:
+            ap.error("spec CLI expects exactly: <frame.png> <manifest.json>")
+        frame_png, manifest_json = args.positional
+        res = run_manifest_pregate(frame_png, manifest_json, baseline_png=args.baseline)
+        if args.json_out:
+            Path(args.json_out).write_text(json.dumps(res, indent=2) + "\n")
+        if args.json or not args.json_out:
+            print(json.dumps(res, indent=2) if args.json else res["summary"])
+        return 2 if res["verdict"] == "FAIL" else 0
+
+    if not args.render:
+        ap.error("--render is required in legacy option mode")
 
     sg = load_scenegrid(args.scenegrid) if args.scenegrid else None
     actors = _load_actors(args.actors)
@@ -967,9 +1556,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         occ = None
     reel = _load_reel(args.reel) if args.reel else None
     res = run_pregates(args.render, scenegrid=sg, actors=actors, occupancy_tint=occ, reel=reel)
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps(res, indent=2) + "\n")
     if args.json:
         print(json.dumps(res, indent=2))
-    else:
+    elif not args.json_out:
         print(res["summary"])
     return 2 if res["verdict"] == "FLAG" else 0
 

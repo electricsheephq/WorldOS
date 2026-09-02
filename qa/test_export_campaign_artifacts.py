@@ -91,14 +91,23 @@ def _golden_campaign() -> Campaign:
 
 
 def _golden_transcript_lines() -> list[str]:
-    """A minimal stream-json transcript: one DM narration block mentioning "Corvin" (so the
-    dialogue-snippet matcher has something to find) plus a start_combat/end_combat pair."""
+    """A minimal stream-json transcript: one DM narration block with an IN-VOICE attributed quote
+    from Corvin (so the voice-line miner has an attributable line), a quest wrap-up beat that names
+    the quest AND carries resolution language, plus a start_combat/end_combat pair."""
     events = [
         {
             "type": "assistant",
             "message": {
                 "content": [
-                    {"type": "text", "text": "Corvin Dresh leans in close: 'You have my crates?'"}
+                    {"type": "text", "text": "\"You have my crates?\" Corvin Dresh asks, leaning in close."}
+                ]
+            },
+        },
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "In the end, Dresh's Lost Wagon is resolved: the crates are returned and the debt repaid."}
                 ]
             },
         },
@@ -173,9 +182,18 @@ def test_golden_fixture_exact_expected_json(golden):
     assert quest["payload"] == {
         "id": "quest-wagon",
         "name": "Dresh's Lost Wagon",
+        "description": "",
         "objectives": ["Find the wagon", "Return the crates"],
         "completed_objectives": ["Find the wagon"],
         "resolution_status": "active",
+        "resolution": {
+            "status": "active",
+            "evolves_to": "",
+            "callback_in_days": 0,
+            "wrap_up": [
+                "In the end, Dresh's Lost Wagon is resolved: the crates are returned and the debt repaid."
+            ],
+        },
         "evolves_to": "",
         "consequences": [
             {"id": "conseq-wagon-1", "trigger_day": 5, "text": "Dresh's Lost Wagon: the checkpoint doubles its watch."}
@@ -191,7 +209,7 @@ def test_golden_fixture_exact_expected_json(golden):
     assert npc["payload"]["voice_id"] == "npc-merchant"
     assert npc["payload"]["attitude_arc"] == {"start": 0, "end": 15}
     assert npc["payload"]["final_status"] == "active"
-    assert npc["payload"]["dialogue_snippets"] == ["Corvin Dresh leans in close: 'You have my crates?'"]
+    assert npc["payload"]["dialogue_snippets"] == ["You have my crates?"]
     assert npc["payload"]["personality"]["personality"].startswith("A nervous merchant")
 
     loc_files = sorted((campaign_out / "locations").glob("*.json"))
@@ -428,6 +446,91 @@ def test_dialogue_snippets_word_boundary_no_substring_false_positive():
     assert eca._npc_dialogue_snippets("Boo", blocks) == ["Boo squeaks in Minsc's pocket."]
 
 
+# ── in-voice dialogue mining (HV2 #1329): the quality lever ──────────────────────────────────
+def test_voice_lines_extracts_attributed_quote_not_narration():
+    """An NPC that SPOKE carries the IN-VOICE quoted line, not the surrounding third-person prose.
+    The attribution can precede ("Sefa says: ...") or follow ("...", Roe says) the quote."""
+    blocks = [
+        '"You have my crates?" Corvin asks, leaning in close.',
+        'Sefa says, low and fast: "Take the coin and forget my name."',
+    ]
+    assert eca._npc_voice_lines("Corvin Dresh", blocks) == ["You have my crates?"]
+    assert eca._npc_voice_lines("Sefa", blocks) == ["Take the coin and forget my name."]
+
+
+def test_voice_lines_excludes_third_person_mention_without_speech():
+    """A block that NAMES the NPC in combat/scene narration but is NOT them speaking must NOT be
+    harvested — this is the measured false positive (a party-roster line 'Party (Maren 31/31)...')
+    that the old mention-matcher wrongly kept, capping voice_distinctiveness under the rubric."""
+    blocks = [
+        "Party (Aldric 40/40, Maren 31/31) and all three hostiles confirmed in the cellar.",
+        "Maren steps back as the ghoul lunges.",  # named, no quote, no speech verb
+    ]
+    assert eca._npc_voice_lines("Maren", blocks) == []
+
+
+def test_voice_lines_requires_both_name_and_quote_proximity():
+    """A quote NOT attributed to the NPC (another speaker in the window) isn't the NPC's line."""
+    blocks = ['"Get back!" the captain barks at his men.']
+    assert eca._npc_voice_lines("Corvin", blocks) == []
+
+
+def test_voice_lines_deduped_and_capped():
+    """Repeated identical lines dedupe; the result is capped at five distinct lines."""
+    blocks = ['"Again," Corvin says.'] * 3 + [f'"Line {i} spoken now," Corvin says.' for i in range(6)]
+    out = eca._npc_voice_lines("Corvin", blocks)
+    assert out[0] == "Again,"
+    assert len(out) == 5
+    assert len(out) == len(set(out))
+
+
+def test_voice_lines_curly_quotes_supported():
+    blocks = ["“The debt is mine to settle,” Drast says, not a question."]
+    assert eca._npc_voice_lines("Drast", blocks) == ["The debt is mine to settle,"]
+
+
+def test_voice_lines_drops_mid_sentence_fragment():
+    """A quote opening lowercase is a narration slice spliced through a quote mark, not a fresh
+    spoken line — it is dropped even when name+verb are adjacent (the double-attribution defect)."""
+    blocks = ['Corren says something about "that the tidy-book man is enjoying this far too much."']
+    assert eca._npc_voice_lines("Corren", blocks) == []
+
+
+def test_voice_lines_straight_single_quote_possessive_not_captured():
+    """A straight apostrophe (possessive/contraction) is NOT a quote delimiter, so a block with no
+    real double/curly-quoted speech yields nothing — 'Kervan's hand ... doesn't' is not a line."""
+    blocks = ["Kervan's hand is still out, and he doesn't look away, Kervan says nothing."]
+    assert eca._npc_voice_lines("Kervan", blocks) == []
+
+
+def test_voice_lines_silent_npc_returns_empty():
+    """A silent NPC (never speaks a quoted line) returns [] — a valid, graceful artifact."""
+    assert eca._npc_voice_lines("Ghost", ["The room is empty and cold."]) == []
+    assert eca._npc_voice_lines("", ['"hello," someone says.']) == []
+
+
+# ── quest wrap-up mining (HV2 #1329) ─────────────────────────────────────────────────────────
+def test_quest_wrap_up_captures_resolution_beat():
+    """A closing beat that names the quest AND carries resolution language is captured."""
+    blocks = [
+        "The party sets out toward the Lower City.",  # mid-quest mention, no resolution cue
+        "In the end, The Price of Silence is resolved: Oln's debt is repaid and the ledger burned.",
+    ]
+    out = eca._quest_wrap_up("The Price of Silence", blocks)
+    assert out == ["In the end, The Price of Silence is resolved: Oln's debt is repaid and the ledger burned."]
+
+
+def test_quest_wrap_up_ignores_mid_quest_mention_without_resolution_cue():
+    blocks = ["Bresser Oln is somewhere in the Lower City, the Price of Silence still open."]
+    assert eca._quest_wrap_up("The Price of Silence", blocks) == []
+
+
+def test_quest_wrap_up_empty_when_never_resolved():
+    """A quest with no closing beats returns [] (graceful) — not every quest wraps up on-screen."""
+    assert eca._quest_wrap_up("The Four Hundred", ["Rumours of the Four Hundred drift through the market."]) == []
+    assert eca._quest_wrap_up("", ["anything resolved here"]) == []
+
+
 # ── combat scanner edge cases (dangling / consecutive / rejected / string-arg) ─────────────────
 def _tool_use(name: str, inp: dict, tid: str = "") -> dict:
     block = {"type": "tool_use", "name": name, "input": inp}
@@ -548,3 +651,116 @@ def test_rerun_clears_stale_artifacts(golden):
     eca.main(args)
     remaining = [json.loads(p.read_text())["payload"]["id"] for p in quests_dir.glob("*.json")]
     assert remaining == ["quest-wagon"]  # orphaned quest-temp.json cleared
+
+
+# ── quality pass 2 (#1386 item 5b): sentence-boundary truncation ───────────────────────────────
+def test_truncate_at_sentence_short_text_unchanged():
+    assert eca._truncate_at_sentence("A short line.") == "A short line."
+
+
+def test_truncate_at_sentence_cuts_at_boundary_not_mid_word():
+    """The old blunt rule (`text[:399] + '…'`) clipped mid-word; the new rule finishes the
+    sentence in progress at the soft limit instead of chopping through it."""
+    lead = "Filler. " * 60  # well past the 400-char soft limit, all clean sentence boundaries
+    text = lead + "The blade goes where you send it, clean and final. He drops the way a sack drops."
+    out = eca._truncate_at_sentence(text, soft_limit=400, hard_limit=640)
+    assert not out.endswith("…")
+    assert out.endswith(".")
+    # never chopped inside a word: the char right after the returned prefix (if any) is
+    # whitespace, not a letter continuing a word.
+    assert text[len(out):len(out) + 1] in ("", " ")
+
+
+def test_truncate_at_sentence_no_boundary_falls_back_to_blunt_ellipsis():
+    """Unpunctuated text with no sentence boundary anywhere in the window still gets bounded."""
+    text = "word " * 200  # no . ! ? … anywhere
+    out = eca._truncate_at_sentence(text, soft_limit=400, hard_limit=640)
+    assert out.endswith("…")
+    assert len(out) <= 400
+
+
+def test_truncate_at_sentence_reused_by_wrap_up_and_dialogue_snippets():
+    """The narration-mining functions route long text through the shared helper — regression
+    guard against a future edit reintroducing a one-off blunt chop in any of them."""
+    long_body = ("Winter has its teeth in the city tonight, and the debt collector walks in low "
+                 "and fast, shoulder into the door before it finishes swinging. " * 6)
+    blocks = [f"In the end, Wrap Test is resolved: {long_body}"]
+    out = eca._quest_wrap_up("Wrap Test", blocks)
+    assert len(out) == 1
+    assert out[0][-1] in ".!?…\""  # never a mid-word chop with no terminal punctuation
+
+    dlg_blocks = [f"Corvin Dresh says: {long_body}"]
+    dlg = eca._npc_dialogue_snippets("Corvin Dresh", dlg_blocks)
+    assert len(dlg) == 1
+    assert dlg[0][-1] in ".!?…\""
+
+
+# ── quality pass 2 (#1386 item 5b): giver / location grounding ─────────────────────────────────
+def test_extract_quests_resolves_giver_and_location_when_recorded():
+    """Quest.giver_id / Quest.location_id (recorded by the engine's add_quest, server.py) are
+    resolved to {id, name} and surfaced on the payload — data the engine already tracks that the
+    pre-pass-2 extractor dropped on the floor entirely."""
+    campaign = {
+        "id": "camp_x",
+        "world_id": "test-world",
+        "quests": {
+            "q1": {
+                "id": "q1", "title": "The Four Hundred", "description": "", "objectives": [],
+                "completed_objectives": [], "status": "active", "evolves_to": "",
+                "callback_in_days": 0, "giver_id": "char-davan", "location_id": "loc-sunkbell",
+            }
+        },
+        "consequences": [],
+        "characters": {"char-davan": {"name": "Davan Relle"}},
+        "locations": {"loc-sunkbell": {"name": "The Sunk Bell"}},
+    }
+    out = eca.extract_quests(campaign, lambda: {}, "test-world", [])
+    payload = out[0]["payload"]
+    assert payload["giver"] == {"id": "char-davan", "name": "Davan Relle"}
+    assert payload["location"] == {"id": "loc-sunkbell", "name": "The Sunk Bell"}
+
+
+def test_extract_quests_omits_giver_and_location_when_not_recorded():
+    """A quest whose engine record never set giver_id/location_id (some DMs call add_quest
+    without them) omits both keys entirely — no None placeholder, no invented linkage — so an
+    old snapshot round-trips to the exact payload shape it produced before this change."""
+    campaign = {
+        "id": "camp_x",
+        "world_id": "test-world",
+        "quests": {
+            "q1": {
+                "id": "q1", "title": "No Giver", "description": "", "objectives": [],
+                "completed_objectives": [], "status": "active", "evolves_to": "",
+                "callback_in_days": 0,
+            }
+        },
+        "consequences": [],
+        "characters": {},
+        "locations": {},
+    }
+    out = eca.extract_quests(campaign, lambda: {}, "test-world", [])
+    payload = out[0]["payload"]
+    assert "giver" not in payload
+    assert "location" not in payload
+
+
+def test_extract_quests_giver_falls_back_to_id_when_character_unresolvable():
+    """A giver_id that doesn't resolve to a known character (stale ref) falls back to the raw id
+    rather than raising or silently dropping the field — mirrors the encounter composition
+    resolver's `characters.get(i, {}).get('name', i)` fallback pattern used elsewhere."""
+    campaign = {
+        "id": "camp_x",
+        "world_id": "test-world",
+        "quests": {
+            "q1": {
+                "id": "q1", "title": "Stale Ref", "description": "", "objectives": [],
+                "completed_objectives": [], "status": "active", "evolves_to": "",
+                "callback_in_days": 0, "giver_id": "char-ghost",
+            }
+        },
+        "consequences": [],
+        "characters": {},
+        "locations": {},
+    }
+    out = eca.extract_quests(campaign, lambda: {}, "test-world", [])
+    assert out[0]["payload"]["giver"] == {"id": "char-ghost", "name": "char-ghost"}

@@ -1,0 +1,16 @@
+{
+  "_doc": "The ADVENTURE-eval ruler (A-series A-T). This file is the SOLE content that fences what an adventure aggregate score MEANS: the per-dimension weakest-link thresholds + the named next-lever each weakest dimension routes to. Hashed by scoring_config_version.adventure_config_version() into an av_ family (its OWN hash namespace, per HV1's rule) — NEVER folded into SCORING_CONFIG_FILES, which would silently re-version the sc_/lc_ engine-duo rulers. Edit this and every FUTURE adventure aggregate re-versions on its own axis; the engine-duo + artifact trends stay byte-identical.",
+  "beat_budget": 20,
+  "stage_gap_outlier_beats": 5,
+  "dead_beat_stuck_threshold": 2,
+  "pass_completion_rate": 0.5,
+  "dimensions": {
+    "completion": {"lever": "arc-completion: tighten the DM arc addendum, verify the giver->crypt->boss->return seam is unblocked, or raise the beat budget"},
+    "pace": {"lever": "pace: the arc drags to completion; sharpen the per-beat objective nudges that push toward the crypt and the boss"},
+    "stuck": {"lever": "stuck: dead beats / stage-gap stalls; investigate the blocked stage (a travel or combat seam the party could not cross)"},
+    "engagement": {"lever": "engagement: authored systems left inert; wire the dead system(s) into the arc so the loop exercises them"},
+    "story": {"lever": "story-craft: the Tolkien narration lens is weakest; raise the DM's scene-craft bar"},
+    "mechanics": {"lever": "mechanics: the 5e-fidelity / mechanical tool-usage lens is weakest; tighten DM tool discipline"},
+    "behavioral": {"lever": "behavioral: the deterministic gate is RED on runs; fix the structural break before chasing quality"}
+  }
+}

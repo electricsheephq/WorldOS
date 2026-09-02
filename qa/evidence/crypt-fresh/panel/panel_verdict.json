@@ -1,0 +1,52 @@
+{
+ "panel_id": "panel-visual-crypt-fresh-neutral-anchor-20260715",
+ "protocol": "FRESH-CRYPT neutral-anchor 5-scorer blind panel. Blind slots A/B/C = {incumbent, real-art control, candidate} shuffled (seed 1546); camp plate = disclosed non-competing house ref. Control = poe2_ruins_brazier_integration_01 (registered real-art, band [6.8,9.2], tag ruins_warm_key \u2014 the closest room-match to a firelit stone crypt). Delta-anchored: an absolute number is not a quality verdict; the control's in-band landing is what makes the result citable.",
+ "scale": "0-10 visual-critic, delta-anchored two-tier ladder",
+ "blind_mapping": {
+  "A": "incumbent",
+  "B": "control",
+  "C": "candidate"
+ },
+ "per_scorer": {
+  "A_incumbent": {
+   "S1": 8.0,
+   "S2": 8.0,
+   "S3": 7.5,
+   "S4": 8.0,
+   "S5": 7.5
+  },
+  "B_control": {
+   "S1": 8.0,
+   "S2": 7.5,
+   "S3": 8.0,
+   "S4": 8.0,
+   "S5": 8.0
+  },
+  "C_candidate": {
+   "S1": 7.0,
+   "S2": 7.5,
+   "S3": 7.0,
+   "S4": 7.5,
+   "S5": 7.0
+  }
+ },
+ "medians": {
+  "candidate": 7.0,
+  "incumbent": 8.0,
+  "control": 8.0
+ },
+ "control_band": [
+  6.8,
+  9.2
+ ],
+ "control_in_band": true,
+ "delta_candidate_minus_incumbent": -1.0,
+ "delta_candidate_minus_control": -1.0,
+ "gate": {
+  "parity_vs_incumbent(|d|<=1.5)": true,
+  "delta_vs_control(>=-1.2)": true,
+  "control_in_band": true,
+  "candidate>=7.0": true
+ },
+ "verdict": "ADOPT"
+}

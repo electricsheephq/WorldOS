@@ -1,0 +1,56 @@
+{
+  "artifact_id": "room_crypt_fresh_neutralanchor_20260715",
+  "class": "room",
+  "curation_note": null,
+  "license": "proprietary",
+  "promoted_at": "2026-07-14T22:05:19+00:00",
+  "provenance": {
+    "run_id": null,
+    "sha": null,
+    "source_path": "qa/evidence/crypt-fresh/crypt_fresh_visual_gate_panel.json",
+    "world": "worldos"
+  },
+  "reuse_count": 0,
+  "room_ref": {
+    "asset_ids": [
+      "asset_sTSiKW8FyEUhLWeeiygqM78e",
+      "asset_zPi3GpbhkiMGYV8V2iwP5G6M",
+      "asset_cvty83XpcxxmckTZNAPhgjE9"
+    ],
+    "recipe_key": "crypt_fresh"
+  },
+  "scores": {
+    "ac_ruler": null,
+    "dims": {
+      "candidate_median": 7.0,
+      "control_median": 8.0,
+      "delta_candidate_minus_control": -1.0,
+      "scores": {
+        "A": [
+          8.0,
+          8.0,
+          7.5,
+          8.0,
+          7.5
+        ],
+        "B": [
+          8.0,
+          7.5,
+          8.0,
+          8.0,
+          8.0
+        ],
+        "C": [
+          7.0,
+          7.5,
+          7.0,
+          7.5,
+          7.0
+        ]
+      }
+    },
+    "overall": 7.0,
+    "panel_id": "panel-visual-crypt-fresh-neutral-anchor-20260715"
+  },
+  "tier": "canonical-candidate"
+}

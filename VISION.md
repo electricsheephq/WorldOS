@@ -50,6 +50,8 @@ a rung toward that, and every rung must be a real, playable product on its own.
 
 ## Operating principle: DECISION-BY-EVAL
 
+- **Every run is a schema'd loop** (owner-ratified 2026-07-08): each run type — play QA, render, panel, generation, extraction, promotion — closes HEALTH → EVIDENCE → SCORE → VERDICT → POINTER (the Universal Run Contract, docs/OPERATIONS.md) and lives as a row in docs/RUNBOOK-INDEX.md. Processes evolve by editing their row, never by ad-hoc drift.
+
 When a load-bearing decision lacks an instrument, **building the instrument IS the first step** —
 never decide by vibes what can be decided by measurement. This is how the experiment self-drives:
 every sprint names its gate as a runnable eval; every library promotion is eval-gated
@@ -217,14 +219,38 @@ room transition). One authored `scene_grid` per unit is the SINGLE source of bot
 its pathing (props are obstacles by construction). See `CANONICAL.md` "Occlusion model" +
 `docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md`.
 
+**★ GEOMETRY IS GROUND TRUTH (load-bearing principle, 2026-07-16 — the reframe that makes scale
+tractable).** Collision + occlusion are driven ENTIRELY by the geometry — the `scene_grid` + the boxes
+sidecar — which is **true by construction**. The painted plate is **COSMETIC**: it only has to look
+*coherent* with that geometry, never be pixel-exact to it (flux/Gemini WILL nudge a door, invent a
+gallery, move a prop — and that's fine). So "walkability" is never "make the paint match the geometry";
+it is (1) project the geometry through the **same camera** the plate was painted at (so actors +
+occluders land on the painted masses), and (2) reconcile only the **cosmetic** seams a player reads as
+wrong (a door glow/label + cross-door landing that sits on the painted arch; a painted walkable-looking
+space that has no backing grid cell). **Geometry wins every collision dispute; paint is set-dressing.**
+This is why a room's walkability is *generated-true* and only needs the automated walk-test to catch
+cosmetic/seed regressions — not per-room hand-tuning of collision against paint. It is what makes the
+20→50→200-room library tractable.
+
 ### The graphics scorecard (BACKDROP-BINDING)
 
-The graphics gate is **split into two tiers**, and the **backdrop tier is the binding one** — it is
-the reusable engine piece (a room's plate + its pathing is what every scene is built on), so it is
-held to the bar *now*. The actor/effect tier rides "default-if-missing" and is **placeholder-OK**
-until the polish phase. Lens names (`L1`–`L7`) are the `visual-critic` panel lenses, logged to
-`qa/scores_db.py` (`surface="visual"`); the deterministic checks are `qa/visual_pregate.py`.
+The graphics gate is **split into tiers**, and TWO of them are binding: **WALKABILITY** (can you
+actually play the room) and the **BACKDROP** craft tier (does it look PoE2). **These are DIFFERENT
+gates and BOTH are hard floors — the blind beauty panel is BLIND to whether the room is walkable.**
+The actor/effect tier rides "default-if-missing" and is **placeholder-OK** until the polish phase.
+Lens names (`L1`–`L7`) are the `visual-critic` panel lenses, logged to `qa/scores_db.py`
+(`surface="visual"`); the deterministic checks are `qa/visual_pregate.py`.
 
+- **★ TIER-0 — WALKABILITY (binding; AUTOMATED; the hardest floor — a room does NOT ship unwalkable):**
+  A room is not done until the automated walk-test (`qa/walk_test.py`) is **GREEN**. It drives the live
+  player cell-by-cell over the QA channel and asserts, with NO human: (a) the character lands on the
+  clicked cell's plate-correct screen position (actor projection matches the painted plate), (b)
+  impassable cells (walls/props) REJECT the move, (c) each door_cell sits on the painted arch and
+  cross_door lands on the reciprocal door, (d) tall occluders mask the character behind them, (e) no
+  painted walkable-looking space lacks a backing grid cell. **Beauty ≠ walkable** — we shipped 3
+  panel-8+ rooms on 2026-07-15 that were entirely unwalkable because this gate did not exist as
+  automation. It exists now; walk-green is the ship gate (`qa/room_pipeline.py` exits non-zero without
+  it). See the Room Readiness Pipeline below + epic #1581.
 - **TIER-1 — BACKDROP (binding; the foundation; ALL must hold):**
   > **★ GATE RECALIBRATED 2026-07-02 (the positive-control finding).** Absolute panel scores were
   > proven un-citable: blind on our own instrument, REAL shipped PoE plates scored 3.0–4.6 and real
@@ -273,6 +299,24 @@ until the polish phase. Lens names (`L1`–`L7`) are the `visual-critic` panel l
 engine piece — so they clear the bar *before* a scene is built on them. Actors and effects are swapped
 through the proven pipeline (the registry-by-slot invariant), so they are legitimately placeholder
 until the polish phase. This is exactly the Pillar-4 reconciliation made measurable.
+
+### The Room Readiness Pipeline (how rooms are made — self-verifying, compaction-proof)
+
+A room is authored + verified by ONE resumable command, `qa/room_pipeline.py --room <id>`, that chains
+every gate: generate-geometry → design-gate → `build_room_unified` (greybox + depth + boxes sidecar) →
+`qa/paint_room.py` (the pinned flux-depth-CN → Gemini painter) → **BEAUTY gate** (the blind control-
+anchored panel) → **WALKABILITY gate** (`qa/walk_test.py`) → adopt (`promote.py` + registry) → report.
+Each stage writes durable evidence + a stage marker; the command exits **non-zero unless BOTH the beauty
+panel AND the walk-test are green** — that exit code, not a human "ship it", IS the gate. The pipeline
+is hand-off-able to a sub-agent or run by the engine itself, which is what makes hands-off iteration
+toward the 20→50→200-room library real. Full runbook: `docs/ROOM-PIPELINE-RUNBOOK.md`; epic #1581.
+
+**★ RESUME PROTOCOL (any cold start / after compaction — read in this order so work survives context
+loss):** (1) epic #1581 + its OPEN sub-issues (the queue) → (2) this section (the doctrine) → (3)
+`docs/ROOM-PIPELINE-RUNBOOK.md` (the executable process) → (4) the active plan's STATE block → then run
+`qa/room_pipeline.py --resume`. The GOAL, QUEUE, PROCESS, and STATE live in the repo + GitHub — never
+only in an agent's head. This is the fix for our #1 diagnosed failure: a process that lived in context
+died at compaction and we regressed a whole feature.
 
 ## How we build — the dev + decision loop
 

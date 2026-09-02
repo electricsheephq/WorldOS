@@ -140,3 +140,88 @@
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | sweep1 | 2026-05-31 | c6480a3 | ~6.0 | PASS | PASS(5/5) | 6.0 avg / 1 gave-up | 2 critical / console unmeasured | (duo) | (duo) | (pend) | (pend) | unmeasured | true | **INCOMPLETE / PRE-HARDENING, not release evidence.** G3 sat 6.0 + narrative gave-up (LATENCY); G2 optimizer 2 crit (char-sheet depth: spell DC + class features). G1 arc-complete 5/5, native PASS, palette live — Phase-1 GUI fixes verified, but behavioral/UI/image/console denominators were incomplete. |
 | gate-f5500ac-partial | 2026-05-31 | f5500ac | 2.7 | PASS | PASS(1 scored) | 4.0 avg / 0 gave-up (newbie only) | 1 | 4.0 | 2.7 | RED | FAIL | 0% | false | **PARTIAL / HARNESS-CONTAMINATED, not a release verdict.** Only `newbie` wrote `score.json`; veteran/adversarial/narrative/optimizer lacked persona score artifacts after port/backend harness failures. Preserve as takeover evidence, but rerun with hardened RRI before judging release. |
+
+### 2026-09-02 — Panel CONTROL re-pinned IN-REPO (refresh, Track A step 6 prerequisite)
+- The PoE2 two-anchor control formerly lived only at `/Volumes/LEXAR/WorldOS-Unity-spike/refs/…` (drive gone with the
+  2026-08 machine migration). Recovered from the Unity repo's `refs/` and pinned OFF-REPO (a frame of a shipped
+  commercial game is never committed) at `/Users/m1/Codex/worldos-refs/poe2_ruins_brazier_integration_01.jpg` —
+  sha256 `69fbb979a00f0d59685847979af74b9fa882a6f7062c96456fe64a479e26e7fb` (855,066 B). PANEL-PROTOCOL.md and
+  `qa/visual_controls_identity.json` (all 9 registered controls, same directory) now point there.
+- Rule unchanged: every panel batch carries this control + ≥1 SHIPPED plate as a disguised calibration reference
+  (shop_v1 / tavern_snug c3 / kit crypt+tavern); verdicts are blind-adjudicated. player_cert thresholds were calibrated
+  on LEXAR-era frames — re-check against this pin before the first post-migration beauty verdict.
+
+### 2026-09-02 — §9 DEMO COMPLETION gates: the honest G1-G4 table (refresh charter #1702, Track A step 6, first pass)
+Builds under test: **b4ee4f2e…** (local Unity 6000.5.6f1, 05:02Z, main 47203674/#1705 head; walk/cert measured on it) and
+**07a997e9…** (06:02Z rebuild after the packaged-data sync; PINS GREEN; re-gate pending). Engine `main` b13fdaab, Unity repo
+b016a7db. Fixtures: `registered_world_v1` (crypt/tavern/throne, no monsters) for the room gates + cert; `adventure_demo_v1`
+for the arc. Evidence root: `session-notes/2026-09-02/worldos-refresh/artifacts/` (owner-reviewed dir).
+
+| Gate | Status today | Measured | Does NOT prove |
+|---|---|---|---|
+| **G1** certified gates on an installed build with build identity | **INTERIM-GREEN on b4ee4f2e; re-gate on 07a997e9 pending** | walk_test crypt (kit v1 plate) GREEN: camera 11.7851 exact · reachable 113/0 · impassable 77/0 · doors 2/0 · path 113/0 · visual 4/0 (6-22 px) · orphans 0 (`walk-crypt-rw/`). walk_test tavern (kit v2 plate) GREEN: 10.5224 · 90/0 · 62/0 · 2/0 · 90/0 · 4/0 (7-25 px) (`walk-tavern/`). player_cert --live: spawn_coherence_open GREEN · silhouette_behind_occluder GREEN (0.274) · silhouette_absent_when_visible GREEN (tint 0.0) · cast_renders_full_figure ERROR = harness (no foe in the fixture). Build identity = INTERIM (build-report + player sha + repo heads in `build_identity_interim.txt`). **Packaged-pin check on b4ee4f2e = RED**: the app carried `tavern_kit_v1` (deleted table) + the pre-kit chunky sidecars because `EnsurePackaged` sources the Unity project ROOT; root synced, rebuilt → **PINS GREEN on 07a997e9** (`pins_rebuild.txt`). | Not an installed OWNER build; the stamp-diff assertion (#1651) is not wired, so identity is provenance-only; walkability is engine-side, so the stale sidecars did not touch walk verdicts but DID drive the cyan actor ghosts seen in frames; roster-complete cert (#1651) absent; the per-room gates were run with the sandbox player fullscreen (rig fix in flight). |
+| **G2** arc-duo text eval, N=3 blind-adjudicated | **N=1 valid, RUNNING toward 3** | `adv_reboot1`: behavioral GREEN (5 WARNs), combat closure asserts PASS (#1645 holds), quest ACTIVE→**FAILED** at beat 14 (PC downed in the crypt fight — a legitimate loss, not a harness fault). `adv_reboot2`: harness abort (expired CLI OAuth) — not a run. `adv_reboot3` running 06:15Z; `adv_reboot4` follows (solo tenant). | No citable verdict below N=3; July's 3/3 completions came from a different DM/engine state — a FAILED run at N=1 is a signal to adjudicate, not a regression claim. |
+| **G3** walked arc over the full route | **NAV-GREEN / VQA-ERROR (first ever run)** | `adventure_walk`: 6/6 stages ARRIVED camp→tavern_snug→camp→crypt→throne_hall→camp, dead clicks 1, stuck 0, 105 s (b4ee4f2e); every stage `vqa_scorer_error` (the scorer is `claude -p`; credential expired at the time — fixed since). | The route ends at camp: the return-to-giver leg (Maera, tavern_snug) is not walked (#1709); VQA unscored; frames were eyeballed by the orchestrator only (kit crypt renders; tavern_snug/crypt showed cyan actor ghosts = chunky-sidecar class, since re-sourced). |
+| **G4** owner playthrough | **PENDING** | No owner install yet; the demo path is a local ad-hoc-signed build (no notarization). Install after the rig fix + re-gates on 07a997e9 + #1677/#1522 client fixes. | — |
+
+Instruments added this pass: packaged-pin check (`step56_measure.sh pins` → repo tool in flight, #1651 family); the adventure-fixture
+crypt gate RED (110/3 · visual 3/1) was fully explained by goblin-occupied cells → walk_test occupied-cell handling filed (#1709 item 6).
+Standing rule: PIXELS BEFORE CREDIT — the 3-tables-vs-4 eyeball is what exposed the stale packaged data under a green build.
+
+### 2026-09-02 — §9 G2 arc-duo N=3: **FAIL** (blind-adjudicated) — completion 0/3
+Runs (all `dm=opus actor=sonnet`, 15-beat budget, fixture `adventure_demo_v1`): `adv_reboot1` quest **FAILED** @14 (PC downed in the
+crypt fight; 1/4 objectives) · `adv_reboot3` quest active @15, `boss_dead`@15, no return leg (3/4) · `adv_reboot4` quest active @15,
+last stamp `entered_dungeon`@2, no boss kill (1/4; WARN `action_economy_engaged`: start_combat fired, 0 attacks consumed; WARN
+`combat_not_left_active`; 5 engine-guard rejections). Behavioral GREEN on every run. `adv_reboot2` = harness abort (expired CLI
+credential), excluded. Aggregate `adv_agg_n3_20260902` (scores.db, surface=adventure): completion 0.00 · pace 0.00 · stuck 1.00 ·
+lenses n/a. Bar: N≥3 AND completion ≥ 0.67 AND behavioral GREEN → **FAIL by the full margin** (July's `adv_agg_n3_20260722` was 3/3).
+Weakest link = **completion** (the fight consumes the budget or stalls). Instrument flags from the adjudicator: the aggregate's
+`green_rate` / `stages_reached` / lens fields are empty although the per-run logs carry them (aggregator gap, #1709 family); a
+`quest_completed` stamp is emitted with `status:failed` (labeling trap, #1670 family). Root cause under investigation (transcripts);
+charter order to be re-ranked on it. Evidence: `session-notes/2026-09-02/worldos-refresh/artifacts/adventure_eval_n3*.json`,
+`qa/transcripts/adv_reboot{1,3,4}.*`.
+
+### 2026-09-02 — §9 G1 re-measured on the rebuilt app `07a997e9…` through the WINDOWED sandbox (#1717): GREEN gates, PINS GREEN
+Build: Unity 6000.5.6f1 local, 06:02Z, Unity repo b016a7db (project-root data synced), engine main 0c2a0ddf; `qa/packaged_pins.py` GREEN
+(8 rooms + effects_registry, `repo_sha` clean). Sandbox: windowed launcher (1280×700, `AXFullScreen=false`, owner plist restored on
+teardown), fixture `registered_world_v1`, serving pids verified. Instruments: walk_test crypt GREEN — camera 11.7851 exact · reachable
+113/0 · impassable 77/0 · doors 2/0 · path 113/0 · visual 4/0 (`walk-crypt-rw/`); door crypt(7,0)→tavern crossed over the QA channel;
+walk_test tavern (kit v2 plate) GREEN — 10.5224 · 90/0 · 62/0 · 2/0 · 90/0 · 4/0 (`walk-tavern/`); player_cert --live: spawn_coherence_open
+GREEN · silhouette_behind_occluder GREEN (0.2817) · silhouette_absent_when_visible GREEN (tint 0.0 @ open cell) · cast_renders_full_figure
+ERROR (no foe in the fixture — harness, not a verdict). **Eyeball (orchestrator):** tavern frame shows all FOUR tables (the v1/deleted-table
+regression is gone); crypt actor at (7,8) renders normally (the earlier full-cyan ghost was the pre-kit `crypt_v36` sidecar — fixed by the
+kit-derived one); residual: the tavern actor at the west-wall cell beside the barrels still tints — a cell-specific occluder-box question
+(parapet/barrel box at the cutaway wall), filed as an observation. G1 stays INTERIM-GREEN: build identity is provenance-only (#1651), no
+owner install yet, roster-complete cert absent; sha-pinned certs for kit crypt/tavern are the next mint. Evidence root:
+`session-notes/2026-09-02/worldos-refresh/artifacts/` (`pins_rebuild.txt`, `rig/`, `walk-crypt-rw/`, `walk-tavern/`, `player_cert/`).
+
+### 2026-09-02 — G2 correction + root cause (supersedes the numbers in the row above; the FAIL verdict stands)
+The first aggregate (`adv_agg_n3_20260902`) was run with RELATIVE run prefixes from the wrong cwd: `adventure_eval` read nothing and
+reported vacuous `completion 0.00 / stuck 1.00 / lenses n/a` (the adjudicator's "aggregate fields empty" flag was the tell). Re-run with
+ABSOLUTE prefixes → **`adv_agg_n3v2_20260902`**: completion 0.00 · pace 0.00 · stuck 0.33 · engagement 1.00 · story 0.86 (4.3/5) ·
+mechanics 0.73 (3.7) · angrydm 3.6 · behavioral 1.00 (GREEN ×3). Weakest link = completion; **G2 = FAIL** (per-run facts unchanged).
+**Root cause (transcript forensics, `artifacts/at-rootcause/`):** the eval harness is byte-identical to the July 3/3 run; the `opus`
+alias now resolves to `claude-opus-5` (July: `claude-opus-4-8`, CLI 2.1.186→2.1.220, +18 MCP tools). The DM drove 37 resolved `attack`
+calls in reboot4 — combat works — but every 2026-09-02 run INVENTS off-seed foes (hobgoblin lieutenant, zombie, extra goblin) and stages
+a second/third fight at the midpoint reversal, overrunning a knife-edge 15-beat budget (July landed at beat 14 with one beat of slack).
+The `action_economy_engaged` / `combat_not_left_active` WARNs are end-state snapshot artifacts, not the defect. Candidate causes:
+DM-model swap (~65%) vs structural beat budget (~25%); discriminating control run `adv_ctl_o48` (DM pinned to `claude-opus-4-8`, all
+else equal) in flight. Instrument gaps filed on #1709: `adventure_eval` must ERROR on run prefixes that resolve to no files; the
+behavioral checker reads only the last combat snapshot; `quest_completed` is stamped on a FAILED quest.
+
+### 2026-09-02 — RULER CHANGE (predeclared before the re-measurement): arc-duo measured budget 15 → 20 beats
+
+Evidence: `adv_ctl_o48` (DM pinned to `claude-opus-4-8`, 15 beats) removed the invented fights but still ended at `boss_dead@15` with
+42 resolved attacks; `adv_ctl_o48_b20` (same DM, 20 beats) COMPLETED at beat 19 (`boss_dead@15`, `reward_received@19`), behavioral GREEN.
+July's 3/3 completions landed at beats 14 / 15 / 13 (`live4` / `live5` / `live6`) under the SAME 15-beat budget — 1 / 0 / 2 beats
+of slack, i.e. one of the three finished EXACTLY on the budget with none (the budget was already knife-edge in July, not comfortable).
+Decision: the measured G2 eval runs at 20 beats from now; the bar is unchanged
+(N≥3, completion ≥ 0.67, behavioral GREEN); every row records the DM and player model ids (`opus`/`sonnet` aliases drift — Opus 5 today).
+The N=3 re-run at 20 beats in the shipping configuration (default `opus` alias) is the next G2 measurement; runs before this note
+(`adv_reboot*`) stay recorded at 15 beats.
+Ledger: the two control runs are recorded in `qa/scores_ledger.md` as **`adv_ctl_o48_20260902`** (scored under its OWN 15-beat budget
+via `--beat-budget 15` — completion 0.00, behavioral GREEN, FAIL) and **`adv_ctl_o48_b20_20260902`** (the 20-beat ruler — completion
+1.00 at beat 19, behavioral GREEN, PASS); both rows name the resolved DM id `claude-opus-4-8` and the budget they were scored under in
+their methodology, and their trace/summary evidence is in `qa/evidence/adventure-control-20260902/`.
+The EXECUTABLE ruler now matches this note (#1722 changed only the prose): `qa/adventure_eval_config.json` `beat_budget` = 20 (adventure
+ruler `av_c3f84a148b70` → `av_a9536e9af875`) and `qa/run_adventure.sh` defaults to 20 beats.

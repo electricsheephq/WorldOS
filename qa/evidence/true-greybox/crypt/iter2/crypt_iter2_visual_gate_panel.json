@@ -1,0 +1,130 @@
+{
+  "room": "crypt_truegrey_iter2",
+  "panel_id": "panel-visual-panel-adopt-crypt-truegrey-iter2-20260711",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet, independent subagents), visual-critic CALIBRATION-CONTROL PROTOCOL. Candidate = TRUE-GREYBOX crypt iteration-2 painterly plate (correct-scale geometry, carved-relief-density style pass over the SAME registered base). Blind images: A=candidate (iter2 winner 'f'), B=incumbent house anchor (crypt_armb_iter3, the OLD pre-true-greybox adopted plate), C=disguised registered real-art control.",
+  "scale": "0-10 visual-critic (delta-anchored two-tier ladder; absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/true-greybox/crypt/iter2/crypt_iter2_candidate_f_SELECTED.jpg",
+  "incumbent_image": "qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg",
+  "house_anchor": "qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate, band [6.8,9.2]) from qa/visual_controls_identity.json, disguised as blind image_1 in the panel packet (same control file reused from plateloop_crypt.json's panel.control).",
+  "pregate": {
+    "verdict": "FLAG",
+    "blocking": [
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.0499,
+          "lit_frac": 0.4114,
+          "median_L": 52.35
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=5.0% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=41.1% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=52.4 (band 0-15 PASS / 15-40 WARN) [FAIL]"
+      }
+    ],
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.2468,
+        "threshold": null,
+        "detail": "lit (mean 0.247, var 0.01522)"
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.0499,
+          "lit_frac": 0.4114,
+          "median_L": 52.35
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=5.0% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=41.1% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=52.4 (band 0-15 PASS / 15-40 WARN) [FAIL]"
+      },
+      {
+        "gate": "G5_motion_liveness",
+        "severity": "SKIPPED",
+        "metric": "reel",
+        "value": null,
+        "threshold": null,
+        "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+      }
+    ],
+    "summary": "PRE-GATE FLAG\n  [PASS    ] G1_frame_lit       mean_luminance=0.2468 :: lit (mean 0.247, var 0.01522)\n  [HIGH    ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.0499, 'lit_frac': 0.4114, 'median_L': 52.35} :: FAIL: plate is outside the PoE staging-law band \u2014 near_black=5.0% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=41.1% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=52.4 (band 0-15 PASS / 15-40 WARN) [FAIL]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+  },
+  "pregate_note": "G6_luma_staging_law FLAGs HIGH (stylistic gate, NOT a promotion hard floor per _VISUAL_HARD_FLOOR_GATES). G1_frame_lit PASSes -> the promotion hard floor (G1-G4) PASSes; G2-G4 N/A (backdrop-only plate, no actor sidecar).",
+  "scores": [
+    {
+      "scorer": 1,
+      "control": 9.0,
+      "candidate": 6.0,
+      "incumbent": 8.0
+    },
+    {
+      "scorer": 2,
+      "control": 9.0,
+      "candidate": 6.0,
+      "incumbent": 8.0
+    },
+    {
+      "scorer": 3,
+      "control": 9.0,
+      "candidate": 6.0,
+      "incumbent": 9.0
+    },
+    {
+      "scorer": 4,
+      "control": 9.0,
+      "candidate": 5.0,
+      "incumbent": 8.0
+    },
+    {
+      "scorer": 5,
+      "control": 9.0,
+      "candidate": 6.0,
+      "incumbent": 8.0
+    }
+  ],
+  "candidate_median": 6.0,
+  "control_median": 9.0,
+  "incumbent_median_this_panel": 8.0,
+  "delta_candidate_minus_control": -3.0,
+  "delta_incumbent_minus_control_this_panel": -1.0,
+  "house_style_votes": null,
+  "residual_defects": [
+    "5/5 scorers score the iteration-2 candidate a clear notch below both the incumbent and the control on stonework/prop-carving richness and background depth/narrative-dressing (cobwebs, wall sconce, dropped sword+shield, spilled coin, a stair sightline) that the incumbent carries.",
+    "delta -3.0 is BELOW the automated VIS_DELTA_ADOPT floor (-2.5) -> gate REJECTS. Iteration 2 improved composition fidelity (matches crypt_geometry.json's exact prop set, see iter2_findings.json) but did NOT close the ornamentation gap enough to clear the adoption bar in a full blind panel; the true-greybox geometry's simpler 3-prop room (2 pillar stubs + 1 sarcophagus, no stairs/archway/cobwebs) has structurally less surface area for carved-relief density than the incumbent's richer (but scale-drifted) old room.",
+    "HONEST VERDICT: crypt still trails after iteration 2 \u2014 needs one more iteration (richer per-prop carving detail on the EXISTING true-greybox props, or an authored geometry addendum adding cobweb/sconce/clutter decals) before it clears adoption. NOT adopted this lane."
+  ],
+  "iterations": 2
+}

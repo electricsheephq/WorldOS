@@ -1,0 +1,74 @@
+{
+  "verdict": "FLAG",
+  "blocking": [
+    {
+      "gate": "G6_luma_staging_law",
+      "severity": "HIGH",
+      "metric": "staging_law_stats",
+      "value": {
+        "near_black_frac": 0.4717,
+        "lit_frac": 0.1443,
+        "median_L": 28.29
+      },
+      "threshold": {
+        "near_black_pass": [
+          0.66,
+          0.85
+        ],
+        "lit_pass": [
+          0.02,
+          0.05
+        ],
+        "median_pass": [
+          0,
+          15
+        ]
+      },
+      "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=47.2% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=28.3 (band 0-15 PASS / 15-40 WARN) [WARN]"
+    }
+  ],
+  "gates": [
+    {
+      "gate": "G1_frame_lit",
+      "severity": "PASS",
+      "metric": "mean_luminance",
+      "value": 0.132,
+      "threshold": null,
+      "detail": "lit (mean 0.132, var 0.01509)"
+    },
+    {
+      "gate": "G6_luma_staging_law",
+      "severity": "HIGH",
+      "metric": "staging_law_stats",
+      "value": {
+        "near_black_frac": 0.4717,
+        "lit_frac": 0.1443,
+        "median_L": 28.29
+      },
+      "threshold": {
+        "near_black_pass": [
+          0.66,
+          0.85
+        ],
+        "lit_pass": [
+          0.02,
+          0.05
+        ],
+        "median_pass": [
+          0,
+          15
+        ]
+      },
+      "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=47.2% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=28.3 (band 0-15 PASS / 15-40 WARN) [WARN]"
+    },
+    {
+      "gate": "G5_motion_liveness",
+      "severity": "SKIPPED",
+      "metric": "reel",
+      "value": null,
+      "threshold": null,
+      "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+    }
+  ],
+  "summary": "PRE-GATE FLAG\n  [PASS    ] G1_frame_lit       mean_luminance=0.132 :: lit (mean 0.132, var 0.01509)\n  [HIGH    ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.4717, 'lit_frac': 0.1443, 'median_L': 28.29} :: FAIL: plate is outside the PoE staging-law band \u2014 near_black=47.2% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=28.3 (band 0-15 PASS / 15-40 WARN) [WARN]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+}

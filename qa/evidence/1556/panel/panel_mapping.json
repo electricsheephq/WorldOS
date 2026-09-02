@@ -1,0 +1,42 @@
+{
+  "lane": "#1556 STYLE-PASS BAKE-OFF v2 blind panel",
+  "n_scorers": 5,
+  "control_slot": "image_3",
+  "control_band": [
+    6.8,
+    9.2
+  ],
+  "anchor_slot": "image_5",
+  "mapping": {
+    "image_1": {
+      "arm": "MAI_2.5_Edit",
+      "model_id": "model_microsoft-mai-image-2-5-edit",
+      "src": "qa/evidence/1556/arms/arm3_mai25edit.png"
+    },
+    "image_2": {
+      "arm": "El_Diablo",
+      "model_id": "model_a2dvNsgst7PCnpiucRY7bEHW",
+      "src": "qa/evidence/1556/arms/arm7_eldiablo.png"
+    },
+    "image_3": {
+      "arm": "CONTROL_poe2_real",
+      "model_id": "real-art",
+      "src": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg",
+      "control": true,
+      "band": [
+        6.8,
+        9.2
+      ]
+    },
+    "image_4": {
+      "arm": "GPT-Image-2",
+      "model_id": "model_openai-gpt-image-2",
+      "src": "qa/evidence/1556/arms/arm2_gptimage2.png"
+    },
+    "image_5": {
+      "arm": "Gemini_3.1_ANCHOR",
+      "model_id": "model_google-gemini-3-1-flash",
+      "src": "qa/evidence/1556/arms/arm1_gemini31.png"
+    }
+  }
+}

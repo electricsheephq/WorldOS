@@ -30,8 +30,9 @@ from qa import app_smoke_scripted as smoke  # noqa: E402
 from qa.app_failure_buckets import APP_FAILURE_BUCKETS  # noqa: E402
 
 
-DEFAULT_OUTPUT_ROOT = Path("/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability")
-DEFAULT_ART_ROOT = Path("/Users/lume/WorldOS")
+DEFAULT_OUTPUT_ROOT = Path(os.environ.get("WORLDOS_HANDOFF_OUT",
+                                          str(Path.home() / "Codex/worldos-agent-grade-app-testability")))
+DEFAULT_ART_ROOT = Path(__file__).resolve().parents[1]
 
 
 def utc_stamp() -> str:

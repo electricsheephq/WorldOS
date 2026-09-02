@@ -109,10 +109,10 @@ RENDER  (Unity CL pipeline: Tools/WorldOS/CL/0 → step-4 Scenario → step-5 as
   │       carry its stats into ④ synthesis alongside the verdict.
   │
   ├─② REFERENCE PICK  choose 2-3 refs/ frames matching scene.kind, **PoE2-first** (PoE2 is the bar;
-  │     a BG2 ref is added ONLY for the tactical-readability cross-check, a Disco ref ONLY for the
-  │     dark-pocket/mood cross-check): tavern→poe2_tavern (+bg2ee_temple for L5, +disco_cafeteria
-  │     for dark-pocket); outdoor→poe2_cliff (+bg2ee_forest for L5); dark→poe2_market
-  │     (+disco_office for mood, +bg2ee_cavern for L5). See refs/INDEX.md "How to use in the critic."
+  │     a Disco ref is added ONLY for the dark-pocket/mood cross-check; NO BG2EE frame — all four are
+  │     excluded as UI-chrome-contaminated, see the reference list below): tavern→poe2_tavern
+  │     (+disco_cafeteria for dark-pocket); outdoor→poe2_cliff; dark→poe2_market (+disco_office for
+  │     mood). See refs/INDEX.md "How to use in the critic."
   │
   ├─③ PANEL  fan out 6-7 LENS SUBAGENTS in parallel (Agent tool, model opus, run_in_background ok;
   │     L7 MOTION runs only when a reel was rendered). Each gets: the render path (L7 gets the reel
@@ -180,7 +180,7 @@ to a sidecar JSON next to the capture. Run:
 
 ```bash
 python qa/visual_pregate.py --render /tmp/scene-r2.png \
-  --scenegrid /Volumes/LEXAR/WorldOS-Unity-spike/fixtures/tavern.scenegrid.json \
+  --scenegrid /Users/m1/worldos-unity/fixtures/tavern.scenegrid.json \
   --actors @/tmp/scene-r2.actors.json --json     # exit 2 == FLAG (CRITICAL/HIGH fired)
 ```
 
@@ -195,18 +195,20 @@ reproducible; treat it as a CI-style gate, not a hint.
 The critic does NOT score against a remembered look. It scores the GAP to 2-3 SPECIFIC reference
 frames it is shown alongside the render, with **PoE2 as the bar** and BG2/Disco only as the narrow
 cross-checks (see the §★ art-direction bar at the top). References live at
-`/Volumes/LEXAR/WorldOS-Unity-spike/refs/` (13 calibration frames, see `refs/INDEX.md`).
+`/Users/m1/Codex/worldos-refs/` (13 calibration frames, see `refs/INDEX.md`).
 Pick by scene kind (PoE2 ref ALWAYS leads; the bracketed cross-check ref is added only for its
 narrow lens):
 - **tavern / interior**: `poe2_tavern_interior_combat_02` (the bar: warm hearth key, cool room
   ambient at ~3:1, blue-violet shadows, grounded soft contact shadows on plank floor)
-  [+ `bg2ee_temple_combat_lighting_04` for L5 tactical-readability; + `disco_cafeteria_bar_interior_03`
-  for the dark-pocket/mood cross-check].
-- **outdoor / wilderness**: `poe2_cliff_party_brushwork_03` (the bar) [+ `bg2ee_forest_party_tactical_01`
-  for L5 tactical-readability].
+  [+ `disco_cafeteria_bar_interior_03` for the dark-pocket/mood cross-check].
+- **outdoor / wilderness**: `poe2_cliff_party_brushwork_03` (the bar) — no L5 cross-check until a UI-free
+  BG2 frame is re-sourced (see the exclusion note below).
 - **dark zone / cavern / dungeon**: `poe2_market_interior_lighting_04` (the bar: chroma surviving
-  into shadow) [+ `disco_office_interior_lighting_04` for the dark-pocket/mood cross-check;
-  + `bg2ee_cavern_darkzone_lighting_03` for L5 blocked-cells-in-shadow readability].
+  into shadow) [+ `disco_office_interior_lighting_04` for the dark-pocket/mood cross-check].
+- ⛔ **BG2EE frames are EXCLUDED from every panel**: all four (`fortress_02`, `forest_01`, `cavern_03`,
+  `temple_04`) are UI-chrome-contaminated gameplay screenshots (registry `excluded` block; 2026-07-08 panel +
+  2026-07-09 audit) and the builder refuses to register them. Re-source cropped, UI-free BG2 frames before
+  any L5 tactical-readability cross-check returns.
 - **best single light-coherence anchor** (for L3, any scene): `poe2_market_interior_lighting_04`
   (warm-key + cool-fill + colored deferred lights, the PoE2 deferred look).
 These are INTERNAL calibration references only (not redistributed/reproduced/served, never a
@@ -270,6 +272,19 @@ a positive control, so the ceiling was invisible. Rules:
 5. Complement with the FELT/product track: score the COMPOSED game frame (plate + actors + rings at viewport
    scale) with a "would a player screenshot and share this?" lens — the story-side felt-vs-scores lesson applies
    to graphics identically.
+6. **★ HOUSE-STYLE ANCHOR (MANDATORY since 2026-07-08, the camp/market cadence regression)** — a PoE2/BG2
+   control alone proves the plate beats a real-game bar; it does NOT prove the plate matches WorldOS's OWN
+   established painterly hand. `camp_clearing_night`/`market_square` (backdrop-cadence-20260708) each scored
+   6.0, "adopted," against only a disguised PoE2/BG2 control (market's was itself defective that round) plus a
+   remembered/cited number for the incumbent-class bar — no in-panel image comparison to the actual best-in-
+   class WorldOS plate was ever shown to scorers. Both plates read cartoonish/cel-shaded on later owner review.
+   Fix: **every new-room adoption/verdict panel MUST also embed the current best-in-class WorldOS plate for
+   that room family** (today: `crypt_dense_v1`, disclosed — not disguised — as "the house best"), with an
+   explicit scorer question: *"does the candidate read as the SAME painterly hand / hit the SAME craft bar as
+   this house-best reference, or does it look like a different, lesser pipeline?"* A candidate that beats its
+   PoE2 control but loses the house-style read is a REGRESSION, not an adoption, regardless of the absolute
+   number. This is distinct from L6 (gap to the PoE2 reference) — L6 checks the external bar, this checks
+   internal consistency across WorldOS's own generated rooms.
 
 The lenses (one subagent each):
 1. **L1 registration / cohesion** — does the painted floor register with the gameplay grid under
@@ -415,7 +430,7 @@ Filler-first: ONE hero + ONE monster animating well before any roster.
 - **gen-scene**: author/lay-out an iso scene (`*.scenegrid.json`) → painterly plate (the CL
   pipeline step-4 Scenario canny) → place a probe actor → pre-gate + panel → iterate.
 - **assemble-encounter**: scene + hero + monster + the engine combat grid → render a beat →
-  full panel → iterate. (The CL pipeline at `/Volumes/LEXAR/WorldOS-Unity-spike/CLOSED-LOOP-PIPELINE.md`
+  full panel → iterate. (The CL pipeline at `/Users/m1/worldos-unity/CLOSED-LOOP-PIPELINE.md`
   is the canonical Unity render path; step-6 there IS this critic gate.)
 
 ## Anti-patterns
@@ -432,8 +447,8 @@ Filler-first: ONE hero + ONE monster animating well before any roster.
   (G1-G4) is the only single-run hard gate.
 
 ## Cross-refs
-- References + per-dimension map: `/Volumes/LEXAR/WorldOS-Unity-spike/refs/INDEX.md`.
-- Render pipeline: `/Volumes/LEXAR/WorldOS-Unity-spike/CLOSED-LOOP-PIPELINE.md` (the CL menu + Scenario step).
+- References + per-dimension map: `/Users/m1/Codex/worldos-refs/INDEX.md`.
+- Render pipeline: `/Users/m1/worldos-unity/CLOSED-LOOP-PIPELINE.md` (the CL menu + Scenario step).
 - `qa/visual_pregate.py` (deterministic gates G1–G5; G5 = motion-liveness), `qa/motion_reel.py`
   (build the L7 motion reel contact-sheet + JSON sidecar — MODE A engine-state reel / MODE B
   timeline reel), `qa/visual_regression.py` (worse-vs-baseline, still + motion arms),

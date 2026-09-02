@@ -79,6 +79,36 @@ def _candidates_for_class(candidates_dir: Optional[str], cls: str) -> list[dict]
     return out
 
 
+def _band_staleness(artifact: dict, entry: dict) -> Optional[str]:
+    """Return a NAMED reason if this control's stamped band was derived under a different prompt
+    construction / scoring ruler than the current one, else None (#1380 guard).
+
+    The expected band in qa/artifact_controls_identity.json is derived under ONE prompt construction
+    (build_card output) and ONE artifact ruler. When the v2 extractor changed what real candidates
+    carry (`description`/`resolution`) while the control lagged, the control drifted below band with
+    NO signal WHY — a silent, mysterious below-band failure that blocked every quest promotion. This
+    guard turns that into a named error forever: if the control's card hash or the ruler no longer
+    matches what the band was calibrated against, the band is STALE and must be re-derived, and we
+    say so explicitly instead of reporting a bare below-band verdict. Legacy entries with neither
+    stamp are skipped (no false signal on un-migrated controls)."""
+    stamped_ph = entry.get("band_prompt_hash")
+    stamped_ruler = entry.get("band_ruler")
+    if not stamped_ph and not stamped_ruler:
+        return None
+    drifted = []
+    if stamped_ruler and stamped_ruler != artifact_config_version():
+        drifted.append(f"ruler {stamped_ruler}->{artifact_config_version()}")
+    if stamped_ph and stamped_ph != artifact_score.prompt_construction_hash(artifact):
+        drifted.append(f"prompt {stamped_ph}->{artifact_score.prompt_construction_hash(artifact)}")
+    if not drifted:
+        return None
+    return (
+        "band derived under a different prompt construction (" + "; ".join(drifted) + ") — the "
+        "control's field surface or the scoring ruler changed since calibration; the stamped band is "
+        "STALE. Re-derive it: python3 qa/build_artifact_controls.py then a fresh calibration panel."
+    )
+
+
 def _dryrun_card(artifact: dict, anchor: float) -> dict:
     """Deterministic stub scorecard at the anchor (offline wiring proof — no live scorer)."""
     _, schema_name = artifact_score.RUBRIC_FOR_CLASS[artifact["class"]]
@@ -118,16 +148,18 @@ def run_panel(
     results: list[dict] = []
     for artifact, is_control, anchor in pool:
         overalls: list[float] = []
+        dims_per_scorer: list[dict] = []
+        prov = artifact.get("provenance") or {}
         for scorer_i in range(panel_size):
             if dryrun:
                 card = _dryrun_card(artifact, float(anchor or identity.get("anchor", 4.0)))
             else:
                 card = artifact_score.score_artifact(artifact, budget=budget)
             overalls.append(float(card["overall"]))
+            dims_per_scorer.append(card.get("scores") or {})
             if write_db:
                 # One row per scorer; the panel_id + a scorer suffix keep artifact_id unique.
                 aid = f"{artifact['artifact_id']}#{panel_id}#s{scorer_i}"
-                prov = artifact.get("provenance") or {}
                 scores_db.add_artifact(
                     aid, db_path=db_path, **{"class": cls}, run_id=prov.get("run_id"),
                     world=artifact.get("world"), sha=prov.get("sha"),
@@ -137,21 +169,57 @@ def run_panel(
                     source_path=artifact["artifact_id"],
                 )
         med = statistics.median(overalls)
+        if write_db:
+            # #1355: ALSO write the panel's own aggregate under the BARE artifact_id — the
+            # median overall (matching this function's own control-band aggregation) plus the
+            # per-dimension median across the N `#s{n}` scorer rows. Without this row,
+            # tools/library/promote.py's bare-artifact_id lookup (_artifacts_by_id) never finds
+            # a panel-scored artifact and a promotion batch needs a manual bridge to connect
+            # them (found live in PR #1354). scores.db stays single-owner: the panel writer is
+            # the one place that both produces the per-scorer rows AND knows how to aggregate
+            # them, so this is additive bookkeeping on the same write path, not a second writer.
+            all_dim_keys = {k for d in dims_per_scorer for k in d}
+            median_dims = {
+                k: round(statistics.median([d[k] for d in dims_per_scorer if k in d]), 2)
+                for k in all_dim_keys
+            }
+            scores_db.add_artifact(
+                artifact["artifact_id"], db_path=db_path, **{"class": cls},
+                run_id=prov.get("run_id"), world=artifact.get("world"), sha=prov.get("sha"),
+                dims_json=median_dims, overall=round(med, 2),
+                panel_id=panel_id, scorer_model="sonnet",
+                is_control=int(is_control), control_anchor=anchor,
+                source_path=artifact["artifact_id"],
+                notes=f"panel aggregate: median of {panel_size} scorer rows (#1355)",
+            )
         results.append({
             "artifact_id": artifact["artifact_id"], "is_control": is_control,
             "anchor": anchor, "median_overall": round(med, 2),
             "overalls": [round(o, 2) for o in overalls],
         })
 
-    # Control-band verdict: every control's median within [anchor-noise, anchor+noise].
+    # Control-band verdict: every control's median within [anchor-noise, anchor+noise]. Before the
+    # band check, the #1380 staleness guard: a control whose stamped band was derived under a
+    # different prompt construction / ruler than the current one has a STALE band — its below-band (or
+    # even in-band) verdict is untrustworthy. Surface that as a NAMED reason so drift can never again
+    # present as a bare, unexplained below-band failure.
     control_results = [r for r in results if r["is_control"]]
+    controls_by_id = {a["artifact_id"]: a for a in controls}
     out_of_band = []
+    stale_bands = []
     for r in control_results:
+        entry = id_map.get(r["artifact_id"], {})
+        stale_reason = _band_staleness(controls_by_id[r["artifact_id"]], entry)
+        if stale_reason:
+            stale_bands.append({"artifact_id": r["artifact_id"], "reason": stale_reason})
         anchor = float(r["anchor"] if r["anchor"] is not None else identity.get("anchor", 4.0))
         lo, hi = anchor - noise, anchor + noise
         if not (lo <= r["median_overall"] <= hi):
-            out_of_band.append({"artifact_id": r["artifact_id"], "median": r["median_overall"],
-                                "band": [round(lo, 1), round(hi, 1)]})
+            oob = {"artifact_id": r["artifact_id"], "median": r["median_overall"],
+                   "band": [round(lo, 1), round(hi, 1)]}
+            if stale_reason:
+                oob["reason"] = stale_reason
+            out_of_band.append(oob)
     candidate_results = [r for r in results if not r["is_control"]]
     cand_median = (round(statistics.median([r["median_overall"] for r in candidate_results]), 2)
                    if candidate_results else None)
@@ -169,7 +237,10 @@ def run_panel(
                              "anchor": r["anchor"]} for r in control_results],
         "controls_in_band": not out_of_band,
         "out_of_band": out_of_band,
-        "panel_valid": not out_of_band,
+        # A stale band invalidates the panel EVEN IF the control happens to land in the old band — the
+        # band itself is no longer trustworthy until re-derived (#1380).
+        "stale_bands": stale_bands,
+        "panel_valid": not out_of_band and not stale_bands,
         "results": results,
     }
 

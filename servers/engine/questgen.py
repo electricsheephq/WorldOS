@@ -24,7 +24,14 @@ from __future__ import annotations
 import random
 import re
 
+import library
 from models import Campaign, PreludeBeat, QuestHook
+
+# HV4 (#1326): a library candidate that ties the best NATIVE overlap within this many tokens is
+# eligible for the tier tie-break (epic addendum [HIGH]: tier breaks a NEAR-tie only; a strictly
+# higher overlap always wins). Kept small so a barely-related library quest never displaces a
+# well-matched native seed.
+_LIBRARY_TIE_TOKENS = 1
 
 # Generic, setting-agnostic frames (no setting names — these compose with bound nouns).
 _ARRIVAL_FRAMES = [
@@ -135,10 +142,75 @@ def _non_meetable_ids(world: dict) -> set[str]:
     }
 
 
+def _bind_hook(grievance: str, note: str, npcs: list, factions: list, places: list,
+               rng: random.Random, *, source: str = "", tier: str = "") -> QuestHook:
+    """Assemble ONE hook from a grievance + note, binding the campaign's own nouns via apophenia
+    (the shared path both native quest_outcomes and HV4 library candidates go through, so a library
+    hook reads identically to a native one). ``source``/``tier`` are provenance the engagement scorer
+    reads to tell a library-sourced hook from a fresh-generated one (default "" == native)."""
+    want = _toks(grievance) | _toks(note)
+    shape = _pick_shape(grievance, note, rng)
+    return QuestHook(
+        title=grievance,
+        shape=shape,
+        grievance=grievance,
+        motivation=_MOTIVATION_BY_SHAPE.get(shape, "serenity"),
+        giver_id=getattr(_best_overlap(want, npcs, rng), "id", ""),
+        target_id=getattr(_best_overlap(want, (factions + npcs), rng), "id", ""),
+        place_id=getattr(_best_overlap(want, places, rng), "id", ""),
+        note=note,
+        status="open",
+        source=source,
+        tier=tier,
+    )
+
+
+def _library_hooks(world: dict, native_ids: set[str], npcs: list, factions: list, places: list,
+                   rng: random.Random) -> list[QuestHook]:
+    """HV4 (#1326): the LIBRARY candidate source for _derive_hooks — DEFAULT-OFF.
+
+    Only fires when the world opts in via ``library_packs`` (library.load_pool gates on it; an
+    empty pool -> [] -> byte-identical seed path). Each promoted ``quest`` entry becomes a hook
+    bound to this campaign's nouns, tagged ``source="library"`` + its tier. COLLISION/PRECEDENCE
+    (epic addendum [MED], per the bestiary-pack precedent): a native quest_variants id ALWAYS
+    wins — a library candidate whose artifact_id collides with a native quest id is EXCLUDED
+    (library is additive, never overriding). The pool is already tier-sorted (canonical > stable
+    > fresh-gen) so a same-id collision across packs resolves to the highest tier. Degrade-not-
+    abort: a malformed entry is skipped, never raising."""
+    pool = library.load_pool(world, "quest")  # _library_dir reads world["_library_root"] if set
+    if not pool:
+        return []  # DEFAULT-OFF: no packs configured / no matching pack on disk
+    hooks: list[QuestHook] = []
+    seen: set[str] = set()
+    for entry in pool:
+        aid = str(entry.get("artifact_id") or "").strip()
+        # A native quest_variants id always wins (additive, never overriding); a duplicate library
+        # id across packs keeps only the first (already the highest tier via the sorted pool).
+        if not aid or aid in native_ids or aid in seen:
+            continue
+        payload = entry.get("payload")
+        if not isinstance(payload, dict):
+            continue  # an entry with no reusable payload can't seed a hook — skip
+        grievance = str(payload.get("name") or payload.get("title") or payload.get("grievance") or "").strip()
+        note = str(payload.get("hook") or payload.get("note") or payload.get("description") or "").strip()
+        if not grievance or not note:
+            continue  # no wrong / no seed detail — not a usable quest seed
+        seen.add(aid)
+        hooks.append(_bind_hook(grievance, note, npcs, factions, places, rng,
+                                source="library", tier=str(entry.get("tier") or "")))
+    return hooks
+
+
 def _derive_hooks(c: Campaign, world: dict, rng: random.Random, exclude: set[str]) -> list[QuestHook]:
     """Promote each resolved quest_outcome into a typed hook: its follow-on `hook` text is a wrong
     the world now contains (a grievance), bound to the campaign's own nouns via apophenia. NPCs in
-    `exclude` (easter-egg givers) are never bound as a default giver/target."""
+    `exclude` (easter-egg givers) are never bound as a default giver/target.
+
+    HV4 (#1326): when the world opts in via ``library_packs``, promoted library quests are appended
+    as ADDITIONAL candidates (default-off — no packs -> byte-identical to today). Tier acts as a
+    TIE-BREAK only: library hooks are appended AFTER the native ones, so the native seeds (and the
+    spine pick) are unperturbed, and a library candidate colliding with a native quest id is dropped
+    (native always wins). See _library_hooks."""
     qv = world.get("quest_variants") if isinstance(world, dict) else None
     qv_by_id = {q["id"]: q for q in qv if isinstance(q, dict) and q.get("id")} if isinstance(qv, list) else {}
     npcs = [ch for ch in c.characters.values()
@@ -159,22 +231,10 @@ def _derive_hooks(c: Campaign, world: dict, rng: random.Random, exclude: set[str
         if not note:
             continue  # an outcome with no follow-on hook isn't a quest seed
         grievance = str(q.get("name") or qid).strip()
-        want = _toks(grievance) | _toks(note)
-        shape = _pick_shape(grievance, note, rng)
-        giver = _best_overlap(want, npcs, rng)
-        target = _best_overlap(want, (factions + npcs), rng)
-        place = _best_overlap(want, places, rng)
-        hooks.append(QuestHook(
-            title=grievance,
-            shape=shape,
-            grievance=grievance,
-            motivation=_MOTIVATION_BY_SHAPE.get(shape, "serenity"),
-            giver_id=getattr(giver, "id", ""),
-            target_id=getattr(target, "id", ""),
-            place_id=getattr(place, "id", ""),
-            note=note,
-            status="open",
-        ))
+        hooks.append(_bind_hook(grievance, note, npcs, factions, places, rng))
+    # HV4: append library candidates (default-off). Native quest ids win a collision — pass the
+    # resolved native quest ids so a library entry can never override a native seed.
+    hooks.extend(_library_hooks(world, set(qv_by_id), npcs, factions, places, rng))
     return hooks
 
 

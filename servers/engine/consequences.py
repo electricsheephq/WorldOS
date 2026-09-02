@@ -13,10 +13,14 @@ from __future__ import annotations
 from models import Campaign, Consequence
 
 
-def schedule(campaign: Campaign, in_days: int, text: str, note: str = "") -> Consequence:
-    """Schedule a consequence to fire ``in_days`` from the current day (mutates)."""
+def schedule(campaign: Campaign, in_days: int, text: str, note: str = "",
+             quest_id: str = "") -> Consequence:
+    """Schedule a consequence to fire ``in_days`` from the current day (mutates). ``quest_id``
+    (#1405, default "" == today) records the Quest this consequence is the branch-outcome OF, so
+    the capture cue can see a natural-prose consequence as captured via a structured link."""
     conseq = Consequence(
-        trigger_day=campaign.day + max(0, int(in_days)), text=text, note=note
+        trigger_day=campaign.day + max(0, int(in_days)), text=text, note=note,
+        quest_id=(quest_id or ""),
     )
     campaign.consequences.append(conseq)
     return conseq

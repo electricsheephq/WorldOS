@@ -65,7 +65,7 @@ the GUI QA LOOP note) — only `self-reported` counts toward G3.
 **Rollup → RRI (#466):** the Mac runs native Part-A on the BUILT `.app` (`qa/app_handoff_gate.py` →
 handoff.json) at the **SAME SHA**; `qa/release_readiness.py --handoff-json <mac.json> <vm score dirs>`
 combines them. Mixed-SHA / missing `run.json`/`score.json`/`network.ndjson` ⇒ `partial`/`harness_contaminated`
-(never a clean release). Copy VM `results/` back under `/Volumes/LEXAR/Codex/...` for the rollup + ledger.
+(never a clean release). Copy VM `results/` back under `/Users/m1/Codex/...` for the rollup + ledger.
 
 ### RRI evidence-path contract (don't false-mask the gate)
 **`release_readiness.py` requires EVIDENCE-PATH flags, not just value flags** — a gate that has the
@@ -167,9 +167,9 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
 
 ### Multi-session / worktree gotchas (learned the hard way — these cost real time)
 - **`fetch`-not-`pull` leaves the canonical checkout STALE.** Building every PR in worktrees off
-  `origin/main` + merging on GitHub means `/Users/lume/WorldOS` is only ever `fetch`ed — its working
+  `origin/main` + merging on GitHub means `/Users/m1/WorldOS` is only ever `fetch`ed — its working
   tree silently falls behind and files look "not there." After a merge batch:
-  `git -C /Users/lume/WorldOS pull --ff-only`.
+  `git -C /Users/m1/WorldOS pull --ff-only`.
 - **Merge race.** With `--auto` a parallel PR landing mid-flight just re-queues your merge; with
   `--admin` (emergency-only) it can fail "base branch was modified" and your LOCAL branch may get
   cleaned even though the PR stayed OPEN. Verify with `gh pr view <n> --json state` and **retry** on
@@ -364,7 +364,7 @@ an unattended loop.
   inspect its worktree: if the staged diff is complete, commit it + CI-validate + open the PR
   yourself (recovered #305 → #329 this way; nothing lost). Don't re-do work a corpse already finished.
 - **NEVER `git checkout` / branch-op the SHARED canonical checkout while a parallel session holds a
-  branch.** `/Users/lume/WorldOS` may be on another session's branch (e.g. loop-8). Branch-flips
+  branch.** `/Users/m1/WorldOS` may be on another session's branch (e.g. loop-8). Branch-flips
   there corrupt the sibling session. Do EVERY repo change via a **worktree agent off `origin/main`**
   (`git worktree add -b <branch> <path> origin/main`). If you must touch the shared checkout's main,
   do it as ONE atomic Bash (`git checkout main && test branch==main && add && commit && push`) — never
@@ -399,3 +399,11 @@ an unattended loop.
   companion stage-machine; #143 reused `_resolve_quest_variants`). Find the existing primitive.
 - **Don't collide with the macOS/OpenWorlds sibling lane** (their open PRs: #150/#182/#187 +
   drafts #190/#191/#192). Stay in the engine/content/QA lane.
+
+## THE ROOM PAINT LOOP (unified pipeline — added 2026-07-15)
+One command per room; never freehand a Scenario call: `python3 qa/paint_room.py <class> --depth <png>`
+(prompts/params pinned in qa/unified_paint_recipes.json; controlImage slot pinned — see the
+slot-bug postmortem in qa/evidence/gemini-restyle/FLUX_ROOTCAUSE.md). The full loop, gates, cycle
+log, and defect classes: docs/roadmap/PROCEDURAL-SCORECARD.md + docs/ROOM-PIPELINE-RUNBOOK.md.
+Town generation: tools/generate_town.py → qa/seed_gfx_town.py (reciprocal cross_door contract).
+Verification instruments: qa/select_best_draw.py, qa/overlay_boxes.py (--solve, --composite).

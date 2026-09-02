@@ -13,6 +13,11 @@ Shader "WOS/Relight" {
       float3 _SkyAmb; float3 _GroundAmb; float _Bounce;
       float4 _OrthoExt;
       float4 _P0; float3 _P0Col; float4 _P1; float3 _P1Col; float4 _P2; float3 _P2Col;
+      // iter3 (#1469): additive relight floor so away-facing verticals never crush to black.
+      // All default to 0 => today's behavior byte-for-byte (Unity zero-inits unset uniforms).
+      float _AmbLift;                 // min painted-value floor on lit (mirror PainterlyActor _AmbientLift)
+      float3 _WarmBounceCol; float _WarmBounce;  // warm floor/hearth bounce wrap for side/down-facing verticals
+      float4 _Hearth; float3 _HearthCol;         // dedicated hearth POINT fill (xyz pos, w range) — fire-adjacent warmth
       struct v2f { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; };
       v2f vert(appdata_full v){ v2f o; o.pos=UnityObjectToClipPos(v.vertex); o.uv=v.texcoord; return o; }
       float3 pointLit(float3 P, float3 N, float4 L, float3 col){
@@ -30,11 +35,18 @@ Shader "WOS/Relight" {
         float lin=tex2D(_DepthTex,i.uv).r * _OrthoExt.z;
         float3 P=float3((i.uv.x-0.5)*2.0*_OrthoExt.x, (i.uv.y-0.5)*2.0*_OrthoExt.y, -(_OrthoExt.w + tex2D(_DepthTex,i.uv).r*_OrthoExt.z));
         float3 lit=amb;
+        // warm bounce wrap: fire-lit floor/hearth bounce warms side- and down-facing verticals
+        // (N.y~0 on pillars/walls => picks up nearly full warmth). Zero when _WarmBounce=0.
+        lit += _WarmBounceCol * _WarmBounce * (1.0 - saturate(N.y));
         lit += _KeyCol * saturate(dot(N, normalize(_KeyDir)));
         lit += _FillCol * saturate(dot(N, normalize(_FillDir)));
         lit += pointLit(P,N,_P0,_P0Col);
         lit += pointLit(P,N,_P1,_P1Col);
         lit += pointLit(P,N,_P2,_P2Col);
+        lit += pointLit(P,N,_Hearth,_HearthCol);   // hearth point fill (RungB fire key)
+        // ambient FLOOR: no vertical normal may render below a readable painted value. Guarantees
+        // output >= diff*_AmbLift so away-facing faces read as painted, never solid black. No-op at 0.
+        lit = max(lit, _AmbLift.xxx);
         return fixed4(diff*lit, 1);
       }
       ENDCG

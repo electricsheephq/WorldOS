@@ -1,0 +1,21 @@
+#!/bin/bash
+export DISPLAY=:0
+export HOME=/home/unity
+export USER=unity
+export LOGNAME=unity
+export GEX44_DISPLAY_PROFILE="${GEX44_DISPLAY_PROFILE:-4k-readable}"
+export GDK_SCALE=2
+export GDK_DPI_SCALE=1
+export GTK_SCALE=2
+export QT_SCALE_FACTOR=2
+export QT_AUTO_SCREEN_SCALE_FACTOR=0
+export ELECTRON_FORCE_DEVICE_SCALE_FACTOR=2
+export XCURSOR_SIZE=48
+export XFT_DPI=192
+
+/usr/local/bin/gex44-display-profile "$GEX44_DISPLAY_PROFILE" >/home/unity/.gex44-display-profile.log 2>&1 || true
+
+pgrep -u unity openbox >/dev/null || (openbox &)
+openbox --reconfigure >/dev/null 2>&1 || true
+
+exec x11vnc -display :0 -rfbauth /home/unity/.vnc/passwd -localhost -forever -shared -noxdamage -bg -o /home/unity/.vnc/x11vnc.log

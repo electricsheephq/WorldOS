@@ -40,7 +40,9 @@ sys.path.insert(0, str(QA_DIR))
 # The single source of truth for which payload keys are canonical-required per class (data/library/
 # artifact_schema.json's per-class definitions). Reused here so a control's required-but-empty fields
 # are kept (not stripped) — see _artifact() below.
-from artifact_score import _CANONICAL_PAYLOAD_REQUIRED  # noqa: E402
+from artifact_score import _CANONICAL_PAYLOAD_REQUIRED, prompt_construction_hash  # noqa: E402
+from control_band import control_band  # noqa: E402 — shared with build_visual_controls.py (0-10)
+from scoring_config_version import artifact_config_version  # noqa: E402
 
 DEFAULT_OUT = QA_DIR / "artifact_controls"
 # The identity map lives OUTSIDE the panel input dir so it can never be scored.
@@ -96,13 +98,40 @@ def quest_controls(world_json: dict, world: str, n: int = 3) -> list[dict]:
     out = []
     for qv in (world_json.get("quest_variants") or [])[:n]:
         outcomes = qv.get("outcomes") or []
+        name = qv.get("name")
+        # v2 field surface (HV2 #1368 / #1380): real extracted quests now carry `description`
+        # (Quest.description) AND a `resolution` object {status, evolves_to, callback_in_days,
+        # wrap_up[]}. A control built from the OLD field surface (neither present) is systematically
+        # field-POORER than the candidates it is meant to anchor: the stingy rubric floors
+        # objective_clarity/stakes on the thin card and the control drifts below band (the #1380
+        # regression — it scored 2.4-2.6 vs [2.8,5.2]). Populate the SAME surface from canon so a
+        # disguised control presents the same shape a v2 extract does. The outcome `lore` beats ARE
+        # the quest's resolution narration — exactly what export_campaign_artifacts._quest_wrap_up
+        # mines live for `resolution.wrap_up` — so this is canon, not fabrication.
+        wrap_up = [o.get("lore") for o in outcomes if o.get("lore")][:5]
         payload = {
             # canonical quest_payload field names
             "id": qv["id"],
-            "name": qv.get("name"),
+            "name": name,
+            # The quest's own premise/summary (the Quest.description surface a v2 extract carries): a
+            # quest_variant is a live world-fate thread whose resolution genuinely diverges across its
+            # canon outcomes — stated as the description the Questwright rubric reads for stakes.
+            "description": (
+                f"{name} — a live world-thread whose outcome is genuinely in the balance: the party's "
+                f"choices decide which of {len(outcomes)} canon resolutions the world settles into, and "
+                f"each leaves a materially different world behind."
+            ),
             "objectives": [],  # quest_variants describe outcomes, not a step spine
             "completed_objectives": [],
             "resolution_status": "canon-variant",
+            # The v2 `resolution` object (HV2 #1368): wrap_up carries the outcome lore beats (the
+            # closing resolution narration), matching what a real resolved-quest extract presents.
+            "resolution": {
+                "status": "canon-variant",
+                "evolves_to": "",
+                "callback_in_days": 0,
+                "wrap_up": wrap_up,
+            },
             "evolves_to": "",
             "consequences": [{"lore": o.get("lore")} for o in outcomes if o.get("lore")],
             # richer descriptive fields the HV1 quest rubric reads
@@ -235,8 +264,17 @@ def build(world: str, out_dir: Path) -> tuple[list[dict], dict]:
                                               encoding="utf-8")
         identity["controls"][a["artifact_id"]] = {
             "class": a["class"], "world": a["world"], "anchor": ANCHOR,
-            "band": [round(ANCHOR - 1.2, 1), round(min(5.0, ANCHOR + 1.2), 1)],
+            # The a-priori ±noise band on the 1-5 text rubric (scale_max=5.0). Shared band CODE with
+            # the 0-10 visual registry (build_visual_controls.py) — separate DATA, one formula.
+            "band": control_band(ANCHOR, scale_max=5.0),
             "file": f"{safe}.json",
+            # #1380 drift guard: stamp WHICH scoring ruler + prompt construction this band was
+            # derived under. build() writes the a-priori ±noise band; a fresh calibration panel may
+            # re-center the anchor/band, but these stamps stay valid as long as the control's card
+            # (its field surface) and the ruler are unchanged. artifact_calibration_panel compares
+            # them and, on mismatch, reports a NAMED staleness reason instead of a bare below-band.
+            "band_ruler": artifact_config_version(),
+            "band_prompt_hash": prompt_construction_hash(a),
         }
     return controls, identity
 

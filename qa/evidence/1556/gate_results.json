@@ -1,0 +1,200 @@
+{
+  "lane": "#1556 STYLE-PASS BAKE-OFF v2",
+  "fixed_base_asset": "asset_BKn1kiX2c8BaifYj559yKx7Y (flux.1-dev depth-CN, NO lora, seed 12345)",
+  "greybox_asset": "asset_asNMUzqDjm4Es4Q2fdVa75SD",
+  "depth_control_asset": "asset_ByYfTs78japedqFecMXFXcwe",
+  "gate1": "edge-recall vs fixed base (qa/plate_overlays.registration_recall), >=0.95. Calibration: adopted incumbent scores only 0.878 vs the RAW greybox with this primitive, so the >=0.95 bar is measured against the styled BASE (structure preservation of the style step) \u2014 the prior #1553 bake-off edge_recall_styled semantics.",
+  "gate2": "invented-furniture via #1540 inverse_coherence_flags vs crypt_truegrey manifest. Calibration: the fixed BASE itself flags 7 cells and the gold incumbent (panel 8.0) flags 7 \u2014 the detector was calibrated on the camp open-clearing floor and false-positives on the crypt back-wall/column ornamentation in the upward silhouette band. Honest signal = NET-NEW flags vs the base+incumbent structural baseline.",
+  "baseline_falsepos_cells": [
+    [
+      2,
+      5
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      7,
+      1
+    ],
+    [
+      7,
+      6
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      8,
+      2
+    ],
+    [
+      8,
+      3
+    ],
+    [
+      8,
+      5
+    ],
+    [
+      8,
+      6
+    ],
+    [
+      9,
+      2
+    ],
+    [
+      9,
+      3
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      10,
+      2
+    ],
+    [
+      10,
+      3
+    ]
+  ],
+  "cu_spent_total": 111,
+  "cu_cap": 120,
+  "arms": [
+    {
+      "arm": "Gemini 3.1",
+      "model_id": "model_google-gemini-3-1-flash",
+      "asset_id": "asset_dJDyQuQu5ofE9eYYSc98mVCo",
+      "cu": 20,
+      "recipe": "img2img edit over fixed base, seed 12345, 2K, thinkingLevel HIGH",
+      "recall_vs_base": 0.9726,
+      "gate1_recall_pass": true,
+      "recall_vs_greybox": 0.9654,
+      "invented_total": 6,
+      "invented_net_new": 1,
+      "net_new_cells": [
+        [
+          11,
+          2
+        ]
+      ]
+    },
+    {
+      "arm": "GPT-Image-2",
+      "model_id": "model_openai-gpt-image-2",
+      "asset_id": "asset_V4kXT4E7iWbJZjGyF1jWPVLv",
+      "cu": 45,
+      "recipe": "img2img edit over fixed base, quality high, 1344x768",
+      "recall_vs_base": 0.9875,
+      "gate1_recall_pass": true,
+      "recall_vs_greybox": 0.9497,
+      "invented_total": 4,
+      "invented_net_new": 3,
+      "net_new_cells": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    {
+      "arm": "MAI 2.5 Edit",
+      "model_id": "model_microsoft-mai-image-2-5-edit",
+      "asset_id": "asset_bhaz58ThygwfJ3BKHjgrVfJx",
+      "cu": 12,
+      "recipe": "img2img edit over fixed base, aspectRatio auto",
+      "recall_vs_base": 0.9999,
+      "gate1_recall_pass": true,
+      "recall_vs_greybox": 0.9994,
+      "invented_total": 0,
+      "invented_net_new": 0,
+      "net_new_cells": []
+    },
+    {
+      "arm": "Seedream 5.0 Pro",
+      "model_id": "model_bytedance-seedream-5-0-pro",
+      "asset_id": "asset_GdqE5YVg9hXg1qmqhr8cWX8d",
+      "cu": 9,
+      "recipe": "img2img edit over fixed base, 1344x768",
+      "recall_vs_base": 0.9965,
+      "gate1_recall_pass": true,
+      "recall_vs_greybox": 0.994,
+      "invented_total": 6,
+      "invented_net_new": 4,
+      "net_new_cells": [
+        [
+          2,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          10,
+          1
+        ],
+        [
+          11,
+          9
+        ]
+      ]
+    },
+    {
+      "arm": "Flux Kontext Blockout-to-Render",
+      "model_id": "model_eJg6GZwd59vg4ycufRLyKsxL (base model_flux-kontext-editing)",
+      "asset_id": "asset_CwVYxNSv1zukBD5nGp7YtZbk",
+      "cu": 16,
+      "recipe": "img2img over the raw GREYBOX (native blockout mode), quality high, seed 12345",
+      "recall_vs_base": 0.854,
+      "gate1_recall_pass": false,
+      "recall_vs_greybox": 0.8538,
+      "invented_total": 4,
+      "invented_net_new": 4,
+      "net_new_cells": [
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          6,
+          5
+        ]
+      ]
+    },
+    {
+      "arm": "El Diablo (isometric dungeon LoRA)",
+      "model_id": "model_a2dvNsgst7PCnpiucRY7bEHW (base model_bfl-flux-1-dev)",
+      "asset_id": "asset_odzPUu6uyksXBGr5QUi1aZuk",
+      "cu": 9,
+      "recipe": "flux.1-dev + El Diablo LoRA@0.8, img2img over fixed base strength0.55 + depth-CN 0.7, seed 12345",
+      "recall_vs_base": 0.9811,
+      "gate1_recall_pass": true,
+      "recall_vs_greybox": 0.97,
+      "invented_total": 0,
+      "invented_net_new": 0,
+      "net_new_cells": []
+    }
+  ]
+}

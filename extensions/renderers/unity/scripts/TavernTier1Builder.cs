@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -567,3 +568,5 @@ public class TavernTier1Builder : MonoBehaviour
         return mat;
     }
 }
+
+#endif // UNITY_EDITOR

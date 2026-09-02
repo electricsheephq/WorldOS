@@ -15,12 +15,13 @@ import difflib
 import fcntl
 import functools
 import json
+import logging
 import os
 import random
 import re
 import sys
 import time
-from typing import Optional
+from typing import Annotated, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -43,6 +44,7 @@ import imagegen
 import inventory
 import itemcatalog
 import ledger as ledger_mod
+import library as library_mod
 import lorebook
 import npc as npc_mod
 import recap
@@ -57,7 +59,7 @@ import wander
 import worldsim
 import wrapper_progress as _wrapper_progress_mod
 import _env
-from pydantic import ValidationError
+from pydantic import BeforeValidator, ValidationError
 from models import (
     ListArg,
     OptStrListArg,
@@ -364,6 +366,15 @@ _QUEST_STALL_BEATS = 8
 # beats in gets a cue to enlist, so a seeded faction questline isn't left narrated-not-engined.
 _FACTION_JOIN_BEATS = 8
 
+# #1405: quest_authoring_incomplete beats-reach. A quest CREATED without objectives (no spine the
+# engine can track) that is STILL objective-less this many act-local beats later is the flywheel's
+# binding-constraint failure (objectives empty 2/3 at snapshot level). The one-time add_quest
+# `authoring_cue` result already nudges at creation; this per-beat cue only ESCALATES once the
+# quest has been narrated a stretch with no authored spine — so a freshly-introduced quest on
+# beat 0 (the healthy/early case) is NOT nagged. Below _PARTY_STUCK_BEATS(=8) on purpose so it
+# fires before the party_stuck / quest_unresolved_late run-end cues, not stacked on top of them.
+_QUEST_AUTHORING_BEATS = 4
+
 # WS3a party_stuck_one_location beats-reach. PINNED to assert_behavioral's SINGLE_SCENE_MIN_BEATS —
 # the FATAL party_traveled boundary (qa/assert_behavioral.py:676): a substantial run (>= 8 act-local
 # beats) that never left the opening scene AND never progressed in place is a stuck DM. The proactive
@@ -470,6 +481,53 @@ def _backlog_dict(item: BacklogItem) -> dict:
     }
 
 
+# #1645: consecutive next_turn advances with NO living hostile left before the combat-closure
+# nudge escalates from advisory to URGENT in the DM-visible combat surface. The DM stays the SOLE
+# resolver — the engine NEVER auto-ends combat (questgen.py:7 invariant); this only makes an
+# un-closed fight progressively louder in the state the DM reads.
+_COMBAT_RESOLUTION_NUDGE_TURNS = 2
+
+
+def _living_hostiles(c: Campaign) -> list[Character]:
+    """The monsters still IN the combat order at >0 HP and not dead — the engine's canonical
+    'is the fight still on' set, matching end_combat's live_hostiles guard (~server.py:7490)
+    and the combat_left_hanging cue (~server.py:14174). A fled monster was removed from the
+    order; a killed one is dead. Pure read (no mutation)."""
+    out: list[Character] = []
+    for cb in c.combat.order:
+        ch = c.characters.get(cb.character_id)
+        if ch is not None and ch.kind == "monster" and ch.current_hp > 0 and not ch.dead:
+            out.append(ch)
+    return out
+
+
+def _apply_resolution_nudge(c: Campaign, out: dict) -> None:
+    """ADDITIVE pending-resolution advisory (#1645): attached by _combat_view AND by the killing
+    tools' own returns (attack), so the DM sees the nudge at the exact moment the last hostile
+    drops — not only on the next view read. Every key is ABSENT while a hostile lives."""
+    # LOUD, DM-visible pending_resolution flag telling the DM to close it (end_combat resets
+    # initiative/HP and, in xp mode, auto-awards the defeated foes' XP). Escalates to URGENT once
+    # the no-hostile state has persisted across _COMBAT_RESOLUTION_NUDGE_TURNS consecutive
+    # next_turn advances (combat.no_hostile_turns). ADDITIVE: every key here is ABSENT while a
+    # hostile still lives (or combat is inactive), so an ongoing fight's view is byte-for-byte
+    # unchanged; the nudge clears wholesale when end_combat replaces c.combat with a fresh Combat().
+    if c.combat.active and not _living_hostiles(c):
+        streak = c.combat.no_hostile_turns
+        out["pending_resolution"] = True
+        out["living_hostiles"] = 0
+        if streak:
+            out["pending_resolution_turns"] = streak
+        out["resolution_nudge"] = (
+            ("URGENT: " if streak >= _COMBAT_RESOLUTION_NUDGE_TURNS else "")
+            + "no living hostile remains — the fight is over in fact but combat still reads "
+            "active. Call end_combat(resolution='...') to close it: it resets initiative/HP and, "
+            "in xp mode, auto-awards the defeated foes' XP. The engine will NOT end the fight for "
+            "you (you are the sole resolver) — a fight left active leaks into the next beat as a "
+            "phantom encounter."
+        )
+
+
+
 def _combat_view(c: Campaign) -> dict:
     order = []
     for cb in c.combat.order:
@@ -508,6 +566,10 @@ def _combat_view(c: Campaign) -> dict:
             "cell_size": c.combat.grid_cell_size,
             "diagonal_mode": c.combat.diagonal_mode,
         }
+    # #1645 COMBAT-CLOSURE NUDGE (advisory ONLY; the engine NEVER auto-ends — the DM owns the
+    # end_combat predicate, questgen.py:7). When the fight is active but NO living hostile remains
+    # in the order, the encounter is over in FACT yet the engine still reads active — surface a
+    _apply_resolution_nudge(c, view)
     return view
 
 
@@ -545,6 +607,16 @@ def _move_party_to(c: Campaign, location_id: str) -> list[str]:
         if travels and member.location_id != location_id:
             member.location_id = location_id
             moved.append(cid)
+            # W2 review fix: stage_cell (walk_to's rest-position sole-writer field) is
+            # scoped to the room it was set in. Without clearing it here, a member who
+            # walked in the OLD room keeps its coordinates after travel, and
+            # rest_blocked_cells (the occupancy reader keyed on location_id == this
+            # location) folds those stale coordinates into the NEW room's blocked set —
+            # phantom occupancy the member never actually stood in. Clearing on every
+            # travel (not just when it happens to be set) keeps the party's rest
+            # position always re-derived per-room, matching stage_cell's contract as a
+            # single-room stander position, not a persistent world coordinate.
+            member.stage_cell = None
     return moved
 
 
@@ -1061,6 +1133,32 @@ def get_state(campaign_id: str) -> dict:
 
 
 @mcp.tool()
+def get_quests(campaign_id: str) -> dict:
+    """Read EVERY quest regardless of status (get_state lists active only). Read-only
+    telemetry poll surface. Entries: id, title, status, objectives, completed_objectives,
+    giver_id, location_id, milestone_awarded, last_progress_day, last_progress_beat.
+    """
+    c = _require(campaign_id)
+    return {
+        "quests": [
+            {
+                "id": q.id,
+                "title": q.title,
+                "status": q.status,
+                "objectives": list(q.objectives),
+                "completed_objectives": list(q.completed_objectives),
+                "giver_id": q.giver_id,
+                "location_id": q.location_id,
+                "milestone_awarded": q.milestone_awarded,
+                "last_progress_day": q.last_progress_day,
+                "last_progress_beat": q.last_progress_beat,
+            }
+            for q in c.quests.values()
+        ]
+    }
+
+
+@mcp.tool()
 def look_around(campaign_id: str) -> dict:
     """Describe the party's current location and the exits they can take."""
     c = _require(campaign_id)
@@ -1339,9 +1437,16 @@ def cross_door(campaign_id: str, x: int, y: int) -> dict:
     ``(x, y)`` must be a ``door_cell`` of the current location's ``scene_grid`` (the #1214 schema);
     the party then travels to the location's connected room-unit. A thin gameplay primitive over
     ``travel_to`` (which holds the campaign lock + co-locates the whole party). For a single-connection
-    room-unit (the common case) the door leads to the one neighbour; a multi-connection room needs an
-    authored door->destination map, so the FIRST connection is taken as a best-effort default and
-    surfaced via ``multi_connection``.
+    room-unit (the common case) the door leads to the one neighbour. For a MULTI-connection room
+    (SHIP-MORNING fix, #1508/#1531: the crypt hub now has TWO doors — camp + tavern), the destination
+    is resolved by POSITION: ``door_cells[i]`` maps to ``connections[i]`` (the authoring convention
+    every current multi-door seed already follows — ``qa/seed_gfx_walkslice.py`` appends each door cell
+    and its connection in the SAME order). An out-of-range/unmatched index falls back to ``connections[0]``
+    (today's prior behavior, preserved byte-for-byte for any single-door room), surfaced via
+    ``multi_connection``. Previously this ALWAYS took ``connections[0]`` regardless of which door was
+    crossed, so a room with 2+ doors silently sent the party through the first door's destination no
+    matter which cell was clicked — verified live (crossing the tavern's (0,5) door landed in
+    ``camp_clearing_night``, never ``tavern``) before this fix.
 
     The gameplay GATE (party is at the door, the room is resolved) is the caller's responsibility —
     this verb does NOT force-end an active combat. Raises if (x,y) is not a doorway or there is no
@@ -1352,13 +1457,27 @@ def cross_door(campaign_id: str, x: int, y: int) -> dict:
     sg = getattr(loc, "scene_grid", None) if loc is not None else None
     if sg is None:
         raise ValueError("no current location with a scene_grid to cross from")
-    door_cells = {(int(a), int(b)) for (a, b) in (getattr(sg, "door_cells", None) or [])}
-    if (int(x), int(y)) not in door_cells:
+    door_cells_list = [(int(a), int(b)) for (a, b) in (getattr(sg, "door_cells", None) or [])]
+    if (int(x), int(y)) not in door_cells_list:
         raise ValueError(f"({x},{y}) is not a doorway cell of {getattr(loc, 'name', '')!r}")
     conns = [cid for cid in (getattr(loc, "connections", None) or []) if isinstance(cid, str)]
     if not conns:
         raise ValueError(f"{getattr(loc, 'name', '')!r} has no connected room to cross to")
-    result = travel_to(campaign_id, conns[0])
+    door_idx = door_cells_list.index((int(x), int(y)))
+    dest_id = conns[door_idx] if door_idx < len(conns) else conns[0]
+    source_id = loc.id  # where we crossed FROM — the reciprocal-door anchor in the destination (#1541)
+    result = travel_to(campaign_id, dest_id)
+    # W4 follow-up (#1378): the party's stage_cell was just CLEARED by travel_to's _move_party_to
+    # (per-room scoping). If the destination room is ALSO painted, re-stage the party beside its
+    # entry door so the linked room's rest board renders them standing there — not the empty
+    # door-bar state (demo-reel frame 06). #1541: anchor on the destination's door back to the
+    # source (the reciprocal door), so you land at the door you'd leave by — not door_cells[0].
+    # ADDITIVE: an un-painted destination gets no writes.
+    with campaign_lock(campaign_id):
+        c2 = _require(campaign_id)  # fresh state — travel_to persisted its own copy above
+        dest = c2.locations.get(c2.current_location_id) if c2.current_location_id else None
+        if dest is not None and _seed_stage_cells_on_arrival(c2, dest, source_id=source_id):
+            save_campaign(c2)
     result["crossed_door"] = [int(x), int(y)]
     result["multi_connection"] = len(conns) > 1
     return result
@@ -3077,6 +3196,23 @@ def find_npcs(
 
 
 @mcp.tool()
+def lookup_library(campaign_id: str, query: str, cls: str = "quest", limit: int = 5) -> dict:
+    """Pull scored REUSABLE templates from the promoted library BEFORE improvising from scratch —
+    the reuse mirror of lookup_lore/find_npcs. READ-ONLY. Returns [] unless this world opts in
+    (world.json `library_packs`); [] on no match (fall through to freeform add_quest). `cls`:
+    quest|npc|location|encounter|room. Ranked by query overlap, tier tie-break."""
+    c = _require(campaign_id)
+    if not c.world_id:
+        return {"world_id": "", "count": 0, "matches": []}
+    try:
+        world = content_mod.load_world_data(c.world_id)
+    except ValueError:
+        return {"world_id": c.world_id, "count": 0, "matches": []}
+    matches = library_mod.lookup(world, cls, query, limit=limit)
+    return {"world_id": c.world_id, "cls": cls, "count": len(matches), "matches": matches}
+
+
+@mcp.tool()
 def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", add_to_party: bool = False,
                          character_name: str = "", canon_name: str = "") -> dict:
     """Pull a CANON character (e.g. Shadowheart, Astarion, Gale) from the world's ingested
@@ -4032,6 +4168,59 @@ def _gate_combat_verb(c: "Campaign", actor: "Character", *, verb: str, consumes:
         )
 
 
+def _seed_combat_cells_from_stage(c: Campaign) -> list[str]:
+    """W4 (#1321) NO-TELEPORT: seed each combatant's grid cell (``Combatant.x/y``) from its
+    ``Character.stage_cell`` so a fight STARTS from where everyone was standing at rest — no
+    actor jumps between the rest board and the tactical board.
+
+    Called by ``start_combat`` only when its ``seed_from_stage`` param is True (default False ⇒
+    this never runs ⇒ today's placement, byte-for-byte). Gates-read-gauges holds: combat READS
+    stage at entry; the write-back to stage_cell happens at ``end_combat``.
+
+    Guards (all additive; any miss ⇒ leave that combatant unplaced, exactly as today):
+      * grid must be enabled AND its extents must MATCH the location's scene_grid
+        (the epic's grid-mismatch ruling — legacy campaigns degrade gracefully, WARN-logged);
+      * only combatants WITH a stage_cell are seeded (foes lacking one stay unplaced ⇒ the
+        renderer/DM places them as today — never fails the combat start over placement);
+      * a stage_cell out of the grid extents, or already claimed by an earlier-seeded
+        combatant, is skipped (never traps two tokens on one cell).
+
+    SOLE-WRITER-safe: the engine writes its own combat state from its own stage data. Returns
+    the ids actually seeded (for surfacing). Caller holds the lock + persists."""
+    if not c.combat.grid_enabled:
+        return []
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    grid = getattr(loc, "scene_grid", None) if loc is not None else None
+    if grid is None:
+        return []
+    # Grid-mismatch ruling (#1321 addendum, HIGH): seed ONLY when the combat grid extents equal
+    # the scene_grid extents — otherwise the stage cells index a different coordinate space and a
+    # seed WOULD teleport. Degrade to today's spawn behavior (unplaced) + a WARN line.
+    if (c.combat.grid_width, c.combat.grid_height) != (int(grid.grid.cols), int(grid.grid.rows)):
+        logging.getLogger(__name__).warning(
+            "start_combat(seed_from_stage): combat grid %sx%s != scene_grid %sx%s at %r — "
+            "skipping stage seeding (legacy/degraded placement).",
+            c.combat.grid_width, c.combat.grid_height,
+            int(grid.grid.cols), int(grid.grid.rows), c.current_location_id,
+        )
+        return []
+    w, h = c.combat.grid_width, c.combat.grid_height
+    claimed: set[tuple[int, int]] = set()
+    seeded: list[str] = []
+    for cb in c.combat.order:
+        ch = c.characters.get(cb.character_id)
+        sc = getattr(ch, "stage_cell", None) if ch is not None else None
+        if sc is None:
+            continue  # foes / never-walked members stay unplaced (today's behavior)
+        x, y = int(sc[0]), int(sc[1])
+        if not (0 <= x < w and 0 <= y < h) or (x, y) in claimed:
+            continue  # out of extents or already taken — don't teleport/stack
+        cb.x, cb.y = x, y
+        claimed.add((x, y))
+        seeded.append(cb.character_id)
+    return seeded
+
+
 def _derive_grid_from_scene(c: Campaign) -> None:
     """gfx M-B (#1194): if the campaign's CURRENT location carries a SceneGrid, switch the
     just-started fight onto that grid and auto-derive its impassable cells (walls + prop
@@ -4073,12 +4262,9 @@ def start_combat(
     campaign_id: str,
     combatant_ids: StrListArg,
     surpriser_ids: OptStrListArg = None,
+    seed_from_stage: bool = False,
 ) -> dict:
-    """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
-    and build the turn order (desc, ties broken by DEX modifier then input order).
-    Pass the character ids of everyone in the fight. For an ambush pass
-    surpriser_ids=[attackers]: the engine rolls Stealth vs passive Perception; the
-    surprised roll initiative with Disadvantage (SRD 5.2). See `surprise` in the return."""
+    """Begin combat: roll initiative (1d20 + initiative_bonus) per combatant; build the turn order (desc, DEX-mod then input tiebreaks). Pass every fighter's id. For an ambush, pass surpriser_ids=[attackers]; the surprised roll Initiative with Disadvantage (in `surprise`). seed_from_stage=True opens combat where each combatant rested."""
     if not combatant_ids:
         raise ValueError("combatant_ids must be non-empty")
     surpriser_ids = [sid for sid in (surpriser_ids or []) if sid in combatant_ids]
@@ -4146,6 +4332,13 @@ def start_combat(
         # absent when the current location has no scene_grid (grid_enabled stays False == today's
         # zone/theater combat, byte-for-byte unchanged).
         _derive_grid_from_scene(c)
+        # W4 (#1321) NO-TELEPORT: when asked, seed combatant grid cells from each character's
+        # rest position (stage_cell) so the fight opens where everyone stood. Additive: default
+        # seed_from_stage=False ⇒ this is skipped ⇒ placement is byte-for-byte today's. Runs AFTER
+        # _derive_grid_from_scene so grid_enabled/extents are set for the guard to read.
+        seeded_from_stage: list[str] = []
+        if seed_from_stage:
+            seeded_from_stage = _seed_combat_cells_from_stage(c)
         save_campaign(c)
         view = _combat_view(c)
         # Surface the surprise edge in the runtime view so the DM resolves the opener
@@ -4256,6 +4449,11 @@ def start_combat(
                 outlook = _outlook_for_xps(_party_levels(c), monster_xps)
                 if outlook.get("must_offer_out") or outlook.get("band") == "deadly":
                     view["outlook"] = outlook
+        # W4 NO-TELEPORT: surface who was seeded onto their rest cell so the DM knows the
+        # opener is IN PLACE (and the renderer trusts the engine cells over a fresh placement).
+        # Additive — absent unless seed_from_stage seeded at least one combatant.
+        if seeded_from_stage:
+            view["seeded_from_stage"] = seeded_from_stage
         # Surface whose turn it is at combat-start and make clear they must act BEFORE
         # calling next_turn (the root cause of Round-1 skips: DM reads start_combat.current
         # as already-done and immediately calls next_turn).
@@ -4517,6 +4715,219 @@ def _difficult_set(c: "Campaign") -> set[tuple[int, int]]:
     """The fight's DIFFICULT-TERRAIN cells (#1253) as a cell set. Empty == open floor
     (PR-1 movement cost unchanged)."""
     return {(int(dx), int(dy)) for dx, dy in (c.combat.grid_difficult or [])}
+
+
+def rest_blocked_cells(
+    c: "Campaign", location: "Location", exclude_id: str = ""
+) -> tuple[int, int, set[tuple[int, int]]]:
+    """W2 (#1319): the ONE shared REST-MODE geometry + blocked-set builder — the out-of-combat
+    sibling of ``_occupied_cells`` (which is combat-only: it reads ``c.combat.order``, and no
+    Combat object exists in rest mode). Both ``walk_to`` and future combat-seed code that needs
+    a rest-mode picture call THIS (never fork the pathing input).
+
+    Returns ``(width, height, blocked)`` where:
+      * geometry — ``width``/``height`` come from the location's ``scene_grid.grid.cols``/``rows``
+        (scene_grid.py), which SUBSTITUTE for ``c.combat.grid_width``/``height`` when combat is
+        inactive. Mirrors ``_derive_grid_from_scene`` (cols->x, rows->y, identity mapping).
+      * blocked — the union of (1) the scene's IMPASSABLE cells (walls + prop footprints) via
+        ``scene_grid.impassable_cells`` — the same derivation a painted fight uses — and (2) rest
+        OCCUPANCY: every character's ``stage_cell`` in this location PLUS any ``npc:<id>`` spawn
+        anchors W1 writes into ``scene_grid.spawns`` (both are where PEOPLE stand at rest). The
+        mover's own ``exclude_id`` cell is removed (you never block yourself) — STUCK-CELL
+        (#1511): this holds whether that cell is blocked via OCCUPANCY *or* TERRAIN (a wall/prop
+        the mover happens to be standing on, e.g. a post-re-paint obstacle that now overlaps an
+        already-staged party member) — the mover's cell is EXPLICITLY exempted below rather than
+        relying on it merely being absent from the occupancy side.
+
+    Pure read of engine-owned state; no mutation, no I/O. If the location has no scene_grid, or a
+    non-positive grid, returns ``(0, 0, set())`` (the caller treats that as "not walkable here" —
+    ADDITIVE: no scene_grid == today, walk is simply unavailable)."""
+    grid = getattr(location, "scene_grid", None)
+    if grid is None:
+        return 0, 0, set()
+    width = int(grid.grid.cols)
+    height = int(grid.grid.rows)
+    if width <= 0 or height <= 0:
+        return 0, 0, set()
+
+    # STUCK-CELL (#1511): the mover's own CURRENT cell (if any) — needed below to exempt it from
+    # the TERRAIN half of the blocked set too, not just the occupancy half.
+    mover_cell: tuple[int, int] | None = None
+    if exclude_id:
+        mover_ch = c.characters.get(exclude_id)
+        sc = getattr(mover_ch, "stage_cell", None) if mover_ch is not None else None
+        if sc is not None:
+            mover_cell = (int(sc[0]), int(sc[1]))
+
+    # (2) rest occupancy: where PEOPLE stand. Authoritative source is Character.stage_cell (this
+    # PR's sole-writer field); the npc:<id> spawn anchors (W1 #1318) are folded in when present so
+    # a walk routes around seated NPCs even before any of them has been walked. Only characters in
+    # THIS location count (an NPC anchored elsewhere doesn't block this room).
+    occupied: set[tuple[int, int]] = set()
+    for ch in c.characters.values():
+        if ch.id == exclude_id:
+            continue
+        if ch.location_id and ch.location_id != location.id:
+            continue
+        sc = getattr(ch, "stage_cell", None)
+        if sc is not None:
+            occupied.add((int(sc[0]), int(sc[1])))
+    spawns = getattr(grid, "spawns", None) or {}
+    if isinstance(spawns, dict):
+        for key, cells in spawns.items():
+            if not (isinstance(key, str) and key.startswith("npc:")):
+                continue  # party/foes/npcs positional lists are NOT per-id occupancy — skip
+            if key == f"npc:{exclude_id}":
+                continue
+            for cell in cells or []:
+                # Defensive: SceneGrid.spawns is dict[str, list[Cell]] (Cell=tuple[int,int]) and
+                # pydantic enforces this shape on load — but skip rather than IndexError on a
+                # malformed in-memory-constructed entry that bypassed the model validator.
+                if isinstance(cell, (list, tuple)) and len(cell) == 2:
+                    occupied.add((int(cell[0]), int(cell[1])))
+
+    # (1) walls + prop footprints, minus any cell someone stands on (never trap a stander on a
+    # prop) — the SAME impassable_cells derivation a painted fight uses. STUCK-CELL (#1511): widen
+    # the exemption set with the mover's OWN cell too (it's deliberately absent from `occupied`
+    # above, precisely so it doesn't count as an OCCUPANT blocking anyone else) — otherwise a
+    # mover standing on terrain the scene now paints impassable would stay stuck in the returned
+    # blocked set even though `occupied` correctly never counted them as an occupant.
+    terrain_exempt = occupied | {mover_cell} if mover_cell is not None else occupied
+    impassable = {
+        (x, y)
+        for x, y in scene_grid_mod.impassable_cells(grid, width, height, occupied=terrain_exempt)
+    }
+    blocked = impassable | occupied
+    if mover_cell is not None:
+        blocked.discard(mover_cell)  # belt-and-suspenders: never block the mover's own cell
+    return width, height, blocked
+
+
+def _nearest_walkable_cell(
+    width: int, height: int, blocked: set[tuple[int, int]], cell: tuple[int, int]
+) -> "tuple[int, int] | None":
+    """STUCK-CELL (#1511) defense in depth: if `cell` is already walkable (in-bounds and not in
+    `blocked`), return it unchanged. Otherwise BFS outward over the 8-neighbourhood (rings of
+    increasing Chebyshev distance) for the nearest walkable cell — a deterministic fallback for
+    any rest-position WRITE that landed a character on a blocked cell (a grid-mismatched
+    combat-end write-back, a spawn that drifted onto a re-painted obstacle, ...). Returns None
+    only if the whole grid is blocked (nothing to relocate to). Pure; no mutation."""
+    if 0 <= cell[0] < width and 0 <= cell[1] < height and cell not in blocked:
+        return cell
+    from collections import deque
+
+    visited = {cell}
+    dq = deque([cell])
+    while dq:
+        cx, cy = dq.popleft()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nxt = (cx + dx, cy + dy)
+                if nxt in visited or not (0 <= nxt[0] < width and 0 <= nxt[1] < height):
+                    continue
+                visited.add(nxt)
+                if nxt not in blocked:
+                    return nxt
+                dq.append(nxt)
+    return None  # no walkable cell anywhere in this room
+
+
+def _seed_stage_cells_on_arrival(
+    c: "Campaign", dest: "Location", source_id: str | None = None
+) -> list[str]:
+    """W4 follow-up (#1378): on a ``cross_door`` arrival, seed each traveling party member's
+    ``Character.stage_cell`` to a walkable cell beside the destination room's entry door, so the
+    linked room's rest board renders the party re-staged — not the empty door-bar state left when
+    ``_move_party_to`` clears every member's stage_cell on travel.
+
+    RECIPROCAL-DOOR arrival (#1541): when ``source_id`` (the location we just crossed FROM) is
+    given, the arrival door is the destination's door that maps BACK to the source — the
+    ``door_cells[j]`` whose ``connections[j] == source_id`` (the SAME positional authoring
+    convention ``cross_door`` resolves the forward hop by: door_cells[i] -> connections[i]). So
+    exiting the tavern lands the party at the crypt's TAVERN door, not its lowest-sorted (camp)
+    door. Falls back to the lowest-sorted door — the pre-#1541 behavior, byte-identical — when
+    there is NO such door (``source_id`` is ``None``, unmapped, or the destination has fewer door
+    cells than the source's connection index). The party stands BESIDE the door, never on the
+    threshold (``reachable`` excludes the start cell, so members land on its Chebyshev-1 ring and
+    spread outward when it is crowded).
+
+    Mirrors ``_seed_combat_cells_from_stage``'s discipline: a deterministic member order, cells
+    ranked nearest-the-door first, each member claiming the NEXT free cell so two tokens never
+    stack (contention spreads to the next-nearest walkable). ADDITIVE / default-safe — a
+    destination with NO ``scene_grid`` or NO ``door_cells`` gets zero writes (returns ``[]``):
+    a room that behaved as today (no re-stage, no error) still does. Engine is the SOLE writer;
+    the caller holds the campaign lock and persists.
+
+    Returns the ids actually re-staged (for surfacing/tests)."""
+    grid = getattr(dest, "scene_grid", None)
+    if grid is None:
+        return []
+    # RAW (authored-order) door cells for the positional door->connection mapping; the sorted set
+    # (deduped, stable) is the fallback anchor when no reciprocal door resolves.
+    raw_doors = [(int(a), int(b)) for (a, b) in (getattr(grid, "door_cells", None) or [])]
+    door_cells = sorted(set(raw_doors))
+    if not door_cells:
+        return []
+    width, height, blocked = rest_blocked_cells(c, dest)
+    if width <= 0 or height <= 0:
+        return []
+    # ARRIVAL door: the RECIPROCAL door back to `source_id` when we know where we came from —
+    # door_cells[j] where the destination's connections[j] == source_id — else the lowest-sorted
+    # door (pre-#1541 best-effort). The party stands BESIDE it, never on the threshold.
+    door = door_cells[0]
+    if source_id is not None:
+        conns = [cid for cid in (getattr(dest, "connections", None) or []) if isinstance(cid, str)]
+        for idx, cid in enumerate(conns):
+            if cid == source_id and idx < len(raw_doors):
+                door = raw_doors[idx]
+                break
+    # Candidate rest cells: every FREE cell reachable from the door (routes around walls/props so
+    # nobody lands in a walled-off pocket), ranked nearest-first with a stable (y, x) tiebreak.
+    reach = combat_grid.reachable(door, width + height, set(), width, height, impassable=blocked)
+    nearest = sorted(reach, key=lambda cell: (combat_grid.chebyshev_cells(cell, door), cell[1], cell[0]))
+    # ARRIVAL HINTS (#1647 wave-2): world-data-baked preferred arrival cells for THIS arrival door.
+    # The engine stays PAINT-BLIND — it merely PREFERS a hinted cell that is reachable + free (in
+    # `reach`; `reach` already excludes the door/start cell and every `blocked` occupancy/terrain
+    # cell), in the authored order, then falls back to the nearest-free ranking below. Keyed by the
+    # resolved arrival-door cell string. ADDITIVE: no `arrival_hints` (or none for this door) ⇒
+    # `hinted` is empty ⇒ the candidate order is BYTE-IDENTICALLY today's nearest-free `sorted(reach)`.
+    hints_map = getattr(grid, "arrival_hints", None) or {}
+    hinted: list[tuple[int, int]] = []
+    if hints_map:
+        seen_h: set[tuple[int, int]] = set()
+        for entry in hints_map.get(f"{door[0]},{door[1]}") or []:
+            if not (isinstance(entry, (list, tuple)) and len(entry) == 2):
+                print(f"[arrival_hints] {dest.id}: malformed hint {entry!r} for door {door} — ignored",
+                      file=sys.stderr)
+                continue
+            try:
+                cell = (int(entry[0]), int(entry[1]))
+            except (TypeError, ValueError):
+                print(f"[arrival_hints] {dest.id}: non-int hint {entry!r} for door {door} — ignored",
+                      file=sys.stderr)
+                continue
+            if cell in reach and cell not in seen_h:  # reachable + free; dedupe repeats
+                hinted.append(cell)
+                seen_h.add(cell)
+    hinted_set = set(hinted)
+    candidates = iter(hinted + [cell for cell in nearest if cell not in hinted_set])
+    # Traveling party = the members _move_party_to just co-located here (PC(s) + companions), in
+    # c.characters insertion order for a deterministic seat assignment. Cells are unique + consumed
+    # sequentially, so each member lands on a distinct cell (no stacking).
+    party_ids = set(c.party)
+    seeded: list[str] = []
+    for cid, member in c.characters.items():
+        travels = cid in party_ids or member.kind in ("player", "companion")
+        if not travels or member.location_id != dest.id:
+            continue
+        cell = next(candidates, None)
+        if cell is None:
+            break  # the room ran out of free cells near the door — leave the rest unplaced
+        member.stage_cell = cell
+        seeded.append(cid)
+    return seeded
 
 
 def _coerce_cell_pairs(raw, label: str) -> list[list[int]]:
@@ -4793,6 +5204,120 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
     if movement_illegal is not None:
         view["movement_illegal"] = movement_illegal
     return view
+
+
+@mcp.tool()
+def walk_to(campaign_id: str, character_id: str, x: int, y: int) -> dict:
+    """W2 (#1319): walk a party member to rest-grid cell (x, y) — the out-of-combat twin of
+    move_to_coords (additive; does NOT un-gate combat). Paths around walls/props/standers, writes
+    stage_cell, emits a `rest_walk` glide beat. Rejects when combat is active, no scene grid, or the
+    target is blocked/unreachable/off-grid."""
+    if not character_id:
+        raise ValueError("walk_to needs a character_id")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        # Combat gate MIRROR (not reuse): walk_to is the REST verb. When a fight is active the
+        # grid twin is move_to_coords — refuse here so the two lanes never overlap.
+        if c.combat.active:
+            raise ValueError("combat is active — use move_to_coords (walk_to is the rest-mode verb)")
+        loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+        if loc is None:
+            raise ValueError("no current location to walk in")
+        if getattr(loc, "scene_grid", None) is None:
+            raise ValueError("this location has no scene grid to walk on")
+        mover = _char(c, character_id)  # tolerant id resolution; raises a "did you mean" on a miss
+        character_id = mover.id  # canonicalize so the exclude/occupancy match is exact
+        # W2 review fix: reject walking a character who is anchored at a DIFFERENT,
+        # explicitly-known location. stage_cell is the sole-writer source
+        # rest_blocked_cells reads back keyed on location_id == this location; writing
+        # a stage_cell here for a mover whose location_id genuinely points elsewhere
+        # would produce a position that location's own occupancy read never counts (it
+        # skips non-matching location_id) — a silent split-brain stander. This is
+        # intentionally a conservative check: it only fires on a real non-empty
+        # mismatch, and leaves None/"" (the party's own not-yet-travelled sentinel,
+        # per #1349) untouched, so it never collides with that unplaced case.
+        if mover.location_id and mover.location_id != loc.id:
+            raise ValueError(
+                f"{mover.name} is anchored at location {mover.location_id!r}, not the "
+                f"current location {loc.id!r} — walk_to only moves a character within "
+                f"the room they're already in."
+            )
+        width, height, blocked = rest_blocked_cells(c, loc, exclude_id=character_id)
+        if width <= 0 or height <= 0:
+            raise ValueError("this location's scene grid has no walkable extent")
+        to_cell = (int(x), int(y))
+        from_cell = getattr(mover, "stage_cell", None)
+        from_cell = (int(from_cell[0]), int(from_cell[1])) if from_cell is not None else None
+        warnings: list[str] = []
+        if not (0 <= x < width and 0 <= y < height):
+            # Out of bounds is a hard reject (unlike combat's advisory) — a rest walk must land on
+            # a real cell of the painted room; nothing off-grid is walkable.
+            return {
+                "walked": False,
+                "from": list(from_cell) if from_cell else None,
+                "to": list(from_cell) if from_cell else None,
+                "path": [],
+                "move_blocked": {
+                    "target": [x, y],
+                    "reason": f"({x}, {y}) is outside the {width}x{height} scene grid — walk rejected.",
+                },
+            }
+        if from_cell is None:
+            # An unplaced mover: this is effectively a placement. Only legal onto a free cell.
+            if to_cell in blocked:
+                return {
+                    "walked": False, "from": None, "to": None, "path": [],
+                    "move_blocked": {
+                        "target": [x, y],
+                        "reason": f"({x}, {y}) is impassable (wall/prop/occupied) — placement rejected.",
+                    },
+                }
+            path_cells: list[tuple[int, int]] = []
+        else:
+            routed = combat_grid.shortest_path(from_cell, to_cell, blocked, width, height)
+            if routed is None:
+                return {
+                    "walked": False,
+                    "from": list(from_cell),
+                    "to": list(from_cell),
+                    "path": [],
+                    "move_blocked": {
+                        "target": [x, y],
+                        "reason": f"({x}, {y}) is impassable (wall/prop/occupied) or unreachable — "
+                                  f"walk rejected; stayed at {list(from_cell)}.",
+                    },
+                }
+            path_cells = routed  # step cells EXCLUDING the start (empty if already there)
+        # The full envelope path INCLUDES the start cell so the Animator glides from where the
+        # character stands (mirrors combat's last_move_path shape).
+        envelope_path = ([list(from_cell)] if from_cell is not None else []) + [list(pc) for pc in path_cells]
+        if from_cell is None:
+            envelope_path = [[x, y]]  # a placement: a single-cell path at the destination
+        mover.stage_cell = to_cell
+        c.combat.last_walk_path = envelope_path
+        _log_combat_event(
+            c,
+            f"{mover.name} walks to ({x}, {y}).",
+            {
+                "event": "rest_walk",
+                "actor": _combatant_ref(mover),
+                "from": list(from_cell) if from_cell else None,
+                "to": [x, y],
+                "path": envelope_path,
+                "location_id": loc.id,
+                "warnings": list(warnings),
+            },
+            speaker=mover.name,
+        )
+        save_campaign(c)
+    return {
+        "walked": True,
+        "character_id": character_id,
+        "from": list(from_cell) if from_cell else None,
+        "to": [x, y],
+        "path": envelope_path,
+        "warnings": warnings,
+    }
 
 
 def range_helper(cells: int, cell_size: int) -> int:
@@ -5241,6 +5766,14 @@ def next_turn(campaign_id: str) -> dict:
                 },
                 speaker=cur.name,
             )
+        # #1645: track how many consecutive turn-advances have passed with NO living hostile left,
+        # so _combat_view's pending_resolution nudge escalates to URGENT on a fight the DM keeps
+        # cycling turns in without closing. Reset the moment a hostile is still up. This NEVER ends
+        # combat — the DM owns the end_combat predicate (questgen.py:7 invariant).
+        if _living_hostiles(c):
+            c.combat.no_hostile_turns = 0
+        else:
+            c.combat.no_hostile_turns += 1
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
@@ -6550,7 +7083,11 @@ def attack(
         # Persist regardless of hit/miss: a miss still consumed the action/reaction
         # economy above, and that bookkeeping must survive (sole-writer discipline).
         save_campaign(c)
-        return result
+        # #1645 codex round: the KILLING BLOW itself must surface the closure nudge — attack() returns
+    # its own result dict (no _combat_view), so without this the DM only saw the nudge on the NEXT
+    # combat-tool read.
+    _apply_resolution_nudge(c, result)
+    return result
 
 
 @mcp.tool()
@@ -7039,9 +7576,7 @@ def end_combat(campaign_id: str, resolution: str = "") -> dict:
         # extra_attack_reminder advisory pattern. Computed from the order BEFORE the reset.
         live_hostiles = [
             {"id": ch.id, "name": ch.name, "hp": f"{ch.current_hp}/{ch.max_hp}"}
-            for cb in c.combat.order
-            if (ch := c.characters.get(cb.character_id)) is not None
-            and ch.kind == "monster" and ch.current_hp > 0 and not ch.dead
+            for ch in _living_hostiles(c)  # the ONE canonical predicate (#1654 review dedup)
         ]
         res = (resolution or "").strip()
         if res:
@@ -7083,6 +7618,38 @@ def end_combat(campaign_id: str, resolution: str = "") -> dict:
                 # fight ended with foes alive (resolves the continuity-break behavioral gate).
                 payload["resolution"] = res
             _log_combat_event(c, end_text, payload)
+        # W4 (#1321) NO-TELEPORT (exit half): write each SURVIVING combatant's final grid cell
+        # back to its Character.stage_cell so the party stays where the fight ENDED — the next
+        # rest board opens on the combat-end positions, no snap back to a spawn. Computed from
+        # the order BEFORE the reset. Additive: only combatants actually placed on the grid
+        # (x/y set — i.e. a grid fight, typically one that was seed_from_stage-seeded or moved on
+        # the grid) get a write-back; a zone/theater fight leaves x/y None ⇒ NO stage_cell write,
+        # byte-for-byte today's behavior. The dead are skipped (a corpse has no rest position).
+        # This IS the engine writing its own sole-writer field from its own combat state.
+        #
+        # STUCK-CELL (#1511) defense in depth: the combat grid's OWN geometry/impassable set is
+        # not guaranteed to track the location's REST scene_grid cell-for-cell (a plain #461
+        # `set_grid` fight, or a grid-mismatch degrade, has no obligation to match it) — so a
+        # combat-legal final cell could still land on a cell rest_blocked_cells treats as solid.
+        # Prefer the exact cell when it's rest-walkable; otherwise relocate to the nearest
+        # walkable cell rather than parking a survivor somewhere `walk_to` would refuse to route
+        # through. A location with no scene_grid (or an empty room) is untouched — write the
+        # combat cell exactly as before.
+        for cb in c.combat.order:
+            if cb.x is None or cb.y is None:
+                continue
+            ch = c.characters.get(cb.character_id)
+            if ch is None or ch.dead or ch.current_hp <= 0:
+                continue
+            cell = (int(cb.x), int(cb.y))
+            loc = c.locations.get(ch.location_id) if ch.location_id else None
+            if loc is not None and getattr(loc, "scene_grid", None) is not None:
+                rw, rh, rest_blocked = rest_blocked_cells(c, loc, exclude_id=ch.id)
+                if rw > 0 and rh > 0 and cell in rest_blocked:
+                    relocated = _nearest_walkable_cell(rw, rh, rest_blocked, cell)
+                    if relocated is not None:
+                        cell = relocated
+            ch.stage_cell = cell
         c.combat = Combat()
         save_campaign(c)
         return result
@@ -10173,6 +10740,111 @@ def _parley_npc_difficulty(ch) -> str:
     return _ATTITUDE_DEFAULT_DIFFICULTY.get(band, "medium")
 
 
+def _nearest_walkable_adjacent(
+    goal: tuple[int, int],
+    start: "tuple[int, int] | None",
+    blocked: set[tuple[int, int]],
+    width: int,
+    height: int,
+) -> "tuple[int, int] | None":
+    """W3 (#1320): the ADJACENT-to-``goal`` cell (Chebyshev distance <=1 — the SAME 5ft-reach
+    definition as ``combat_grid.in_melee_reach``, combat_grid.py) that is walkable AND reachable,
+    closest to ``start``. This is the cell the party walks TO so it stands beside the speaking NPC
+    (never onto it). Reuses ``combat_grid.shortest_path`` for reachability — pathing is never
+    forked. Returns None when every one of the 8 neighbours is blocked/off-grid/unreachable (the
+    caller then falls back to today's freeform parley — the MED-addendum fallback for #1320)."""
+    candidates: list[tuple[int, int]] = []
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue  # the NPC's own cell — never stand on the interlocutor
+            cell = (goal[0] + dx, goal[1] + dy)
+            if not (0 <= cell[0] < width and 0 <= cell[1] < height):
+                continue
+            if cell in blocked:
+                continue
+            # cell is always within combat_grid.in_melee_reach (Chebyshev<=1) of goal here:
+            # dx,dy range over {-1,0,1} excluding (0,0) above, so this holds by construction
+            # and isn't re-verified at runtime (an assert here would be stripped under -O and
+            # adds no real guard — the invariant is the loop bounds, not a check on cell).
+            candidates.append(cell)
+    if not candidates:
+        return None
+    if start is None:
+        # An unplaced mover: any free adjacent cell is a legal placement; pick the deterministic
+        # first (reading order) so a re-approach on the same board is stable.
+        return sorted(candidates)[0]
+    if start in candidates:
+        return start  # already standing adjacent — no walk needed
+    # Reachable candidates only, ranked by the routed step count (then reading order) so the party
+    # takes the shortest legal approach. `blocked` doubles as `occupied` (same as walk_to's call).
+    reachable: list[tuple[int, tuple[int, int]]] = []
+    for cell in candidates:
+        routed = combat_grid.shortest_path(start, cell, blocked, width, height)
+        if routed is not None:
+            reachable.append((len(routed), cell))
+    if not reachable:
+        return None
+    reachable.sort(key=lambda t: (t[0], t[1]))
+    return reachable[0][1]
+
+
+def _approach_to_talk(campaign_id: str, mover_id: str, npc) -> "dict | None":
+    """W3 (#1320) approach-to-talk: walk ``mover_id`` to a cell ADJACENT to the tracked ``npc``'s
+    stage cell, THEN return an approach descriptor — so a click-NPC parley opens AT the actor
+    instead of via a disembodied portrait. Reuses W2's ``rest_blocked_cells`` + ``walk_to`` (the
+    sole writer of ``stage_cell``); pathing is never forked.
+
+    Returns ``{walked, from, to, npc_cell, path}`` on a successful approach (or when the mover is
+    already adjacent — walked False, empty path), or ``None`` to DEGRADE to today's freeform
+    parley when there is nothing to approach: the NPC has no known stage cell, no scene grid /
+    combat is active (walk_to would refuse), or no legal adjacent cell is reachable (blocked
+    pathing — the MED-addendum fallback). Never raises: approach is best-effort positioning."""
+    c = _require(campaign_id)
+    if c.combat.active:
+        return None  # combat lane owns positioning — walk_to would refuse; freeform parley
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    if loc is None or getattr(loc, "scene_grid", None) is None:
+        return None  # no painted room to approach across (additive: today's behavior)
+    npc_cell = getattr(npc, "stage_cell", None)
+    if npc_cell is None:
+        return None  # the NPC isn't staged anywhere — nothing to approach; freeform parley
+    npc_cell = (int(npc_cell[0]), int(npc_cell[1]))
+    mover = c.characters.get(mover_id)
+    if mover is None:
+        return None
+    # walk_to (W2 review fix) rejects a mover anchored at a location_id different from the
+    # current one — mirror that guard here so we degrade to freeform instead of ever reaching
+    # walk_to's raise (this is the one walk_to precondition _approach_to_talk didn't already
+    # pre-check; None/"" — the party's own not-yet-travelled sentinel, #1349 — is left alone,
+    # matching walk_to's own carve-out).
+    if mover.location_id and mover.location_id != loc.id:
+        return None
+    # The mover never blocks itself; the NPC's own cell stays blocked (we stand BESIDE it).
+    width, height, blocked = rest_blocked_cells(c, loc, exclude_id=mover_id)
+    if width <= 0 or height <= 0:
+        return None
+    start = getattr(mover, "stage_cell", None)
+    start = (int(start[0]), int(start[1])) if start is not None else None
+    dest = _nearest_walkable_adjacent(npc_cell, start, blocked, width, height)
+    if dest is None:
+        return None  # no legal adjacent cell reachable → freeform parley (MED-addendum fallback)
+    if start is not None and start == dest:
+        return {"walked": False, "from": list(start), "to": list(start), "npc_cell": list(npc_cell), "path": [list(start)]}
+    # Reuse walk_to — the SOLE writer of stage_cell (takes its own lock + save + rest_walk beat).
+    # Belt-and-suspenders on the docstring's absolute "Never raises" contract: every precondition
+    # walk_to checks is already mirrored above, but a TOCTOU race (state changing between our
+    # planning read and walk_to's own re-check under its lock) could still surface one of walk_to's
+    # ValueErrors here — catch and degrade to freeform rather than ever propagating.
+    try:
+        res = walk_to(campaign_id, mover_id, dest[0], dest[1])
+    except ValueError:
+        return None  # lost a race between planning and the walk → freeform parley
+    if not res.get("walked"):
+        return None  # a race lost the cell between planning and the walk → freeform parley
+    return {"walked": True, "from": res.get("from"), "to": res.get("to"), "npc_cell": list(npc_cell), "path": res.get("path", [])}
+
+
 @mcp.tool()
 def generate_parley_options(
     campaign_id: str,
@@ -10186,27 +10858,37 @@ def generate_parley_options(
     target_id: str = "",
     character_id: str = "",
     id: str = "",
+    approach: bool = False,
 ) -> dict:
     """Call this BEFORE narrating a social encounter or any choice point: it lays out the
-    PLAYER'S available options with sheet-correct DCs so you author a real Parley menu
-    instead of railroading to one narrated path. This is NOT `companion_advise` (the
-    companion's in-character take) or `get_scene` (the authored scene beats) — it returns
-    the lead PC's own alignment + the actual skill modifiers off their sheet + a suggested
-    DC per skill, so you write 2-4 tagged choices WITHOUT hand-computing anything.
+    PLAYER'S available options with sheet-correct DCs so you author a real Parley menu instead
+    of railroading (NOT `companion_advise`/`get_scene`). It returns the lead PC's alignment +
+    sheet-correct skill modifiers + a suggested DC per skill, so you write tagged choices without
+    hand-computing.
     Bind to a TRACKED NPC via ``npc_id`` (aliases ``target_id`` / ``character_id`` / ``id``)
-    so the surface carries an ``npc`` block and the default ``difficulty`` is derived from the
-    target's attitude (hostile=HARD, friendly=EASY, indifferent=MEDIUM); an explicit
-    ``difficulty`` always wins, an unknown npc_id degrades to a freeform parley."""
+    so the surface carries an ``npc`` block and the default ``difficulty`` derives from the
+    target's attitude; an explicit ``difficulty`` always wins, an unknown npc_id degrades to a
+    freeform parley.
+    ``approach=True`` walks the PC adjacent to the NPC first (W2 walk_to); parley opens AT the
+    actor, else freeform."""
+    # W3: approach-to-talk WRITES stage_cell (via walk_to) and must run BEFORE the read-only
+    # projection below so the npc/approach blocks reflect the post-walk board. Resolve the actor +
+    # NPC ids first (a pure read), walk, then re-load fresh objects for the options snapshot.
     c = _require(campaign_id)
     aid = actor_id or _lead_pc_id(c)
     if not aid:
         raise ValueError("campaign has no characters to parley with; create the PC first")
-    actor = _char(c, aid)
-
     # F10-2/SYN-07: bind to a tracked NPC (additive). Accept the id the DM reaches for; an
     # unknown id DEGRADES to a freeform parley (no npc block) — like event_id, it never
     # raises mid-scene. The binding is a pure READ: nothing on the NPC is mutated here.
     npc_id = npc_id or target_id or character_id or id
+    approach_info: dict | None = None
+    if approach and npc_id and npc_id in c.characters:
+        # Best-effort positioning; None -> freeform parley (no `approach` key). walk_to re-saves,
+        # so re-load below to project the moved stage cells.
+        approach_info = _approach_to_talk(campaign_id, aid, c.characters[npc_id])
+        c = _require(campaign_id)
+    actor = _char(c, aid)
     the_npc = c.characters.get(npc_id) if npc_id else None
 
     # Default skill set: the actor's own proficient/expertise skills UNION the four core
@@ -10267,6 +10949,17 @@ def generate_parley_options(
             "met": the_npc.met,
             "difficulty": effective_difficulty or "medium",
         }
+        # W3 (#1320): where the SPEAKING NPC stands, so the DM/renderer can open the dialogue AT
+        # the actor. Read-only echo of the NPC's stage cell (walk_to is the sole writer). Only
+        # when the NPC is actually staged — absent -> no key (byte-identical to today's block).
+        if the_npc.stage_cell is not None:
+            out["npc"]["stage_cell"] = [int(the_npc.stage_cell[0]), int(the_npc.stage_cell[1])]
+    # W3 (#1320): the approach-to-talk result — present ONLY when approach=True actually walked (or
+    # found the party already adjacent). Absent when approach was not requested OR degraded to a
+    # freeform parley (no stage cell / no grid / combat / unreachable) — so the default payload is
+    # byte-identical to before. `walked` distinguishes a real walk from an already-adjacent no-op.
+    if approach_info is not None:
+        out["approach"] = approach_info
     # Quest & Arc engine, Layer 3: when a live Event is named, attach its authored options as
     # the menu slots (the free-form path above stays). A resolved/unknown Event omits the block,
     # degrading to today's freeform parley. resolve_event applies a picked option's ripple.
@@ -10871,7 +11564,7 @@ def recall_decisions(campaign_id: str, query: str = "", limit: int = 12) -> dict
 
 @mcp.tool()
 def add_consequence(campaign_id: str, in_days: int = 0, text: str = "", note: str = "",
-                    message: str = "", content: str = "") -> dict:
+                    message: str = "", content: str = "", quest_id: str = "") -> dict:
     """Schedule a time-deferred world event to come due `in_days` from now (the
     in-world Campaign.day). Use it whenever the present sets up the future — a
     ritual that completes in 3 days, a spared villain who returns in a week, a
@@ -10880,20 +11573,30 @@ def add_consequence(campaign_id: str, in_days: int = 0, text: str = "", note: st
 
     Pass the event as ``text`` (canonical) or the aliases ``message`` / ``content`` —
     ``text`` wins if more than one is given. (``note`` is a SEPARATE optional field, not an
-    alias.)"""
+    alias.)
+
+    ``quest_id`` (#1405, optional): when this consequence IS the recorded branch-outcome of a
+    resolved quest, pass its id — that STRUCTURED link is what clears the `consequence_cue`
+    capture nudge, so you can phrase ``text`` as natural in-world prose without echoing the
+    quest's title. Omit it for a free-standing world event (default "" == today)."""
     text = text or message or content  # accept the text the DM reaches for (NOT `note` — distinct field)
     if not text:
         raise ValueError("add_consequence needs text (pass `text` or an alias: `message`/`content`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        conseq = consequences_mod.schedule(c, in_days, text, note)
+        conseq = consequences_mod.schedule(c, in_days, text, note, quest_id=(quest_id or "").strip())
         save_campaign(c)
-        return {
+        out = {
             "id": conseq.id,
             "trigger_day": conseq.trigger_day,
             "current_day": c.day,
             "text": conseq.text,
         }
+        # ADDITIVE: echo the structured link back only when set, so an unlinked consequence returns
+        # the exact four-key shape it always has.
+        if conseq.quest_id:
+            out["quest_id"] = conseq.quest_id
+        return out
 
 
 @mcp.tool()
@@ -11400,6 +12103,115 @@ def set_flag(campaign_id: str, flag: str, value: bool = True) -> dict:
         return {"flags": dict(c.flags)}
 
 
+# ── #1405: quest authoring & consequence-capture cues ─────────────────────────────────────────
+# ADVISORY return-payload nudges — the same next_action cue-stack family (#1313/#1286/#1334)
+# applied to the AUTHORING seam the flywheel's 3.9→4.0 quest-promotion gap now bottlenecks on:
+# objectives/giver/location empty at creation, and consequences never recorded at resolution
+# (issue #1405 — measured objectives empty 2/3, consequences empty 3/3 at snapshot level). Each
+# helper is a PURE read that returns None/[] when the quest is already rich, so the caller omits
+# the key and the tool result is BYTE-IDENTICAL to today's shape for a complete quest. Cues are
+# text the DM MAY act on — the engine takes NO auto-action and NEVER rejects/blocks the quest
+# (gates-read-gauges preserved; the teeth question is owner-reserved, #1313).
+
+# The richness-critical authoring fields a quest needs a spine (objectives) and grounding
+# (a giver, a place) to be trackable and promotable.
+_QUEST_AUTHORING_FIELDS = ("objectives", "giver_id", "location_id")
+
+
+def _quest_missing_fields(q: Quest) -> list[str]:
+    """Which of the richness-critical authoring fields (objectives / giver_id / location_id) a
+    quest left empty. PURE read; [] == a fully-authored quest (today's happy path)."""
+    missing = []
+    if not (getattr(q, "objectives", None) or []):
+        missing.append("objectives")
+    if not (getattr(q, "giver_id", None) or ""):
+        missing.append("giver_id")
+    if not (getattr(q, "location_id", None) or ""):
+        missing.append("location_id")
+    return missing
+
+
+def _quest_authoring_cue(q: Quest) -> Optional[dict]:
+    """#1405(a): the add_quest-time authoring nudge. next_action-style (kind/severity/imperative,
+    mirroring _next_action) plus the concrete `missing` list. Returns None when the quest is fully
+    authored, so add_quest's result stays byte-identical for a complete quest."""
+    missing = _quest_missing_fields(q)
+    if not missing:
+        return None
+    return {
+        "kind": "quest_authoring_incomplete",
+        "severity": "med",
+        "missing": missing,
+        "imperative": (
+            "Author this quest's " + ", ".join(missing) + " now (re-call add_quest with them) — "
+            "a quest with no objectives / giver / location has no spine to track or promote."
+        ),
+    }
+
+
+def _quest_consequence_recorded(c: Campaign, q: Quest) -> bool:
+    """True iff a resolved quest already has its branch outcome captured. Three signals, in order:
+      1. a non-empty ``evolves_to`` (the follow-on the extractor reads as resolution.evolves_to);
+      2. a Consequence STRUCTURALLY linked to this quest (``Consequence.quest_id == q.id``) — the
+         #1405 machine-checkable link add_consequence(quest_id=…) writes, so a DM who captures the
+         outcome in NATURAL in-world prose (no literal quest title in the text) is correctly seen
+         as captured (the false-positive hole the substring-only check had);
+      3. FALLBACK for legacy / unlinked consequences: a Consequence whose text/note lowercased
+         mentions the quest's title or id. This is best-effort only — a natural-prose consequence
+         with NO structured link and no literal title will not match, so the cue may re-fire; the
+         remediation the cue names is passing quest_id, which lands signal 2.
+    Mirrors the quest_no_echo digest's echo check so the result cue and the digest agree."""
+    if (getattr(q, "evolves_to", "") or "").strip():
+        return True
+    qid = str(getattr(q, "id", "") or "").strip()
+    consequences = getattr(c, "consequences", None) or []
+    # Signal 2 — the structured link (exact match, no substring guesswork).
+    if qid and any(str(getattr(cs, "quest_id", "") or "").strip() == qid for cs in consequences):
+        return True
+    # Signal 3 — legacy substring fallback (unlinked consequences from before quest_id existed).
+    needle_title = (getattr(q, "title", "") or "").strip().lower()
+    needle_id = qid.lower()
+    for cs in consequences:
+        blob = f"{getattr(cs, 'text', '')} {getattr(cs, 'note', '')}".lower()
+        if (needle_title and needle_title in blob) or (needle_id and needle_id in blob):
+            return True
+    return False
+
+
+def _quest_consequence_cue(c: Campaign, q: Quest) -> Optional[dict]:
+    """#1405(b): the resolution-time consequence-capture nudge. Fires when a TERMINAL quest
+    (completed/failed) has NO recorded branch outcome. next_action-style. Returns None when the
+    quest already has a consequence/echo, so a resolution that recorded one stays byte-identical."""
+    if getattr(q, "status", "active") not in ("completed", "failed"):
+        return None
+    if _quest_consequence_recorded(c, q):
+        return None
+    return {
+        "kind": "quest_consequence_uncaptured",
+        "severity": "med",
+        "quest_id": getattr(q, "id", None),
+        "imperative": (
+            f"'{getattr(q, 'title', None) or 'this quest'}' resolved with no branch outcome "
+            "recorded — capture it: complete_quest(quest_id, evolves_to='...'), or "
+            "add_consequence(text='...', quest_id=<this quest's id>) — pass quest_id so the link is "
+            "recorded even when you phrase the fallout as natural prose. This leaves a mark the "
+            "world (and the extractor) can see."
+        ),
+    }
+
+
+def _first_uncaptured_quest_cue(c: Campaign) -> Optional[dict]:
+    """The consequence-capture cue for the FIRST terminal quest in the campaign that has no
+    recorded branch outcome, or None when every resolved quest already has one. Used by
+    record_decision (which is not tied to a single quest) to nudge the DM toward capturing a
+    resolved thread's outcome while they are already recording choices."""
+    for q in (getattr(c, "quests", None) or {}).values():
+        cue = _quest_consequence_cue(c, q)
+        if cue is not None:
+            return cue
+    return None
+
+
 @mcp.tool()
 def add_quest(
     campaign_id: str,
@@ -11411,7 +12223,11 @@ def add_quest(
 ) -> dict:
     """Add a quest, optionally linked to the NPC who gave it (giver_id) and the
     location it's anchored to (location_id), so the dashboard and DM can trace
-    who-wants-what-where. A campaign has many quests; the opening hook is just one."""
+    who-wants-what-where. A campaign has many quests; the opening hook is just one.
+
+    #1405: when the quest is created MISSING objectives / giver_id / location_id the result
+    carries an ADVISORY `authoring_cue` (next_action-style) nudging the DM to populate them now
+    — never a rejection; omitted entirely once the quest is fully authored."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         q = Quest(
@@ -11430,7 +12246,13 @@ def add_quest(
         )
         c.quests[q.id] = q
         save_campaign(c)
-        return {"id": q.id, "title": q.title, "status": q.status}
+        out = {"id": q.id, "title": q.title, "status": q.status}
+        # #1405(a): ADDITIVE — only present when the quest is under-authored, so a complete quest
+        # returns the exact three-key shape it always has.
+        cue = _quest_authoring_cue(q)
+        if cue is not None:
+            out["authoring_cue"] = cue
+        return out
 
 
 def _evolution_note(quest_id: str) -> str:
@@ -11524,6 +12346,13 @@ def complete_quest(
         if milestone is not None:
             out["xp_awarded"] = milestone["xp_awarded"]
             out["grants"] = milestone["grants"]
+        # #1405(b): ADDITIVE — nudge the DM to capture the branch outcome when the quest resolved
+        # with none (empty evolves_to AND no consequence naming it). Computed AFTER the evolves_to
+        # kwarg + any scheduled evolution above, so a resolution that already recorded a
+        # consequence returns byte-identical to today.
+        cue = _quest_consequence_cue(c, q)
+        if cue is not None:
+            out["consequence_cue"] = cue
         return out
 
 
@@ -11614,6 +12443,12 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
                 "trigger_day": evolution.trigger_day,
                 "evolves_to": q.evolves_to,
             }
+        # #1405(b): when the last objective auto-resolved the quest with no branch outcome
+        # recorded, nudge to capture one. ADDITIVE — None (and thus omitted) whenever the quest
+        # stayed active OR already had an echo/consequence, so today's shape is byte-identical.
+        cue = _quest_consequence_cue(c, q)
+        if cue is not None:
+            out["consequence_cue"] = cue
         return out
 
 
@@ -12341,6 +13176,14 @@ def record_decision(
         # (today's default) returns the exact four-key shape it always has.
         if approval_results:
             out["approval_results"] = approval_results
+        # #1405(b): record_decision is the branch-outcome sink — while the DM is here recording a
+        # choice, nudge them to also capture the outcome of any resolved quest that still has none
+        # (empty evolves_to + no naming consequence). ADDITIVE — omitted when every terminal quest
+        # already has its consequence, so an untagged decision in a fully-captured campaign returns
+        # byte-identical to today.
+        cue = _first_uncaptured_quest_cue(c)
+        if cue is not None:
+            out["consequence_cue"] = cue
         return out
 
 
@@ -13099,6 +13942,29 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
             continue  # the endgame cue owns this quest in the wrap window (not ALSO resolvable/stalled)
+        # #1405(a): an ACTIVE quest with NO objectives has no spine the engine can track toward a
+        # resolution — surface the authoring gap (the flywheel's binding constraint, #1405) as a
+        # per-beat cue so the DM populates it. This owns the quest's cue (continue) so a spine-less
+        # quest isn't ALSO flagged stalled. Fires only on the load-bearing OBJECTIVES gap; a
+        # giver/location-only gap rides the one-time add_quest `authoring_cue` result, not a
+        # per-beat nag. BEATS-GATED (_QUEST_AUTHORING_BEATS) so a freshly-introduced quest on beat 0
+        # is NOT nagged — only a quest left spine-less across a stretch of play escalates here. The
+        # one-time add_quest `authoring_cue` covers the create moment. ADDITIVE: every authored
+        # (objective-bearing) quest, and every early/healthy campaign, skips this untouched.
+        if not objectives and _beats_in_act >= _QUEST_AUTHORING_BEATS:
+            obligations.append({
+                "kind": "quest_authoring_incomplete",
+                "quest_id": qid,
+                "title": title,
+                "severity": "med",
+                "missing": _quest_missing_fields(q),
+                "detail": (
+                    f"Quest '{title}' has no objectives — it has no spine to track or resolve. "
+                    "Author its objectives (and giver_id / location_id) now (re-call add_quest) so "
+                    "the party has concrete goals and the quest can be advanced and promoted."
+                ),
+            })
+            continue  # a spine-less quest isn't ALSO flagged resolvable/stalled
         # ALL objectives done -> the quest is mechanically resolvable; the DM should close
         # it AND give it an echo (evolves_to) so a win isn't one-and-done (rule of three).
         if objectives and all(o in completed for o in objectives):
@@ -13164,7 +14030,8 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     #     In the #1313 wrap window the endgame cue (quest_endgame_unresolved) already names concrete
     #     active quests to close, so this campaign-level "nothing has moved" cue is redundant there too.
     _already_flagged_quest = any(
-        o.get("kind") in ("quest_resolvable", "quest_stalled", "quest_endgame_unresolved")
+        o.get("kind") in ("quest_resolvable", "quest_stalled", "quest_endgame_unresolved",
+                          "quest_authoring_incomplete")
         for o in obligations
     )
     if _beats_in_act >= _PARTY_STUCK_BEATS and quests and not _already_flagged_quest:
@@ -14122,26 +14989,94 @@ def scene_context(
     return out
 
 
+class _PersistBeatArgDropped:
+    """Sentinel (#1359 fix + evaos "Release regression" follow-up): a persist_beat
+    structured arg that arrived as a stringified value the target type can't accept —
+    unparseable JSON, or valid JSON of the WRONG type (``decision='[1,2,3]'`` parses to a
+    list, not a dict). Distinguishes "dropped, saw a signal" from a genuine ``None``
+    (the arg simply wasn't passed), so persist_beat can report it under ``dropped_args``
+    without a second reject-vs-omitted round-trip. Never constructed outside this module;
+    invisible to Pydantic's ``json_schema()`` (verified: the wire schema is unchanged from
+    the pre-#1359 ``Optional[dict]``/``Optional[list]`` shape — test_tool_schema_budget)."""
+    __slots__ = ()
+
+
+_PERSIST_BEAT_ARG_DROPPED = _PersistBeatArgDropped()
+
+
+def _mk_persist_beat_json_coercer(want: type):
+    """Build a Pydantic BEFORE-validator for one persist_beat structured arg (#1359 +
+    evaos "Release regression" fix). FastMCP validates tool args against the function type
+    hints with Pydantic BEFORE the function body runs, and — critically — FastMCP's
+    transport layer JSON-pre-parses any string-shaped arg BEFORE Pydantic sees it. So this
+    validator may receive: the correct type (untouched), ``None`` (untouched), a raw str
+    that failed FastMCP's pre-parse (still a str here — try json.loads ourselves), or an
+    ALREADY-WRONG-TYPE object (FastMCP's own pre-parse succeeded but produced the wrong
+    JSON type, e.g. a list where this arg wants a dict). All three "bad" cases return the
+    ``_PERSIST_BEAT_ARG_DROPPED`` sentinel instead of raising — the FATAL
+    ``no_rejected_tool_calls`` behavioral-gate rejection #1359 exists to prevent. Wire-
+    NEUTRAL: a BeforeValidator does not alter ``json_schema()`` (mirrors models._coerce_list
+    / ListArg's proven pattern), so this costs zero pinned-schema budget."""
+    def _coerce(v):
+        if v is None or isinstance(v, want):
+            return v  # unset, or already the right shape — untouched
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+            except (ValueError, TypeError):
+                return _PERSIST_BEAT_ARG_DROPPED  # not JSON — drop, don't reject the beat
+            return parsed if isinstance(parsed, want) else _PERSIST_BEAT_ARG_DROPPED
+        return _PERSIST_BEAT_ARG_DROPPED  # FastMCP pre-parsed to a JSON value of the wrong type
+    return _coerce
+
+
+_PersistBeatListArg = Annotated[
+    Optional[list] | _PersistBeatArgDropped, BeforeValidator(_mk_persist_beat_json_coercer(list))
+]
+_PersistBeatDictArg = Annotated[
+    Optional[dict] | _PersistBeatArgDropped, BeforeValidator(_mk_persist_beat_json_coercer(dict))
+]
+
+
 @mcp.tool()
 def persist_beat(
     campaign_id: str = "",
-    events: Optional[list] = None,
-    memories: Optional[list] = None,
-    decision: Optional[dict] = None,
-    advance: Optional[dict] = None,
+    events: _PersistBeatListArg = None,
+    memories: _PersistBeatListArg = None,
+    decision: _PersistBeatDictArg = None,
+    advance: _PersistBeatDictArg = None,
 ) -> dict:
-    """ONE-CALL end-of-beat persistence — batches the whole save cluster (SKILL.md
-    step 7) into a single round-trip AND a single disk write (latency collapse;
-    additive — log_event / remember / record_decision / advance_time all still
-    exist for one-off use). Pass any subset of:
-    ``events`` (log rows ``{"kind","text","speaker"?,"payload"?}``; leave empty for prose
-    you already streamed live via log_event — re-passing double-logs it),
-    ``memories`` (``[{"character_id","fact"}]``; character_id accepts ``id``/``npc_id``
-    aliases, resolved tolerantly), ``decision`` (one ``{"summary","options"?,"chosen"?,
-    "rationale"?,"actor_ids"?,"sets_flag"?,"approval_tags"?}`` — ``approval_tags`` MOVES party
-    companion approval exactly like the standalone ``record_decision`` (flat cause-keys or
-    ``{key,delta}``; reported under ``approval_results`` when a companion moves), and
-    ``advance`` (``{"phases"?,"to"?,"note"?}`` to move the clock; skipped during combat)."""
+    """ONE-CALL end-of-beat persistence — batches the whole save cluster (SKILL.md step 7)
+    into a single round-trip + disk write (additive; log_event/remember/record_decision/
+    advance_time still exist for one-off use). Any subset of:
+    ``events`` (log rows ``{"kind","text","speaker"?,"payload"?}``; skip if already streamed
+    live via log_event), ``memories`` (``[{"character_id","fact"}]``; id/npc_id aliases OK),
+    ``decision`` (``{"summary","options"?,"chosen"?,"rationale"?,"actor_ids"?,"sets_flag"?,
+    "approval_tags"?}`` — tags MOVE party companion approval like ``record_decision``,
+    reported under ``approval_results``), ``advance`` (``{"phases"?,"to"?,"note"?}``; skipped
+    during combat)."""
+    # dropped_args (evaos P3, proof-gap): a dropped arg and an omitted arg otherwise look
+    # byte-identical on the return — silently absorbing the slip with no signal would make
+    # it invisible to ops (can't tell "getting better/worse", can't catch a regression that
+    # makes the DM model-slip fire MORE). The BeforeValidators above (#1359 — tolerate a
+    # STRINGIFIED events/memories/decision/advance arg the DM emits instead of the object,
+    # coercing at the Pydantic layer so a bad one is DROPPED not REJECTED) hand back the
+    # ``_PERSIST_BEAT_ARG_DROPPED`` sentinel for anything they couldn't coerce; unwrap each
+    # arg here and name it, surfaced as an ADDITIVE ``dropped_args`` key below.
+    _dropped_args: list[str] = []
+    if events is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("events")
+        events = None
+    if memories is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("memories")
+        memories = None
+    if decision is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("decision")
+        decision = None
+    if advance is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("advance")
+        advance = None
+
     # Tolerate a bare/empty campaign_id (a recurring DM model-slip). SKILL.md step 7 says
     # "never emit a bare persist_beat()", but the model occasionally emits {} anyway — and a
     # hard "Field required" rejection RED-caps the WHOLE behavioral gate (the FATAL
@@ -14155,6 +15090,7 @@ def persist_beat(
         campaign_id = _active_campaign_id() or ""
     if (events or memories or decision or advance is not None) and not campaign_id:
         return {"error": "persist_beat: no campaign_id provided and no active campaign to resolve — pass campaign_id"}
+
     logged: list[dict] = []
     remembered: list[dict] = []
     decision_out: Optional[dict] = None
@@ -14316,6 +15252,12 @@ def persist_beat(
     # (today's default) returns the exact four-key shape it always has.
     if approval_results:
         out["approval_results"] = approval_results
+    # ADDITIVE (evaos P3, #1359 proof-gap): only surface dropped_args when a stringified arg
+    # was actually dropped (unparseable, or valid JSON of the wrong type) — a healthy beat's
+    # return is byte-for-byte today's shape. Named so ops can tell WHICH arg(s) the DM
+    # model-slipped on, keeping the slip observable instead of silently absorbed.
+    if _dropped_args:
+        out["dropped_args"] = _dropped_args
     # The EVERY-BEAT obligations digest (relationship-cues): persist_beat is the one tool
     # the DM hits every beat, so it's the vehicle that folds the relationship/quest
     # obligations into the DM's reliable flow (the proven fix for "surfacing info != the DM

@@ -8,9 +8,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
       - name: Engine tests
         # Phase-1 (DETERMINISTIC-3): coverage is report-only (no --cov-fail-under yet) so it
         # surfaces untested paths without flaking CI. pytest-cov is in the dev group.
@@ -21,6 +21,29 @@ jobs:
         run: uv run --directory servers/rules --group dev pytest -q --cov=. --cov-report=term-missing
       - name: Voice tests (torch-free; null backend + static metadata)
         run: uv run --directory servers/voice --group dev pytest -q --cov=. --cov-report=term-missing
+      - name: Static walkability gate (manifest lint + ortho triple-check + geometry; stdlib-only)
+        # Epic #1581: the STATIC half of the walkability gate runs on EVERY PR — a manifest entry
+        # without ortho/plate/sidecar, a drifted ortho (manifest vs sidecar vs fit-math), a blocked
+        # door landing, or an orphan walkable pocket goes RED pre-merge, with no player and no deps.
+        # Red-first units + the same repo check also run under pytest: qa/test_walk_static.py.
+        run: python3 qa/walk_static.py
+      - name: Static walkability units (red-first proofs for the gate itself)
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_walk_static.py
+      - name: Per-object alignment gate units (red-first proofs for qa/object_align_check.py)
+        # The instrument's own failure modes, pinned: a FEATURELESS crop pair correlates to a perfect
+        # dx=dy=0 with a dead peak (a deleted object certified as aligned — the exact class the gate
+        # exists to catch), and objects the gate cannot measure must be counted + named in the verdict
+        # rather than silently exempted. Runs in this lane because the engine dev group already carries
+        # numpy + Pillow; a review on #1690 flagged the instrument shipping with no CI reference at all.
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_object_align_check.py
+      - name: Spawn-placement unit test (#1584/#1651 CI half — choose_spawns places the party on the open-floor
+          centroid, never a barrel/corner/door; was ZERO CI references before this)
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_seed_spawns.py
+      # #1651 live-half slice — the tri-state classifier, the 3D occlusion / head-density silhouette
+      # detector, and the spawn/coherence-open assert. Pure cores only; the live sandbox drive is
+      # box-hosted, not run in CI.
+      - name: player_cert primitives unit test (#1651 live-half slice)
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_player_cert.py
       - name: Single-flight launch-guard test (scripts/launch_common.sh lock)
         # Pure bash + POSIX mkdir/kill -0/rm — no uv/claude/viewer. Proves a second concurrent
         # play_party.sh cold-open is cleanly rejected and the lock self-heals (release / dead holder).
@@ -50,6 +73,13 @@ jobs:
         run: bash qa/test_ui_playtest_heartbeat.sh
       - name: Combat-seed smoke (zero-LLM; pre_seed_combat subclass/resource/save enrichment assertions)
         run: uv run --directory servers/engine --group dev python ../../qa/smoke_pre_seed_combat.py
+      # #1651 CI half — qa/certifications pins plate/boxes/geometry shas; ANY drift since certification
+      # must read STALE, never silently green. Now BLOCKING (#1668): shop's manifest_entry drift
+      # (door_hotspots added by #1649) was re-certified in the sandbox lane, so the gate is green and
+      # continue-on-error is removed — a red-but-non-blocking gate is the audit's decay pattern (case 6,
+      # only red CI enforces the property).
+      - name: Room-certification freshness test (#1651 CI half; now BLOCKING per #1668)
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_room_certification.py
 
   viewer-tests:
     # The viewer is where most recent regressions landed, but its suite was not in
@@ -58,16 +88,16 @@ jobs:
     # are caught in CI like the engine/rules/voice suites.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
       - name: Install Node (for the JSX behaviour harness)
         # A subset of viewer tests transpile the real .jsx through the VENDORED
         # babel-standalone (viewer/openworlds/vendor/) and run it under node's `vm`.
         # Babel is vendored and the harness only requires node built-ins (fs, vm), so
         # NO `npm install` is needed — just a node binary on PATH. Without node these
         # tests `skipIf` themselves; we install it so they actually RUN in CI.
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
       - name: Create + activate a venv with the viewer test deps
@@ -95,9 +125,9 @@ jobs:
     # a regression there can no longer merge green.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
       - name: QA release-gate + scoring + wrapper-contract tests
         # Run from the engine venv (pydantic etc. on path) with cwd=servers/engine, so the qa tests'
         # `import server/store` resolves and release_readiness.py subprocesses use the same interpreter.
@@ -107,7 +137,9 @@ jobs:
             ../../qa/test_release_readiness_scope.py \
             ../../qa/test_scores_db_comparability.py \
             ../../qa/test_scores_db.py \
+            ../../qa/test_artifact_evals.py \
             ../../qa/test_closeout.py \
+            ../../qa/test_duo_resume.py \
             ../../qa/test_release_gate_static.py \
             ../../qa/test_ui_playtest_score_image_outcomes.py \
             ../../qa/test_claude_auth_isolation.py \
@@ -122,6 +154,7 @@ jobs:
             ../../qa/test_deterministic_rri_gate.py \
             ../../qa/test_orchestrate_split_rri.py \
             ../../qa/test_visual_regression_check.py \
+            ../../qa/test_visual_critic.py \
             ../../qa/test_structural_coverage.py \
             ../../qa/test_story_readout_approval.py \
             ../../qa/test_feature_engagement.py \
@@ -145,7 +178,8 @@ jobs:
             ../../qa/test_support_vm_preflight.py \
             ../../qa/test_version_consistency.py \
             ../../qa/test_generate_release_notes.py \
-            ../../qa/test_combat_smoke.py
+            ../../qa/test_combat_smoke.py \
+            ../../qa/test_render_recipe.py
 
   server-contracts:
     # Phase-1 (DETERMINISTIC-2): deterministic cross-service MCP contract tests
@@ -153,9 +187,9 @@ jobs:
     # boundary runs through the rules venv (rapidfuzz), so sync BOTH servers before running.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
       - name: Sync rules venv (rapidfuzz/httpx for the offline rules worker)
         env:
           WORLDOS_RULES_OFFLINE: "1"
@@ -165,9 +199,100 @@ jobs:
           WORLDOS_RULES_OFFLINE: "1"
         run: uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist ../../servers/integration_tests
 
+  paint-drift-gate:
+    # W6.3 (#1462): the DETERMINISTIC paint-drift eval — a regenerated canonical_plate must keep its
+    # painted set pieces on the authored logical cells (qa/check_plate_drift.py). Its own lane because
+    # the check needs the qa image stack (Pillow + numpy), which the engine venv is intentionally free
+    # of (so those heavy deps never touch the engine/rules/voice suites).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # #1651 CI half: check_coherence_freshness.py below walks git history (last commit touching
+          # each paint-coherence report vs the plate's blob sha at HEAD) — needs full history, not the
+          # default shallow depth-1 clone, or every room reads as "not tracked by git" instead of a
+          # real verdict.
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Create a venv with the qa image lane (Pillow + numpy + pytest)
+        run: |
+          uv venv .venv-qa-image --python 3.12
+          echo "$PWD/.venv-qa-image/bin" >> "$GITHUB_PATH"
+          uv pip install --python .venv-qa-image pillow numpy pytest
+      - name: Manifests match their seeds (regeneratable, not stale)
+        run: python qa/build_room_manifest.py --check
+      - name: Paint-drift gate tests (known-good PASS + synthetic 2-cell shift CAUGHT; single-process)
+        run: python -m pytest qa/test_plate_drift_gate.py -q -p no:xdist
+      - name: room_recipes.json canonical_plate drift gate (every committed manifest+plate)
+        run: python qa/check_plate_drift.py gate-recipes
+      - name: Grid<->paint coherence gate tests (aligned PASS + synthetic shift + current-crypt INCOHERENT)
+        # The ABSOLUTE grid<->paint gate (qa/check_grid_paint_coherence.py): a painted prop must sit on
+        # its OWN authored footprint, not just avoid drifting from a baseline (the drift gate above).
+        # This is the eval that would have caught the sarcophagus the owner walked onto (paint ~3/4 cell
+        # off the grid the engine keys collision to). Deterministic + self-contained (regenerates the
+        # greybox from the manifest geometry); single-process. Reliable for hard-silhouette architectural
+        # props — the crypt reality anchor here is the validated red-first-against-reality case.
+        run: python -m pytest qa/test_grid_paint_coherence.py -q -p no:xdist
+      - name: Paint-coverage coherence instrument (#1647 — per-cell open-vs-covered gate; deterministic core + VQA stub)
+        # The COMPLEMENT of the grid<->paint gate above: check_grid_paint_coherence asks "does a prop's paint
+        # sit on its own footprint?"; paint_coherence asks "is a WALKABLE cell visually open floor, or under a
+        # tall prop's painted silhouette?" (the crypt spawn-in-sarcophagus / shop-shelf defects). Deterministic
+        # per-cell classifier + tri-state gate + the VQA adjudicator exercised with an injected stub (no LLM /
+        # box / player). Shares this lane's Pillow+numpy stack; single-process.
+        run: python -m pytest qa/test_paint_coherence.py -q -p no:xdist
+      - name: Registration instrument cores (#1680 — per-room paint<->collision agreement; deterministic)
+        # The SHIP RULER (qa/registration_score.py): for each room, the screen-space agreement between the
+        # PAINTED-object mask (paint_coherence's per-cell coverage machinery) and the COLLISION set
+        # (walkmask + boxes-sidecar footprints, projected through the contract camera). Names the two
+        # navigation-truth defects per cell — invisible walls (painted open, collides) and walk-through
+        # furniture (painted blocked, walkable). Deterministic synthetic-plate + pure-math cores; no LLM /
+        # box / player. Shares this lane's Pillow+numpy stack; single-process.
+        run: python -m pytest qa/test_registration_score.py -q -p no:xdist
+      - name: Registration BASELINE over every manifest room (#1680 — the honest paint<->collision score)
+        # The instrument run over ALL plates_manifest rooms. NON-BLOCKING (continue-on-error) like the
+        # coherence-freshness lint below: the baseline is EXPECTED RED today (per #1680 the owner's '98%
+        # mismatch' — every existing room is below the 0.99 ship bar; that is the finding, not a
+        # regression). The uploaded summary + per-room heatmaps are the acceptance ruler for the #83
+        # 3D-first rebuild chain; a room only clears this once rebuilt.
+        continue-on-error: true
+        run: python qa/registration_score.py score-rooms --evidence-dir "$RUNNER_TEMP/registration" -o "$RUNNER_TEMP/registration/summary.json"
+      - name: Upload registration baseline (summary JSON + per-room heatmaps)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: registration-baseline
+          path: ${{ runner.temp }}/registration
+          if-no-files-found: warn
+      - name: Room-manifest DERIVATION from greybox geometry (regeneratable + loop-closed on forest_road)
+        # Owner playtest #5: manifests are DERIVED from greybox geometry (single source of truth for
+        # footprint + occlusion + walkable) via tools/derive_room_manifest.py. Pins the derivation math,
+        # that forest_road.cells.json is regeneratable, and that the derived manifest is COHERENT against
+        # the greybox its geometry describes (the loop closed at the source).
+        run: python -m pytest qa/test_derive_room_manifest.py -q -p no:xdist
+      - name: Journey factual-VQA cores + panel defect-checklist regression (instruments B + C)
+        # Instrument B's path-gen/aggregation/verdict (stub scorer, no LLM/box) and amendment C's panel
+        # defect-checklist prompt regression — pinned so an edit to either can't silently drift.
+        run: python -m pytest qa/test_journey_eval.py qa/test_plate_loop.py -q -p no:xdist
+      - name: Journey click-sweep cores (#1523 — adversarial prop-click sweep target/traversal logic)
+        # manifest_from_surface / build_adversarial_targets / dfs_sweep / build_findings — pure, no
+        # engine/HTTP/box involved (mirrors the split above); the live HTTP driving is exercised
+        # on-box (see qa/journey_click_sweep.py's module docstring), deliberately not unit-tested here.
+        run: python -m pytest qa/test_journey_click_sweep.py -q -p no:xdist
+      - name: Coherence-report freshness lint (#1651 CI half — every plates_manifest-shipped room must
+          have a paint-coherence report whose plate/geometry/ortho still match the shipped state; a
+          missing report is a FAILURE, never a silent skip). Placed LAST in this job, and
+          continue-on-error, because it is EXPECTED RED today (see the PR body — 3 rooms have no report
+          yet, a real pre-existing coverage gap this lint newly surfaces). `paint-drift-gate` is not a
+          required branch-protection check, but continue-on-error still applies here — a permanently-red
+          non-required job for a documented pre-existing gap risks "crying wolf" and masking a genuinely
+          NEW regression among this job's other steps. The assertion itself stays exactly as strict.
+        continue-on-error: true
+        run: python qa/check_coherence_freshness.py
+
   license-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: License / content gate
         run: python3 scripts/license_check.py

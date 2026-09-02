@@ -1,0 +1,51 @@
+{
+  "room": "crypt",
+  "panel_id": "panel-visual-camerapin-img2img-neutral-anchor-20260715",
+  "protocol": "CAMERA-PIN IMG2IMG EXPERIMENT neutral-anchor 5-scorer blind panel (Phase D datum). Candidate = strength_020.png, the sole Gate-1 (edge-recall >=0.95 vs input) survivor of a {0.20, 0.30, 0.40} flux.1-dev img2img strength sweep over the registered crypt_fresh_v1.png (NO LoRA, NO ControlNet, same camera-pin). Blind slots A/B/C: A=input (crypt_fresh_v1.png, this experiment's pre-existing baseline), B=disguised real-art control (PoE2 ruins/brazier, SAME control used in the crypt_fresh adoption panel), C=candidate. 5 independent scorer subagents (fast-worker/sonnet), each Read all 3 blind-named files + the disclosed camp house-ref, calibration-control instructions applied (no AI-prior primer; score the craft you see).",
+  "scale": "0-10 visual-critic delta-anchored (an absolute number is NOT a quality verdict; the control's in-band landing is what makes the panel citable)",
+  "candidate_image": "qa/evidence/camerapin-img2img/candidates/strength_020.png",
+  "input_image": "qa/evidence/crypt-fresh/crypt_fresh_v1.png",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_band": [6.8, 9.2],
+  "blind_mapping": {"A": "input", "B": "control", "C": "candidate"},
+  "scores": {
+    "A": [7.5, 7.5, 7.5, 7.5, 6.5],
+    "B": [9.5, 9.0, 9.5, 9.0, 9.0],
+    "C": [6.5, 5.5, 6.8, 5.5, 7.0]
+  },
+  "scorer_notes": {
+    "A_input": [
+      "Solid painterly crypt with a legible carved-effigy sarcophagus, warm torch vs. cool ambient chiaroscuro, and reasonably crisp knotwork column relief; loses points to a slightly flat void above the cornice and wall glyphs that read as stamped/tiled rather than hand-placed.",
+      "Solid PoE2-tier chiaroscuro: cool blue-violet stone against warm torchlight, confident per-block value variation on the walls, and the Celtic-knot pillar relief and sarcophagus effigy carving both read clearly with real weight; only softens at the upper vault and in the wall-glyph texture, which verges on a repeated pattern rather than distinct carving.",
+      "Strong warm/cool chiaroscuro and confident brushwork on stone and knotwork carving; sarcophagus relief holds a legible narrative figure frieze and the skull pile reads as clean, coherent bone geometry. Minor tells: the effigy's face is soft/underdefined and a few wall blocks lean toward repetitive massing.",
+      "Confident warm/cool chiaroscuro (amber torch vs. blue-violet stone) with well-modeled knotwork pillar relief and a legible carved sarcophagus effigy; wall glyphs are a touch stamped/repetitive but atmosphere and depth read close to the PoE2 bar.",
+      "Solid warm/cool chiaroscuro and a well-modeled sarcophagus relief, but the torch flame reads as a flat pasted sprite with little color bleed, the wall glyph-frieze repeats in an overly regular rhythm that tips into tiling, and the foreground floor joints are too grid-regular to feel hand-painted."
+    ],
+    "B_control": [
+      "Exceptional depth and material fidelity — foliage, rock strata, and stonework all carry real geometric complexity with believable light falloff and zero tiling artifacts; this is the craft bar itself, essentially indistinguishable from shipped PoE2:Deadfire art.",
+      "Matches the reference bar almost exactly — saturated jade/teal jungle shadow against warm firelight, convincing atmospheric fog depth, and crisp carved-stone relief on the arch and obelisk with no geometry breakdown; the strongest color harmony and depth illusion of the three.",
+      "Full atmospheric depth with rich foliage layering, correct rim-lighting on the brazier flame and stonework, and coherent character silhouettes in isometric perspective — this is at or indistinguishable from the PoE2:Deadfire craft bar itself.",
+      "Extremely high-fidelity jungle-shrine scene with coherent foliage geometry, correct character scale/posing, convincing haze/depth and a rich teal-jade/warm-sandstone palette — indistinguishable from shipped Deadfire art, though it's an exterior rather than a crypt interior.",
+      "Dense layered jungle foliage with correct atmospheric recession, convincing warm firelight against cool canopy shadow, and well-integrated character figures with plausible cast shadows and carved stone weathering — reads as indistinguishable from shipped Deadfire art with no meaningful craft tells."
+    ],
+    "C_candidate": [
+      "Same crypt composition and palette as the other tomb plate but weaker execution: the skull/urn pile at lower right resolves into an ambiguous chain-of-orbs shape rather than legible skulls, and the effigy's feet look detached from the robe/legs — a give-away of invented geometry — with softer, muddier carving edges throughout.",
+      "Same composition and stone-carving quality as A but the palette has collapsed toward flat amber-sepia, losing the cool/warm complementary contrast that gives the scene depth; worse, the skull-and-bone pile has degraded into an ambiguous chain of spheres that no longer reads as skulls, an invented-geometry tell, and the effigy's face is noticeably softer/less resolved.",
+      "Near-identical composition to a strong crypt scene with a more sculpturally resolved effigy face/hands and clean pillar knotwork, but the foreground clutter pile resolves into an incoherent tangle of chain-and-ball shapes rather than recognizable bones, and the sarcophagus relief panels are flattened to generic cross/quatrefoil motifs instead of carved figures — a visible localized craft break that costs it relative to A.",
+      "Same crypt composition as A but rendered flatter — contrast is washed to a uniform amber, carved relief on the pillars and effigy face reads mushy/undefined, and the corner debris pile resolves as an incoherent beaded/chain tangle rather than legible skulls, breaking the illusion.",
+      "Same crypt composition as A but tighter-cropped and a notch more refined: the effigy's drapery and sarcophagus procession-carving show more confident volumetric brushwork and the torch glow integrates a bit better into the wall, though it shares A's repetitive wall-glyph frieze pattern that undercuts the hand-painted illusion."
+    ]
+  },
+  "input_median": 7.5,
+  "input_mean": 7.3,
+  "control_median": 9.0,
+  "control_mean": 9.2,
+  "candidate_median": 6.5,
+  "candidate_mean": 6.26,
+  "control_in_band": true,
+  "delta_candidate_minus_input": -1.0,
+  "delta_candidate_minus_control": -2.5,
+  "delta_candidate_minus_prior_published_baseline_7_0": -0.5,
+  "cross_scorer_consistency": "4 of 5 scorers independently flagged the SAME localized defect on the candidate: the skull/bone-pile prop degrading into an unreadable 'chain-of-orbs' / 'beaded chain tangle' / 'incoherent tangle of chain-and-ball shapes' (scorers 1, 2, 3, 4) — an invented-geometry tell the deterministic inverse-coherence gate did NOT catch (0 net-new flags at strength 0.20, since the defect resamples fine texture within an already-flagged/exempted occlusion cell rather than raising silhouette density on clear floor). 3 of 5 also independently noted the sarcophagus/effigy carving reading softer or the relief flattening toward generic motifs. Only scorer 5 (the lone dissent) rated the candidate above the input (7.0 vs 6.5), citing more confident effigy drapery brushwork.",
+  "verdict": "REFUTED (this experiment's evidence) — the camera-pin low-strength img2img lever does NOT clear the hypothesis at any strength that also clears the registration gate. Only strength 0.20 survives Gate 1 (recall 0.9527, barely above the 0.95 bar; 0.30 and 0.40 both fail registration at 0.9332/0.9150). That sole survivor then scores median 6.5 on the neutral-anchor panel vs the input's own 7.5 in the SAME panel round (delta -1.0) and vs the previously-published crypt_fresh adoption baseline of 7.0 (delta -0.5) — the OPPOSITE of the hypothesized +0.5 to +1.0 gain. The panel's own flaw lists point to a plausible mechanism: flux.1-dev img2img at strength 0.20 preserves low-frequency composition well enough to hold registration, but still resamples small/high-frequency detail (the skull pile, fine carving) toward a blurrier, less legible result — 'low-strength' is not 'detail-safe' by construction on this model."
+}

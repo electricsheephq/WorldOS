@@ -1,0 +1,7 @@
+{
+  "protocol": "blind 5-scorer control-anchored (wf_8d170db6-085)",
+  "candidate_median": 7, "control_median": 8, "delta": -1.0, "in_band": true, "tier": "stable", "verdict": "SHIPS",
+  "scores": [{"cand":7,"ctrl":8},{"cand":7,"ctrl":9},{"cand":7,"ctrl":8},{"cand":6,"ctrl":9},{"cand":7,"ctrl":8}],
+  "cycle_arc": "c1 6-vs-9 (prompt) -> c2 6-vs-9 (stronger prompt = PLATEAU) -> c3 7-vs-8 IN BAND via the GEOMETRY lever (2 authored timber posts; the paint had invented posts in both prior cycles). FLAT-INTERIOR CLASS CONFIRMED with a measured intervention: +1 panel median from authoring tall anchors.",
+  "c3_notes": "posts painted exactly on their authored stone bases; NO invented staircase/balcony (single-storey lock + posts); roof beams/gable added ABOVE the cutaway walls (outside playable envelope, reads as cozy interior); recall 0.9101 (seed 12345)."
+}

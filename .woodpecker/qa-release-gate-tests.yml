@@ -1,11 +1,15 @@
 when:
-  - event: [push, pull_request, manual]
+  - event: [push, manual]
 
 steps:
   - name: qa-release-gate-tests
     image: ghcr.io/astral-sh/uv:python3.12-bookworm
     environment:
       WORLDOS_RULES_OFFLINE: "1"
+      # The container runs as root; run_duo.sh's root guard exits 2 without this (the same
+      # IS_SANDBOX=1 contract the root VM sweep lane uses). test_duo_resume.py stubs claude,
+      # so no real bypassPermissions call happens here.
+      IS_SANDBOX: "1"
     commands:
       - bash -lc 'set -euo pipefail; apt-get update; apt-get install -y --no-install-recommends git jq; rm -rf /var/lib/apt/lists/*'
       - >-
@@ -28,6 +32,7 @@ steps:
         ../../qa/test_scores_db.py
         ../../qa/test_artifact_evals.py
         ../../qa/test_closeout.py
+        ../../qa/test_duo_resume.py
         ../../qa/test_release_gate_static.py
         ../../qa/test_ui_playtest_score_image_outcomes.py
         ../../qa/test_claude_auth_isolation.py
@@ -66,4 +71,5 @@ steps:
         ../../qa/test_support_vm_preflight.py
         ../../qa/test_version_consistency.py
         ../../qa/test_generate_release_notes.py
-        ../../qa/test_combat_smoke.py'
+        ../../qa/test_combat_smoke.py
+        ../../qa/test_render_recipe.py'

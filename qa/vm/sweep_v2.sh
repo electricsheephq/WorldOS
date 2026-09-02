@@ -10,6 +10,12 @@
 # the Mac. See the `worldos-dev` skill (sec. "VM GATE SWEEP" and sec. "RRI evidence-path
 # contract") and WorldOS-GUI-RUNBOOK.md sec. "Support VM lane".
 #
+# ⚠ SYNC REMINDER (#1414): this file is a REFERENCE COPY — editing it (including the per-persona
+# scores_persist.py auto-append this revision added to run_persona()) changes NOTHING on the VM
+# until you rsync/copy it over the canonical runnable copy at
+# /root/worldos-qa/sweep_v2.sh on the evaos-support VM. A change landed here and never synced is a
+# silent no-op for every real sweep run — always sync after editing this file.
+#
 # TWO load-bearing things this version gets right (cost a real diagnosis):
 #   1. RRI evidence-path contract - it passes the *evidence-path* flags
 #      (--behavioral-path / --ui-audit-log / --palette-source), not just value
@@ -217,6 +223,17 @@ run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
     SC_STRUCTURAL="$(python3 qa/inject_structural_coverage.py "$sc" "$bstore" 2>/dev/null)"
     cp "$sc" "$RES/score-$persona.json"
     note "  $persona rc=$rc $(python3 -c "import json;d=json.load(open('$sc'));print('sat=%s gaveup=%s crit=%s arc=%s turns=%s'%(d.get('persona_satisfaction'),d.get('gave_up'),d.get('bug_reports_critical'),d.get('completed_intro_flow'),d.get('in_story_turns')))" 2>/dev/null)${SC_STRUCTURAL:+ | $SC_STRUCTURAL}"
+    # #1414: auto-persist this persona's row (surface=GUI-headless-proxy) — FAIL LOUD (never
+    # `|| echo WARN`; a failed write is a failed run per the Universal Run Contract,
+    # docs/OPERATIONS.md "No row = no run"). run_id is keyed on persona+SHA so a re-run of the
+    # SAME sweep at the SAME commit replaces this persona's row instead of duplicating, while a
+    # new commit gets its own trend row (scores_db.add_run's INSERT OR REPLACE-on-run_id).
+    if ! python3 "$ROOT/qa/scores_persist.py" sweep-persona \
+        --run-id "vm2-$persona-$SHA" --persona "$persona" --build-sha "$SHA" \
+        --score-json "$sc" --source-path "$RES/score-$persona.json"; then
+      note "  FATAL: scores_db row write failed for persona=$persona — a failed write is a failed run per the Universal Run Contract (docs/OPERATIONS.md)."
+      exit 1
+    fi
   else
     note "  $persona rc=$rc - NO SCORE (see vm2-$persona.log)"
   fi

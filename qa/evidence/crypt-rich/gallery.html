@@ -1,0 +1,46 @@
+<!doctype html><meta charset=utf-8>
+<title>CRYPT-RICH evidence gallery</title>
+<style>body{background:#14141a;color:#ddd;font:14px system-ui;margin:24px;max-width:1200px}
+h1{color:#e8c98a}h2{color:#c9b98a;border-bottom:1px solid #333;padding-top:18px}
+.row{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}
+figure{margin:0;max-width:560px}img{width:100%;border:1px solid #333;border-radius:4px}
+figcaption{color:#9aa;font-size:12px;margin-top:4px}
+b{color:#e8c98a}.neg{color:#e88}.pos{color:#8e8}</style>
+<h1>CRYPT-RICH — honest attempt to beat the crypt incumbent (panel 8.0) via the geometry-richness principle</h1>
+<p>Verdict: <b class=neg>HONEST NEGATIVE</b>. Two blind 5-scorer panels put the candidate at <b>6.5</b> vs the
+incumbent <b>8.0</b> (disguised PoE2 control 9.0 / 9.5 in/near band). Denser authored geometry successfully
+produced denser ORNAMENTATION (paint richness followed geometry richness — effigies, knotwork columns, skull
+piles, torches all present), but content density alone did not beat the incumbent's superior painterly carving
+craft. Not adopted; the deployed incumbent is preserved.</p>
+
+<h2>1. Authored denser greybox (14 props vs the sparse 3-prop true-greybox)</h2>
+<div class=row>
+<figure><img src="crypt_rich_greybox.png"><figcaption>cutaway greybox (wall_height=5) — the depth-CN control image</figcaption></figure>
+</div>
+
+<h2>2. Registered base (flux depth-CN + interior LoRA) &rarr; Gemini structure-lock enrichment</h2>
+<div class=row>
+<figure><img src="candidate_flux.png"><figcaption>flux depth-CN base (candidate_flux)</figcaption></figure>
+<figure><img src="candidate_final.png"><figcaption>PANEL-1 candidate = Gemini enrich (gem_3) — panel median <b class=neg>6.5</b></figcaption></figure>
+</div>
+
+<h2>3. v2 refine (frame-fill + wall-solidify + deepen paint) — fixed the composition defects</h2>
+<div class=row>
+<figure><img src="candidate_final_v2.png"><figcaption>PANEL-2 candidate = refine (ref_3): black margin 52%&rarr;6%, crenellation removed — but panel median still <b class=neg>6.5</b></figcaption></figure>
+</div>
+
+<h2>4. The bar it did not clear</h2>
+<div class=row>
+<figure><img src="../crypt-replicate/refs/incumbent_crypt_armb_iter3.jpg"><figcaption>INCUMBENT crypt_armb_iter3 — panel median <b class=pos>8.0</b> (crisper hand-painted Celtic carvings)</figcaption></figure>
+</div>
+
+<h2>Recipe lesson (for the runbook / epic #1508)</h2>
+<p>(a) The cutaway greybox (wall_height=5) renders perimeter walls as per-cell boxes, giving a
+<b>toothed/crenellated wall-top</b> that the depth-ControlNet paints as a repetitive tiled/gamey motif — a
+panel-penalized artifact (panel-1). A second Gemini "frame-fill + wall-solidify" pass removes it
+(black-margin fraction 52%&rarr;6%, measurable) but is a post-hoc patch, not registration-by-construction.
+(b) <b>Richness-principle refinement:</b> denser geometry DID buy denser ornamentation (content), confirming
+"paint richness follows geometry richness" for CONTENT — but the candidate stayed flat at 6.5 across BOTH
+panels, so the binding ceiling for beating an 8.0 incumbent is painterly <b>carving fidelity</b> (AI relief reads
+soft/repetitive/flat vs crisp hand-painted stone), not prop count. Honest path past 8.0 likely needs a
+higher-fidelity / crypt-trained paint model, not merely more props.</p>

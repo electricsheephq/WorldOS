@@ -151,14 +151,57 @@ while [ "$attempt" -lt 3 ]; do
   # skipped derivation, the key was stripped anyway, and the child got NO auth at all — the
   # exact "Not logged in" failure this fix exists to solve. Derivation must only be gated on
   # whether we already HAVE a token (first clause), not on an env var the child never sees.
+  # #1404: capture the token's expiresAt (epoch ms) and its source ALONGSIDE the accessToken, so
+  # we can PROACTIVELY detect an expired credential and fail fast with an actionable diagnostic
+  # (gate (d) below) instead of 401ing three times into a generic scorer_failed corpse that reads
+  # like a transient blip. A caller-provided CLAUDE_CODE_OAUTH_TOKEN still wins and is used as-is —
+  # we can't introspect its expiry, so the pre-check simply doesn't fire for that path (unchanged).
   _scorer_tok="${CLAUDE_CODE_OAUTH_TOKEN:-}"
-  if [ -z "$_scorer_tok" ] && [ "$(uname)" = "Darwin" ]; then
-    _scorer_tok="$(security find-generic-password -s 'Claude Code-credentials' -a "$USER" -w 2>/dev/null \
-      | python3 -c 'import json,sys;print(json.load(sys.stdin).get("claudeAiOauth",{}).get("accessToken",""))' 2>/dev/null || true)"
-  elif [ -z "$_scorer_tok" ] && [ "$(uname)" != "Darwin" ]; then
-    _scorer_creds_file="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
-    if [ -s "$_scorer_creds_file" ]; then
-      _scorer_tok="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("claudeAiOauth",{}).get("accessToken",""))' "$_scorer_creds_file" 2>/dev/null || true)"
+  _scorer_tok_exp=""           # expiresAt (epoch ms) of a DERIVED token; empty when caller-provided/unknown
+  _cred_src=""                 # human-readable source of the derived credential (for the diagnostic)
+  if [ -z "$_scorer_tok" ]; then
+    _cred_blob=""
+    if [ "$(uname)" = "Darwin" ]; then
+      _cred_src="macOS Keychain item 'Claude Code-credentials'"
+      _cred_blob="$(security find-generic-password -s 'Claude Code-credentials' -a "$USER" -w 2>/dev/null || true)"
+    else
+      _scorer_creds_file="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
+      _cred_src="$_scorer_creds_file"
+      [ -s "$_scorer_creds_file" ] && _cred_blob="$(cat "$_scorer_creds_file" 2>/dev/null || true)"
+    fi
+    if [ -n "$_cred_blob" ]; then
+      # Emit "<accessToken>\t<expiresAt-or-empty>" from the shared {claudeAiOauth:{…}} shape
+      # (identical extraction to before, now also carrying expiresAt for the expiry gate).
+      _cred_line="$(printf '%s' "$_cred_blob" | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin).get("claudeAiOauth", {})
+except Exception:
+    d = {}
+exp = d.get("expiresAt")
+sys.stdout.write("%s\t%s" % (d.get("accessToken") or "", exp if isinstance(exp, int) else ""))' 2>/dev/null || true)"
+      _scorer_tok="${_cred_line%%$'\t'*}"
+      _scorer_tok_exp="${_cred_line#*$'\t'}"
+    fi
+  fi
+
+  # --- (d) PROACTIVE auth-expiry circuit-breaker (#1404) -------------------------------------
+  # A DERIVED token whose expiresAt is already past (or lapses within a 60s skew) will 401 on
+  # EVERY attempt. Fail fast with a DISTINCT, actionable sentinel — mirroring the 429 quota
+  # breaker below — rather than burning the 3 retries + ~15s of sleeps only to land on a generic
+  # scorer_failed. No-op when the expiry is unknown/absent (caller-token path, or an old keychain
+  # blob without expiresAt), so that behavior is byte-identical to today. This does NOT mint a new
+  # token: refreshing OAuth is the CLI's job — `claude login` (or the CLI's own background refresh)
+  # rewrites the keychain; re-implementing rotation here would race the CLI under the parallel swarm.
+  if [ -n "$_scorer_tok" ] && [[ "$_scorer_tok_exp" =~ ^[0-9]+$ ]]; then
+    _now_ms="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+    if [ "$_now_ms" != 0 ] && [ "$_scorer_tok_exp" -le "$(( _now_ms + 60000 ))" ]; then
+      _ago_s=$(( (_now_ms - _scorer_tok_exp) / 1000 ))
+      echo "[score] AUTH EXPIRED for $(basename "$OUT"): scorer OAuth access token (from ${_cred_src}) expired ~${_ago_s}s ago (expiresAt=${_scorer_tok_exp}ms, now=${_now_ms}ms)." >&2
+      echo "[score]   Every scoring call 401s until the credential is refreshed. Run \`claude login\` on this host (or let the Claude CLI refresh the keychain), then re-run scoring." >&2
+      echo "[score]   Failing fast (no retries); writing an auth sentinel + exiting rc=2." >&2
+      printf '{"error":"scorer_auth_expired","expired_at_ms":%s,"expired_ago_seconds":%s}\n' "$_scorer_tok_exp" "$_ago_s" > "$OUT"
+      rm -f "$RAW" 2>/dev/null || true
+      exit 2
     fi
   fi
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
@@ -195,6 +238,18 @@ while [ "$attempt" -lt 3 ]; do
   if [ "$api_err" = "429" ] || jq -e 'select(.is_error == true) | (.result // "") | test("session limit|HTTP 429|hit your (session|usage) limit"; "i")' "$RAW" >/dev/null 2>&1; then
     echo "[score] QUOTA EXHAUSTED (HTTP 429 account session limit) for $(basename "$OUT") — failing fast (no retries). Writing a quota sentinel + exiting rc=2." >&2
     printf '{"quota_exhausted":true,"api_error_status":429}\n' > "$OUT"
+    rm -f "$RAW"
+    exit 2
+  fi
+  # #1404 (auth breaker, live-call half): a 401 (expired/invalid credential) will NOT heal across a
+  # 5s sleep — retrying just burns the window and ends in a generic scorer_failed that hides the real
+  # cause. Fail fast with the SAME actionable auth sentinel as the proactive pre-check. Covers what
+  # the pre-check can't: a token that lapses mid-run, or a caller-provided CLAUDE_CODE_OAUTH_TOKEN we
+  # couldn't introspect for expiry.
+  if [ "$api_err" = "401" ] || jq -e 'select(.is_error == true) | (.result // "") | test("HTTP 401|invalid.*(auth|credential|token)|authentication_error|OAuth token (has )?expired|Invalid authentication credentials"; "i")' "$RAW" >/dev/null 2>&1; then
+    echo "[score] AUTH FAILURE (HTTP 401 / invalid credential) for $(basename "$OUT") — failing fast (no retries)." >&2
+    echo "[score]   The scorer credential is expired or invalid. Run \`claude login\` on this host to refresh it, then re-run scoring. Detail: $(jq -r '.result // "<no message>"' "$RAW" 2>/dev/null | head -1)" >&2
+    printf '{"error":"scorer_auth_expired","api_error_status":401}\n' > "$OUT"
     rm -f "$RAW"
     exit 2
   fi

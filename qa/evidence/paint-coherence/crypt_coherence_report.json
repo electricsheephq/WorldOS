@@ -1,0 +1,2134 @@
+{
+  "room": "crypt",
+  "passed": false,
+  "cells": {
+    "7,0": "open",
+    "1,1": "open",
+    "4,1": "covered",
+    "6,1": "open",
+    "7,1": "open",
+    "8,1": "covered",
+    "10,1": "open",
+    "13,1": "ambiguous",
+    "14,1": "open",
+    "1,2": "open",
+    "2,2": "open",
+    "3,2": "covered",
+    "4,2": "covered",
+    "5,2": "covered",
+    "6,2": "open",
+    "7,2": "covered",
+    "8,2": "covered",
+    "9,2": "covered",
+    "10,2": "covered",
+    "11,2": "ambiguous",
+    "12,2": "covered",
+    "13,2": "open",
+    "14,2": "ambiguous",
+    "1,3": "open",
+    "2,3": "ambiguous",
+    "3,3": "covered",
+    "5,3": "covered",
+    "6,3": "open",
+    "7,3": "covered",
+    "8,3": "open",
+    "9,3": "open",
+    "10,3": "covered",
+    "11,3": "open",
+    "13,3": "covered",
+    "14,3": "covered",
+    "1,4": "open",
+    "2,4": "covered",
+    "3,4": "ambiguous",
+    "5,4": "covered",
+    "6,4": "ambiguous",
+    "7,4": "ambiguous",
+    "8,4": "covered",
+    "9,4": "covered",
+    "10,4": "open",
+    "11,4": "ambiguous",
+    "13,4": "covered",
+    "1,5": "open",
+    "2,5": "open",
+    "3,5": "open",
+    "4,5": "open",
+    "5,5": "open",
+    "11,5": "covered",
+    "12,5": "covered",
+    "13,5": "open",
+    "14,5": "ambiguous",
+    "15,5": "covered",
+    "1,6": "open",
+    "2,6": "open",
+    "3,6": "open",
+    "4,6": "ambiguous",
+    "5,6": "open",
+    "6,6": "covered",
+    "10,6": "open",
+    "11,6": "covered",
+    "12,6": "open",
+    "13,6": "open",
+    "14,6": "covered",
+    "1,7": "open",
+    "2,7": "open",
+    "3,7": "open",
+    "4,7": "open",
+    "5,7": "covered",
+    "6,7": "ambiguous",
+    "7,7": "covered",
+    "8,7": "covered",
+    "9,7": "covered",
+    "11,7": "open",
+    "12,7": "open",
+    "13,7": "covered",
+    "14,7": "ambiguous",
+    "1,8": "open",
+    "2,8": "open",
+    "3,8": "open",
+    "5,8": "covered",
+    "6,8": "covered",
+    "7,8": "covered",
+    "8,8": "covered",
+    "9,8": "open",
+    "10,8": "open",
+    "11,8": "open",
+    "13,8": "open",
+    "14,8": "open",
+    "1,9": "open",
+    "3,9": "open",
+    "5,9": "open",
+    "6,9": "open",
+    "7,9": "covered",
+    "8,9": "covered",
+    "9,9": "open",
+    "10,9": "open",
+    "11,9": "covered",
+    "13,9": "ambiguous",
+    "14,9": "open",
+    "1,10": "open",
+    "4,10": "open",
+    "5,10": "open",
+    "6,10": "covered",
+    "7,10": "covered",
+    "8,10": "covered",
+    "9,10": "ambiguous",
+    "10,10": "covered",
+    "11,10": "covered",
+    "12,10": "ambiguous",
+    "13,10": "open",
+    "14,10": "open"
+  },
+  "violations": {
+    "walkable_covered": [
+      [
+        2,
+        4
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        5,
+        3
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        6,
+        8
+      ],
+      [
+        6,
+        10
+      ],
+      [
+        7,
+        2
+      ],
+      [
+        7,
+        3
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        7,
+        9
+      ],
+      [
+        7,
+        10
+      ],
+      [
+        8,
+        1
+      ],
+      [
+        8,
+        2
+      ],
+      [
+        8,
+        4
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        8,
+        10
+      ],
+      [
+        9,
+        2
+      ],
+      [
+        9,
+        4
+      ],
+      [
+        9,
+        7
+      ],
+      [
+        10,
+        2
+      ],
+      [
+        10,
+        3
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        11,
+        5
+      ],
+      [
+        11,
+        6
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        12,
+        5
+      ],
+      [
+        13,
+        3
+      ],
+      [
+        13,
+        4
+      ],
+      [
+        13,
+        7
+      ],
+      [
+        14,
+        3
+      ],
+      [
+        14,
+        6
+      ]
+    ],
+    "spawn_covered": [
+      [
+        6,
+        7
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        7
+      ]
+    ],
+    "arrival_covered": [
+      [
+        15,
+        5
+      ]
+    ]
+  },
+  "method": {
+    "deterministic": true,
+    "vqa": false,
+    "ortho": 11.7851,
+    "walkable_cells": 115,
+    "ambiguous_cells": [
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        4,
+        6
+      ],
+      [
+        6,
+        4
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        7,
+        4
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        11,
+        2
+      ],
+      [
+        11,
+        4
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        14,
+        5
+      ],
+      [
+        14,
+        7
+      ]
+    ],
+    "thresholds": {
+      "open_t": 1.0,
+      "covered_t": 1.85,
+      "quad_inset": 0.16,
+      "weights": {
+        "color": 0.15,
+        "edge": 0.7,
+        "var": 0.15
+      }
+    },
+    "baseline": {
+      "base_rgb": [
+        93.7,
+        67.3,
+        56.9
+      ],
+      "base_edge": 0.1981,
+      "base_luma_std": 28.28,
+      "scales": {
+        "color": 28.0224,
+        "edge": 0.035,
+        "var": 7.0
+      },
+      "clean_floor_cells": 70,
+      "low_confidence": false
+    }
+  },
+  "cell_details": [
+    {
+      "cell": [
+        1,
+        1
+      ],
+      "verdict": "open",
+      "score": 0.574,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.496,
+        "edge_z": 0.334,
+        "var_z": 0.773
+      }
+    },
+    {
+      "cell": [
+        1,
+        2
+      ],
+      "verdict": "open",
+      "score": 0.334,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.63,
+        "edge_z": 0.0,
+        "var_z": 0.597
+      }
+    },
+    {
+      "cell": [
+        1,
+        3
+      ],
+      "verdict": "open",
+      "score": 0.51,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.97,
+        "edge_z": 0.0,
+        "var_z": 2.433
+      }
+    },
+    {
+      "cell": [
+        1,
+        4
+      ],
+      "verdict": "open",
+      "score": 0.549,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.133,
+        "edge_z": 0.0,
+        "var_z": 2.528
+      }
+    },
+    {
+      "cell": [
+        1,
+        5
+      ],
+      "verdict": "open",
+      "score": 0.151,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.005,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        1,
+        6
+      ],
+      "verdict": "open",
+      "score": 0.156,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.038,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        1,
+        7
+      ],
+      "verdict": "open",
+      "score": 0.167,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.973,
+        "edge_z": 0.0,
+        "var_z": 0.14
+      }
+    },
+    {
+      "cell": [
+        1,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.049,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.325,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        1,
+        9
+      ],
+      "verdict": "open",
+      "score": 0.039,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.259,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        1,
+        10
+      ],
+      "verdict": "open",
+      "score": 0.119,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.797,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        2,
+        2
+      ],
+      "verdict": "open",
+      "score": 0.608,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.894,
+        "edge_z": 0.0,
+        "var_z": 2.156
+      }
+    },
+    {
+      "cell": [
+        2,
+        3
+      ],
+      "verdict": "ambiguous",
+      "score": 1.005,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.039,
+        "edge_z": 0.971,
+        "var_z": 0.125
+      }
+    },
+    {
+      "cell": [
+        2,
+        4
+      ],
+      "verdict": "covered",
+      "score": 2.261,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.926,
+        "edge_z": 2.748,
+        "var_z": 1.326
+      }
+    },
+    {
+      "cell": [
+        2,
+        5
+      ],
+      "verdict": "open",
+      "score": 0.186,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.789,
+        "edge_z": 0.0,
+        "var_z": 0.452
+      }
+    },
+    {
+      "cell": [
+        2,
+        6
+      ],
+      "verdict": "open",
+      "score": 0.864,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.823,
+        "edge_z": 0.843,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        2,
+        7
+      ],
+      "verdict": "open",
+      "score": 0.207,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.14,
+        "edge_z": 0.019,
+        "var_z": 0.151
+      }
+    },
+    {
+      "cell": [
+        2,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.648,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.424,
+        "edge_z": 0.835,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        3,
+        2
+      ],
+      "verdict": "covered",
+      "score": 2.668,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.056,
+        "edge_z": 3.371,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        3,
+        3
+      ],
+      "verdict": "covered",
+      "score": 3.472,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.098,
+        "edge_z": 4.341,
+        "var_z": 1.786
+      }
+    },
+    {
+      "cell": [
+        3,
+        4
+      ],
+      "verdict": "ambiguous",
+      "score": 1.493,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.604,
+        "edge_z": 1.557,
+        "var_z": 2.078
+      }
+    },
+    {
+      "cell": [
+        3,
+        5
+      ],
+      "verdict": "open",
+      "score": 0.082,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.306,
+        "edge_z": 0.037,
+        "var_z": 0.063
+      }
+    },
+    {
+      "cell": [
+        3,
+        6
+      ],
+      "verdict": "open",
+      "score": 0.456,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.24,
+        "edge_z": 0.385,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        3,
+        7
+      ],
+      "verdict": "open",
+      "score": 0.275,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.94,
+        "edge_z": 0.0,
+        "var_z": 0.895
+      }
+    },
+    {
+      "cell": [
+        3,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.346,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.305,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        3,
+        9
+      ],
+      "verdict": "open",
+      "score": 0.322,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.146,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        4,
+        1
+      ],
+      "verdict": "covered",
+      "score": 3.132,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.9,
+        "edge_z": 4.067,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        4,
+        2
+      ],
+      "verdict": "covered",
+      "score": 3.742,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.596,
+        "edge_z": 4.396,
+        "var_z": 3.835
+      }
+    },
+    {
+      "cell": [
+        4,
+        5
+      ],
+      "verdict": "open",
+      "score": 0.379,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.327,
+        "edge_z": 0.257,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        4,
+        6
+      ],
+      "verdict": "ambiguous",
+      "score": 1.097,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.354,
+        "edge_z": 0.983,
+        "var_z": 0.374
+      }
+    },
+    {
+      "cell": [
+        4,
+        7
+      ],
+      "verdict": "open",
+      "score": 0.91,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.696,
+        "edge_z": 0.557,
+        "var_z": 2.774
+      }
+    },
+    {
+      "cell": [
+        4,
+        10
+      ],
+      "verdict": "open",
+      "score": 0.221,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.251,
+        "edge_z": 0.111,
+        "var_z": 0.704
+      }
+    },
+    {
+      "cell": [
+        5,
+        2
+      ],
+      "verdict": "covered",
+      "score": 2.048,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.966,
+        "edge_z": 2.308,
+        "var_z": 1.916
+      }
+    },
+    {
+      "cell": [
+        5,
+        3
+      ],
+      "verdict": "covered",
+      "score": 2.581,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.506,
+        "edge_z": 3.096,
+        "var_z": 2.251
+      }
+    },
+    {
+      "cell": [
+        5,
+        4
+      ],
+      "verdict": "covered",
+      "score": 2.201,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.627,
+        "edge_z": 2.62,
+        "var_z": 0.818
+      }
+    },
+    {
+      "cell": [
+        5,
+        5
+      ],
+      "verdict": "open",
+      "score": 0.459,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.06,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        5,
+        6
+      ],
+      "verdict": "open",
+      "score": 0.45,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.003,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        5,
+        7
+      ],
+      "verdict": "covered",
+      "score": 2.894,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.47,
+        "edge_z": 3.506,
+        "var_z": 1.46
+      }
+    },
+    {
+      "cell": [
+        5,
+        8
+      ],
+      "verdict": "covered",
+      "score": 2.351,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.559,
+        "edge_z": 3.024,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        5,
+        9
+      ],
+      "verdict": "open",
+      "score": 0.144,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.356,
+        "edge_z": 0.13,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        5,
+        10
+      ],
+      "verdict": "open",
+      "score": 0.794,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.749,
+        "edge_z": 0.594,
+        "var_z": 1.772
+      }
+    },
+    {
+      "cell": [
+        6,
+        1
+      ],
+      "verdict": "open",
+      "score": 0.277,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.847,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        6,
+        2
+      ],
+      "verdict": "open",
+      "score": 0.378,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.521,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        6,
+        3
+      ],
+      "verdict": "open",
+      "score": 0.902,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.198,
+        "edge_z": 0.77,
+        "var_z": 1.223
+      }
+    },
+    {
+      "cell": [
+        6,
+        4
+      ],
+      "verdict": "ambiguous",
+      "score": 1.518,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.85,
+        "edge_z": 1.113,
+        "var_z": 2.074
+      }
+    },
+    {
+      "cell": [
+        6,
+        6
+      ],
+      "verdict": "covered",
+      "score": 1.895,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.895,
+        "edge_z": 1.41,
+        "var_z": 4.158
+      }
+    },
+    {
+      "cell": [
+        6,
+        7
+      ],
+      "verdict": "ambiguous",
+      "score": 1.324,
+      "role": "spawn",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.443,
+        "edge_z": 1.54,
+        "var_z": 1.199
+      }
+    },
+    {
+      "cell": [
+        6,
+        8
+      ],
+      "verdict": "covered",
+      "score": 2.988,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.754,
+        "edge_z": 4.1,
+        "var_z": 0.035
+      }
+    },
+    {
+      "cell": [
+        6,
+        9
+      ],
+      "verdict": "open",
+      "score": 0.271,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.583,
+        "edge_z": 0.0,
+        "var_z": 0.227
+      }
+    },
+    {
+      "cell": [
+        6,
+        10
+      ],
+      "verdict": "covered",
+      "score": 2.001,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.587,
+        "edge_z": 1.781,
+        "var_z": 3.442
+      }
+    },
+    {
+      "cell": [
+        7,
+        0
+      ],
+      "verdict": "open",
+      "score": 0.206,
+      "role": "arrival",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.123,
+        "edge_z": 0.0,
+        "var_z": 0.249
+      }
+    },
+    {
+      "cell": [
+        7,
+        1
+      ],
+      "verdict": "open",
+      "score": 0.48,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.198,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        7,
+        2
+      ],
+      "verdict": "covered",
+      "score": 2.582,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.901,
+        "edge_z": 2.986,
+        "var_z": 2.375
+      }
+    },
+    {
+      "cell": [
+        7,
+        3
+      ],
+      "verdict": "covered",
+      "score": 3.878,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.843,
+        "edge_z": 4.62,
+        "var_z": 1.449
+      }
+    },
+    {
+      "cell": [
+        7,
+        4
+      ],
+      "verdict": "ambiguous",
+      "score": 1.267,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 4.277,
+        "edge_z": 0.835,
+        "var_z": 0.271
+      }
+    },
+    {
+      "cell": [
+        7,
+        7
+      ],
+      "verdict": "covered",
+      "score": 3.103,
+      "role": "spawn",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.105,
+        "edge_z": 3.989,
+        "var_z": 1.967
+      }
+    },
+    {
+      "cell": [
+        7,
+        8
+      ],
+      "verdict": "covered",
+      "score": 4.45,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.326,
+        "edge_z": 5.807,
+        "var_z": 1.239
+      }
+    },
+    {
+      "cell": [
+        7,
+        9
+      ],
+      "verdict": "covered",
+      "score": 2.566,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.85,
+        "edge_z": 2.449,
+        "var_z": 1.827
+      }
+    },
+    {
+      "cell": [
+        7,
+        10
+      ],
+      "verdict": "covered",
+      "score": 2.212,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.738,
+        "edge_z": 1.686,
+        "var_z": 3.144
+      }
+    },
+    {
+      "cell": [
+        8,
+        1
+      ],
+      "verdict": "covered",
+      "score": 3.258,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.784,
+        "edge_z": 4.067,
+        "var_z": 1.959
+      }
+    },
+    {
+      "cell": [
+        8,
+        2
+      ],
+      "verdict": "covered",
+      "score": 4.668,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.932,
+        "edge_z": 5.343,
+        "var_z": 3.252
+      }
+    },
+    {
+      "cell": [
+        8,
+        3
+      ],
+      "verdict": "open",
+      "score": 0.39,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.6,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        8,
+        4
+      ],
+      "verdict": "covered",
+      "score": 1.981,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.529,
+        "edge_z": 1.206,
+        "var_z": 4.054
+      }
+    },
+    {
+      "cell": [
+        8,
+        7
+      ],
+      "verdict": "covered",
+      "score": 2.525,
+      "role": "spawn",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.513,
+        "edge_z": 2.635,
+        "var_z": 3.029
+      }
+    },
+    {
+      "cell": [
+        8,
+        8
+      ],
+      "verdict": "covered",
+      "score": 4.821,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.834,
+        "edge_z": 5.881,
+        "var_z": 1.862
+      }
+    },
+    {
+      "cell": [
+        8,
+        9
+      ],
+      "verdict": "covered",
+      "score": 2.883,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 4.946,
+        "edge_z": 2.766,
+        "var_z": 1.365
+      }
+    },
+    {
+      "cell": [
+        8,
+        10
+      ],
+      "verdict": "covered",
+      "score": 3.612,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 4.408,
+        "edge_z": 3.114,
+        "var_z": 5.14
+      }
+    },
+    {
+      "cell": [
+        9,
+        2
+      ],
+      "verdict": "covered",
+      "score": 1.948,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.566,
+        "edge_z": 2.412,
+        "var_z": 1.169
+      }
+    },
+    {
+      "cell": [
+        9,
+        3
+      ],
+      "verdict": "open",
+      "score": 0.491,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.271,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        9,
+        4
+      ],
+      "verdict": "covered",
+      "score": 4.317,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.367,
+        "edge_z": 3.878,
+        "var_z": 7.321
+      }
+    },
+    {
+      "cell": [
+        9,
+        7
+      ],
+      "verdict": "covered",
+      "score": 2.621,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.673,
+        "edge_z": 2.449,
+        "var_z": 3.372
+      }
+    },
+    {
+      "cell": [
+        9,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.299,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.992,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        9,
+        9
+      ],
+      "verdict": "open",
+      "score": 0.679,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 4.481,
+        "edge_z": 0.0,
+        "var_z": 0.046
+      }
+    },
+    {
+      "cell": [
+        9,
+        10
+      ],
+      "verdict": "ambiguous",
+      "score": 1.059,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 5.558,
+        "edge_z": 0.0,
+        "var_z": 1.501
+      }
+    },
+    {
+      "cell": [
+        10,
+        1
+      ],
+      "verdict": "open",
+      "score": 0.243,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.62,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        10,
+        2
+      ],
+      "verdict": "covered",
+      "score": 1.964,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.512,
+        "edge_z": 2.393,
+        "var_z": 1.411
+      }
+    },
+    {
+      "cell": [
+        10,
+        3
+      ],
+      "verdict": "covered",
+      "score": 1.868,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 4.716,
+        "edge_z": 1.317,
+        "var_z": 1.589
+      }
+    },
+    {
+      "cell": [
+        10,
+        4
+      ],
+      "verdict": "open",
+      "score": 0.808,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 3.346,
+        "edge_z": 0.371,
+        "var_z": 0.309
+      }
+    },
+    {
+      "cell": [
+        10,
+        6
+      ],
+      "verdict": "open",
+      "score": 0.586,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.52,
+        "edge_z": 0.241,
+        "var_z": 0.261
+      }
+    },
+    {
+      "cell": [
+        10,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.559,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.247,
+        "edge_z": 0.532,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        10,
+        9
+      ],
+      "verdict": "open",
+      "score": 0.915,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.995,
+        "edge_z": 0.88,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        10,
+        10
+      ],
+      "verdict": "covered",
+      "score": 3.727,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.483,
+        "edge_z": 4.525,
+        "var_z": 1.249
+      }
+    },
+    {
+      "cell": [
+        11,
+        2
+      ],
+      "verdict": "ambiguous",
+      "score": 1.624,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.116,
+        "edge_z": 1.67,
+        "var_z": 0.922
+      }
+    },
+    {
+      "cell": [
+        11,
+        3
+      ],
+      "verdict": "open",
+      "score": 0.833,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.836,
+        "edge_z": 0.928,
+        "var_z": 0.387
+      }
+    },
+    {
+      "cell": [
+        11,
+        4
+      ],
+      "verdict": "ambiguous",
+      "score": 1.766,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.511,
+        "edge_z": 2.152,
+        "var_z": 1.216
+      }
+    },
+    {
+      "cell": [
+        11,
+        5
+      ],
+      "verdict": "covered",
+      "score": 3.672,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.71,
+        "edge_z": 4.304,
+        "var_z": 1.684
+      }
+    },
+    {
+      "cell": [
+        11,
+        6
+      ],
+      "verdict": "covered",
+      "score": 2.514,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.549,
+        "edge_z": 3.004,
+        "var_z": 2.191
+      }
+    },
+    {
+      "cell": [
+        11,
+        7
+      ],
+      "verdict": "open",
+      "score": 0.264,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.358,
+        "edge_z": 0.0,
+        "var_z": 0.402
+      }
+    },
+    {
+      "cell": [
+        11,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.415,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.572,
+        "edge_z": 0.459,
+        "var_z": 0.052
+      }
+    },
+    {
+      "cell": [
+        11,
+        9
+      ],
+      "verdict": "covered",
+      "score": 5.125,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.682,
+        "edge_z": 6.21,
+        "var_z": 2.506
+      }
+    },
+    {
+      "cell": [
+        11,
+        10
+      ],
+      "verdict": "covered",
+      "score": 3.242,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.703,
+        "edge_z": 3.847,
+        "var_z": 2.96
+      }
+    },
+    {
+      "cell": [
+        12,
+        2
+      ],
+      "verdict": "covered",
+      "score": 1.945,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.508,
+        "edge_z": 2.43,
+        "var_z": 0.116
+      }
+    },
+    {
+      "cell": [
+        12,
+        5
+      ],
+      "verdict": "covered",
+      "score": 3.76,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.432,
+        "edge_z": 4.836,
+        "var_z": 2.069
+      }
+    },
+    {
+      "cell": [
+        12,
+        6
+      ],
+      "verdict": "open",
+      "score": 0.689,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.541,
+        "edge_z": 0.44,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        12,
+        7
+      ],
+      "verdict": "open",
+      "score": 0.428,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.45,
+        "edge_z": 0.0,
+        "var_z": 1.401
+      }
+    },
+    {
+      "cell": [
+        12,
+        10
+      ],
+      "verdict": "ambiguous",
+      "score": 1.317,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.375,
+        "edge_z": 1.373,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        13,
+        1
+      ],
+      "verdict": "ambiguous",
+      "score": 1.256,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.849,
+        "edge_z": 1.399,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        13,
+        2
+      ],
+      "verdict": "open",
+      "score": 0.128,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.853,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        13,
+        3
+      ],
+      "verdict": "covered",
+      "score": 2.38,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.026,
+        "edge_z": 2.43,
+        "var_z": 3.501
+      }
+    },
+    {
+      "cell": [
+        13,
+        4
+      ],
+      "verdict": "covered",
+      "score": 3.779,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.568,
+        "edge_z": 4.799,
+        "var_z": 2.231
+      }
+    },
+    {
+      "cell": [
+        13,
+        5
+      ],
+      "verdict": "open",
+      "score": 0.361,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.407,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        13,
+        6
+      ],
+      "verdict": "open",
+      "score": 0.379,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.469,
+        "edge_z": 0.44,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        13,
+        7
+      ],
+      "verdict": "covered",
+      "score": 3.143,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.687,
+        "edge_z": 3.609,
+        "var_z": 2.424
+      }
+    },
+    {
+      "cell": [
+        13,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.308,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.811,
+        "edge_z": 0.0,
+        "var_z": 1.244
+      }
+    },
+    {
+      "cell": [
+        13,
+        9
+      ],
+      "verdict": "ambiguous",
+      "score": 1.731,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.539,
+        "edge_z": 1.929,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        13,
+        10
+      ],
+      "verdict": "open",
+      "score": 0.086,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.574,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        14,
+        1
+      ],
+      "verdict": "open",
+      "score": 0.18,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.089,
+        "edge_z": 0.238,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        14,
+        2
+      ],
+      "verdict": "ambiguous",
+      "score": 1.721,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.099,
+        "edge_z": 1.931,
+        "var_z": 0.361
+      }
+    },
+    {
+      "cell": [
+        14,
+        3
+      ],
+      "verdict": "covered",
+      "score": 2.641,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.383,
+        "edge_z": 3.245,
+        "var_z": 2.077
+      }
+    },
+    {
+      "cell": [
+        14,
+        5
+      ],
+      "verdict": "ambiguous",
+      "score": 1.279,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.175,
+        "edge_z": 1.576,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        14,
+        6
+      ],
+      "verdict": "covered",
+      "score": 3.448,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.711,
+        "edge_z": 4.396,
+        "var_z": 0.762
+      }
+    },
+    {
+      "cell": [
+        14,
+        7
+      ],
+      "verdict": "ambiguous",
+      "score": 1.433,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.77,
+        "edge_z": 1.667,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        14,
+        8
+      ],
+      "verdict": "open",
+      "score": 0.423,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 2.822,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        14,
+        9
+      ],
+      "verdict": "open",
+      "score": 0.221,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 1.178,
+        "edge_z": 0.019,
+        "var_z": 0.21
+      }
+    },
+    {
+      "cell": [
+        14,
+        10
+      ],
+      "verdict": "open",
+      "score": 0.146,
+      "role": "walkable",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.971,
+        "edge_z": 0.0,
+        "var_z": 0.0
+      }
+    },
+    {
+      "cell": [
+        15,
+        5
+      ],
+      "verdict": "covered",
+      "score": 2.653,
+      "role": "arrival",
+      "method": "deterministic",
+      "components": {
+        "color_z": 0.811,
+        "edge_z": 3.554,
+        "var_z": 0.293
+      }
+    }
+  ],
+  "reasons": [
+    "3 spawn cell(s) not open (spawn inside painted furniture): [[6, 7], [7, 7], [8, 7]]",
+    "1 door-arrival cell(s) not open: [[15, 5]]"
+  ]
+}

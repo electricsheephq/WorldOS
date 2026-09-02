@@ -1,0 +1,33 @@
+{
+  "room": "camp_clearing_night",
+  "audit": "plate-style-regression, v2 redo round (2026-07-09) — clean control this time (poe2_ruins_brazier_integration_01.jpg, visually verified UI-free)",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), visual-critic SKILL.md CALIBRATION-CONTROL PROTOCOL + house-style-anchor item 6 (this audit's addition)",
+  "images": {
+    "image_A": "CANDIDATE v2 — regen with enriched pass2_slots (denser sculptural/form-modeling vocabulary; same greybox/asset_6Uor1G5GgpxBMthmBNwJ6TLB, LoRA, strength=0.55, order-law as v1). asset_vcGfi21tooTLsxzpE1ufGKtg.",
+    "image_B": "DISGUISED control — poe2_ruins_brazier_integration_01.jpg, verified UI-free by direct inspection before dispatch.",
+    "image_C": "DISCLOSED house-style anchor — crypt_dense_1.png (see v1 panel for provenance).",
+    "image_D": "INCUMBENT v1 (backdrop-cadence-20260708, the plate being replaced)."
+  },
+  "scores": [
+    {"scorer":1,"score_A":6,"score_B":9,"score_D":5,"same_house_style_A":5,"same_house_style_D":3,"ranking":"B>A>D"},
+    {"scorer":2,"score_A":7,"score_B":9,"score_D":5,"same_house_style_A":5,"same_house_style_D":null,"ranking":"B>A>D"},
+    {"scorer":3,"score_A":7,"score_B":9,"score_D":5,"same_house_style_A":5,"same_house_style_D":3,"ranking":"B>A>D"},
+    {"scorer":4,"score_A":6,"score_B":9,"score_D":4,"same_house_style_A":5,"same_house_style_D":2,"ranking":"B>A>D"},
+    {"scorer":5,"score_A":6,"score_B":9,"score_D":5,"same_house_style_A":4,"same_house_style_D":2,"ranking":"B>A>D"}
+  ],
+  "medians": {"score_A": 6.0, "score_B": 9.0, "score_D": 5.0, "same_house_style_A": 5.0, "same_house_style_D": 2.5},
+  "ranking_vote": "5/5 unanimous B>A>D (candidate beats incumbent on every single scorer)",
+  "control_delta_A": -3.0,
+  "control_delta_D_this_panel": -4.0,
+  "gate_note": "Neither A nor D clears promote.py's automated VIS_DELTA_ADOPT floor (-2.5) against THIS panel's control (poe2_ruins_brazier scored an unusually strong 9.0 median, upper end of its registered band [6.8,9.2]) — this is a hard outdoor-vs-jungle-ruins bar, not specific to either plate. The decisive, reliable signal for THIS decision (replace incumbent y/n) is the within-panel candidate-vs-incumbent comparison, which is unanimous and consistent across craft score, house-style score, and ranking vote.",
+  "defects_confirmed_fixed": [
+    "Tombstone-shaped flat monolith props (the authored boulders rendering as squared standing stones) — 5/5 scorers confirm these now read as rounded/broken ruin-columns or naturalistic rock, no longer flat slabs",
+    "Flat/under-modeled crates and bedrolls — 5/5 scorers note visible plank seams, cross-bracing, directional shading, and fabric-roll volume that v1 lacked"
+  ],
+  "residual_defects_v2": [
+    "Crate/wall surfaces still read with fairly uniform flat color bands vs C's carved relief density (4/5 scorers)",
+    "The two ruined pillars are near-identical mirrored copies (1 scorer) — a repetition tell, likely from the greybox's own authored prop placement (composition-preserving passes cannot rearrange position, only #1445-safe if the greybox itself is later revised)",
+    "Overall duotone (warm-fire/cool-night) value range is narrower than C's richer multi-hue modeling (3/5 scorers)"
+  ],
+  "verdict": "REPLACE incumbent v1 with v2. Unanimous 5/5 ranking + consistent craft/house-style deltas is decisive within-panel evidence, even though the automated control-delta gate doesn't clear this round's unusually strong control. Recorded as a disclosed manual promotion (see room_recipes.json status + library entry), matching the PR #1416 precedent for manual visual-gate overrides."
+}

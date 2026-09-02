@@ -274,14 +274,33 @@ class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
         # so a 429 short-circuits instead of burning the 3 attempts.
         self.assertLess(source.index('[ "$api_err" = "429" ]'), source.index('if [ ! -s "$RAW" ]; then'))
 
+    def test_score_sh_has_auth_expiry_fast_fail_arm(self):
+        # #1404: score.sh must (1) PROACTIVELY detect an expired DERIVED credential (compare the
+        # keychain/creds-file expiresAt to now) and fail fast with a distinct {error:scorer_auth_expired}
+        # sentinel + exit rc=2, and (2) fail fast on a live 401 instead of burning the 3 retries.
+        source = (ROOT / "qa" / "score.sh").read_text(encoding="utf-8")
+        # proactive pre-check arm
+        self.assertIn('"$_scorer_tok_exp" =~ ^[0-9]+$', source)
+        self.assertIn('"error":"scorer_auth_expired"', source)
+        # live-call 401 arm
+        self.assertIn('[ "$api_err" = "401" ]', source)
+        # both auth arms must sit BEFORE the generic retry-loop tail so an auth failure short-circuits.
+        self.assertLess(source.index('[ "$api_err" = "401" ]'), source.index('if [ ! -s "$RAW" ]; then'))
+        # the proactive pre-check must run BEFORE the live claude call (it gates on the derived token).
+        self.assertLess(source.index('"error":"scorer_auth_expired"'), source.index("timeout \"${WORLDOS_SCORE_TIMEOUT:-600}\" claude -p"))
+        # the lens validator must recognize the new sentinel as a sentinel (not a numeric score).
+        lib = (ROOT / "qa" / "lib_beat_driver.sh").read_text(encoding="utf-8")
+        self.assertIn('"scorer_failed", "scorer_auth_expired"', lib)
+
     def test_run_duo_checks_for_quota_abort_before_scoring(self):
         # Fix E + Fix F (caller half): run_duo.sh must (1) detect a DM cold-open 429 and emit the
-        # "[duo] QUOTA ABORT" marker + exit rc=2 BEFORE the empty-reply abort, and (2) treat the
+        # "[duo] QUOTA ABORT" marker + exit EX_TEMPFAIL BEFORE the empty-reply abort, and (2) treat the
         # score.sh quota sentinel as a quota abort (not a valid scorecard) before the behavioral gate.
         source = (ROOT / "qa" / "run_duo.sh").read_text(encoding="utf-8")
         self.assertIn("[duo] QUOTA ABORT", source)
         self.assertIn("session limit|HTTP 429|hit your (session|usage) limit", source)
         self.assertIn(".quota_exhausted == true", source)
+        self.assertIn('ASSERT_BEHAVIORAL_SCRIPT="$(worldos_env ASSERT_BEHAVIORAL_SCRIPT qa/assert_behavioral.py)"', source)
         # the cold-open quota check must precede the empty-reply abort (DM produced no opening).
         self.assertLess(
             source.index("[duo] QUOTA ABORT"),
@@ -290,7 +309,27 @@ class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
         # the scorer-sentinel quota check must precede the behavioral gate (no gating a quota corpse).
         self.assertLess(
             source.index(".quota_exhausted == true"),
-            source.index("python3 qa/assert_behavioral.py"),
+            source.index('python3 "$ASSERT_BEHAVIORAL_SCRIPT"'),
+        )
+
+    def test_qa_release_gate_ci_lists_are_in_parity(self):
+        # The GHA qa-release-gate-tests job and its Woodpecker mirror each grew test files the other
+        # lacked (test_artifact_evals.py was Woodpecker-only, so the #1427 stale-ruler-pin failure was
+        # invisible in GHA and read as "the Woodpecker mirror is broken"; test_duo_resume.py was
+        # GHA-only). Both gates must run the SAME qa/ test set — additions go to both files.
+        gha = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        job = re.search(r"^  qa-release-gate-tests:\n(.*?)(?=^  \S)", gha, re.M | re.S)
+        self.assertIsNotNone(job, "qa-release-gate-tests job not found in ci.yml")
+        gha_tests = set(re.findall(r"qa/(test_\w+\.py)", job.group(1)))
+        woodpecker = (ROOT / ".woodpecker" / "qa-release-gate-tests.yml").read_text(encoding="utf-8")
+        woodpecker_tests = set(re.findall(r"qa/(test_\w+\.py)", woodpecker))
+        # guard the extraction itself — an empty set would vacuously "match" a broken regex.
+        self.assertGreater(len(gha_tests), 40, "ci.yml extraction came back implausibly small")
+        self.assertEqual(
+            gha_tests,
+            woodpecker_tests,
+            "qa-release-gate test lists drifted between .github/workflows/ci.yml and "
+            ".woodpecker/qa-release-gate-tests.yml — add the test file to BOTH gates",
         )
 
 

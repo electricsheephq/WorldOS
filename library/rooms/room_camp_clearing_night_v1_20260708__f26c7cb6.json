@@ -1,0 +1,73 @@
+{
+  "artifact_id": "room:camp_clearing_night:v1:20260708",
+  "class": "room",
+  "curation_note": "VISUAL-GATE (two-tier ladder, docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md): re-run through promote.py GATE_STRATEGIES[\"room\"]=visual with a REGISTERED clean PoE2 control (poe2_ruins_brazier). VERDICT: PASS tier=stable. 5-scorer blind sonnet panel \u2014 control median 8.0 (in-band [6.8,9.2] -> instrument valid), candidate median 6.0, delta -2.0: within the adoption band (VIS_DELTA_ADOPT -2.5 <= -2.0 < parity -1.2), so adopted-quality (not yet at parity with real art). This is one of the two calibration anchors for the -2.5 adoption bar (camp -2.0 taste-PASS). Deterministic pre-gate hard floor PASSes (G1; night G6 is WARN, not a floor). Scale is 0-10 visual-critic (delta-anchored; absolute number is NOT a quality verdict). See source_path.",
+  "gate": {
+    "control_valid": true,
+    "dims": {
+      "candidate_median": 6.0,
+      "control_median": 8.0,
+      "delta_candidate_minus_control": -2.0,
+      "scores": [
+        {
+          "candidate": 6,
+          "control": 7,
+          "scorer": 1
+        },
+        {
+          "candidate": 6,
+          "control": 8,
+          "scorer": 2
+        },
+        {
+          "candidate": 6,
+          "control": 9,
+          "scorer": 3
+        },
+        {
+          "candidate": 7,
+          "control": 9,
+          "scorer": 4
+        },
+        {
+          "candidate": 7,
+          "control": 6,
+          "scorer": 5
+        }
+      ]
+    },
+    "overall": 6.0,
+    "passed": true,
+    "reasons": [],
+    "tier": "stable"
+  },
+  "license": "proprietary",
+  "promoted_at": "2026-07-08T11:12:28+00:00",
+  "provenance": {
+    "run_id": null,
+    "sha": null,
+    "source_path": "qa/evidence/backdrop-cadence-20260708/camp_clearing_night_visual_gate_panel.json",
+    "world": "worldos"
+  },
+  "reuse_count": 0,
+  "room_ref": {
+    "asset_ids": [
+      "asset_AVFNJ6TACe8QWxRYSoQmJ1xC",
+      "asset_cTJg3FEgiUjqswT36spNyr11"
+    ],
+    "recipe_key": "camp_clearing_night"
+  },
+  "scores": {
+    "ac_ruler": null,
+    "dims": {
+      "scorer_1": 6,
+      "scorer_2": 6,
+      "scorer_3": 6,
+      "scorer_4": 7,
+      "scorer_5": 7
+    },
+    "overall": 6.0,
+    "panel_id": "panel-visual-camp-gatepath-20260708"
+  },
+  "tier": "stable"
+}

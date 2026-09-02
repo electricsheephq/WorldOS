@@ -1,0 +1,24 @@
+{
+  "protocol": "CORRECTED-ANCHORING (issue #1560/#1561) 5-scorer blind panel. Neutral anchors = disguised PoE2 real-art control (blind slot) + DISCLOSED CAMP house-ref (non-competing room). Crypt incumbent crypt_armb_iter3 = DISCLOSED comparison slot, NOT house_best.",
+  "blind_slots": {
+    "A": "qa/evidence/crypt-replicate/gen/iter3_flux_s40.jpg",
+    "B": "qa/evidence/crypt-replicate/gen/iter3_a2.jpg",
+    "C": "qa/evidence/crypt-replicate/loop/panel/image_2.jpg",
+    "D": "qa/evidence/crypt-replicate/gen/iter3_a1.jpg"
+  },
+  "blind_slot_roles": {
+    "A": "distractor (recipe-b FLUX candidate iter3_flux_s40)",
+    "B": "PRIMARY CANDIDATE (#1528 recipe-a Gemini two-stage iter3_a2)",
+    "C": "disguised PoE2 real-art parity control",
+    "D": "distractor (recipe-a variant iter3_a1)"
+  },
+  "disclosed": {
+    "HOUSE_REF_camp": "qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
+    "INCUMBENT_crypt": "qa/evidence/crypt-replicate/refs/incumbent_crypt_armb_iter3.jpg"
+  },
+  "norm_dims": [
+    1344,
+    768
+  ],
+  "note": "candidate B and incumbent are BOTH scored in the same panel per packet."
+}

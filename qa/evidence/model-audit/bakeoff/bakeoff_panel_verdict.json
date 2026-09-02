@@ -1,0 +1,53 @@
+{
+  "lane": "MODEL-AUDIT #1553 bake-off — one fixed crypt greybox, shared seed 12345, identical Gemini structure-lock style pass across arms. Controlled: only the base model / LoRA differs.",
+  "greybox": "qa/evidence/true-greybox/crypt/crypt_greybox.png",
+  "depth_control_asset": "asset_ByYfTs78japedqFecMXFXcwe",
+  "protocol": "blind 5-scorer panel (Sonnet), visual-critic rubric, disguised REGISTERED real-art control (poe2_ruins_brazier_integration_01, band [6.8,9.2]) in slot image_2. Scorers saw image_1..image_5 only; mapping withheld.",
+  "cu_spent": 103,
+  "cu_cap": 120,
+  "arms": {
+    "A_plain_flux_gemini": {
+      "recipe": "model_bfl-flux-1-dev depth-CN cs0.7 (NO lora) -> Gemini 3.1 structure-lock",
+      "base_asset": "asset_BKn1kiX2c8BaifYj559yKx7Y", "styled_asset": "asset_g7M9aJi9rT5npUnQr8o7RqBp",
+      "blind_slot": "image_4", "scores": [6, 7, 5, 6, 5], "median": 6.0,
+      "delta_vs_control": -3.0, "edge_recall_styled": 0.8616,
+      "defects": {"fake_text": "4/5 (hallucinated 'D.S.V.' signature)", "duplicate": "2/5"},
+      "tier": "REJECT (delta < -2.5), CONFOUNDED by a stochastic text-signature artifact"
+    },
+    "B_g379_interior_lora": {
+      "recipe": "model_bfl-flux-1-dev depth-CN cs0.7 + model_G379 interior LoRA @0.8 -> Gemini 3.1 structure-lock",
+      "base_asset": "asset_5Vky6qaBJnJCjqoUU3yKamdZ", "styled_asset": "asset_RkpgCajBGyuyfGC98xoKfHs5",
+      "blind_slot": "image_1", "scores": [7, 8, 7, 7, 7], "median": 7.0,
+      "delta_vs_control": -2.0, "edge_recall_styled": 0.9653,
+      "defects": {"fake_text": "0/5", "duplicate": "0/5"},
+      "tier": "stable (adopted-quality band); defect-clean, best registered arm this seed"
+    },
+    "C_rswe_exterior_lora_CONTROL_ARM": {
+      "recipe": "model_bfl-flux-1-dev depth-CN cs0.7 + model_RsWE exterior LoRA @0.8 -> Gemini 3.1 structure-lock",
+      "base_asset": "asset_Ce1qhzsHL8PwKDDb9p2bdWC2", "styled_asset": "asset_kiREycMopHUiTyxBLjfkJaeW",
+      "blind_slot": "image_5", "scores": [5, 6, 7, 6, 5], "median": 6.0,
+      "delta_vs_control": -3.0, "edge_recall_styled": 0.9841,
+      "defects": {"fake_text": "4/5 (gibberish rune-text band)", "duplicate": "1/5"},
+      "tier": "REJECT; exterior LoRA pushed interior toward monumental/ziggurat drift + text artifacts (the split matters, as expected)"
+    },
+    "D_flux2_v2_beauty_txt2img_UNREGISTERED": {
+      "recipe": "model_bfl-flux-2-dev + model_J97 (PoE2 v2, REAL refs) txt2img — NO ControlNet possible on flux.2",
+      "asset": "asset_zvgHGjyGamzzYxV3AsV9zepp",
+      "blind_slot": "image_3", "scores": [8, 7, 6, 8, 7], "median": 7.0,
+      "delta_vs_control": -2.0, "edge_recall_styled": "n/a (free composition; not greybox-locked)",
+      "defects": {"fake_text": "0/5", "duplicate": "0/5"},
+      "tier": "REFERENCE-ONLY — ties the best styled arm, defect-clean, most PoE2-authentic beauty; but txt2img so UNUSABLE in the registered geometry-locked path"
+    },
+    "CONTROL_poe2_real": {
+      "recipe": "real shipped PoE2:Deadfire ruins/brazier plate (registered control)",
+      "blind_slot": "image_2", "scores": [9, 9, 9, 9, 9], "median": 9.0,
+      "in_band": [6.8, 9.2], "instrument_valid": true
+    }
+  },
+  "verdict": "Instrument VALID (control 9.0 in-band). Registered arms cluster 6.0-7.0, all well below real-art 9.0. v2-Flux2 (D, real refs) ties the best styled arm and is defect-clean, confirming it is top-quality — but flux.2 has no ControlNet so it cannot drive the registered path. The interior LoRA (B) was the best defect-clean registered arm this seed; the plain-flux (A) and exterior-LoRA (C) arms were dragged below the adoption bar by a HALLUCINATED text/signature artifact on the Gemini pass (2 of 4 styled arms) — a stochastic single-seed defect, not a stable model verdict (the LoRA-free incumbent crypt_armb_iter3 scores 8.0).",
+  "caveats": [
+    "SINGLE SEED (12345) per arm — budget-forced (103/120 CU cap). Arm A's low median is artifact-driven; do NOT read this as 'interior LoRA beats plain flux'. The incumbent crypt (plain flux + Gemini) scores 8.0.",
+    "The load-bearing structural findings are seed-independent: G379 is AI-on-AI (ceiling), flux.2 cannot register, real-ref retrain (v4/v2) is the path.",
+    "Text-hallucination on the Gemini pass hit 2/4 styled arms — reinforces the ADDITIONS-LOCK / no-text prompt discipline (PR #1549)."
+  ]
+}

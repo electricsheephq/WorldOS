@@ -1,0 +1,45 @@
+{
+  "lane": "FOREST-ROAD (PLATE SPRINT Phase 2) — ARM-B generalization test on an UNSEEN structure class",
+  "room": "forest_road (outdoor linear dirt road through forest at dusk)",
+  "recipe_under_test": "flux-1-dev + ControlNet-depth base from greybox (control_strength 0.7, seed 42, no z-image LoRA) -> Gemini instruction-edit style pass (model_google-gemini-3-1-flash, referenceImages=house anchor, structure-lock prompt)",
+  "verdict": "The proven ARM-B recipe does NOT generalize as written. A correct, at-parity dusk forest road IS reachable, but only via an amended path, and the automated convergence gate cannot certify it.",
+  "findings": [
+    {
+      "id": 1,
+      "title": "referenceImages is a CONTENT anchor, not a STYLE anchor",
+      "detail": "Gemini style pass with referenceImages=[crypt_dense_v1] reproduced the crypt wholesale (arm_iter1_cryptref_LEAKED_crypt.jpg); swapping to camp_clearing_night_v2 reproduced the camp (arm_iter1_campref_LEAKED_camp.jpg). Two independent anchors each leaked their full room content. Masked on crypt because anchor and target were the SAME room."
+    },
+    {
+      "id": 2,
+      "title": "edge-recall registration is content-blind AND anti-correlated with correctness for organic rooms",
+      "registration_vs_greybox": {
+        "arm_iter1_cryptref_WRONG_ROOM_crypt": 0.9680,
+        "arm_iter1_noref_right_room_eyelevel": 0.9817,
+        "arm_iter1_campref_WRONG_ROOM_camp": 0.6802,
+        "iter2_noref_dimetric_BEST_correct": 0.6696
+      },
+      "detail": "The wrong-room crypt PASSES the >=0.95 gate; the correct best plate FAILS it. Edge-recall rewards busy imagery and penalizes faithful painterly reinterpretation of a boxy greybox into organic forest forms. Gate co-tuned on hard-edged masonry (crypt boxes ~= stone blocks); unreachable by a correct organic/outdoor plate."
+    },
+    {
+      "id": 3,
+      "title": "the dimetric camera pin was silently supplied by the same-room reference",
+      "detail": "Dropping referenceImages (needed to stop Finding-1 content-leak) also drops the camera pin: prompt-only no-ref recovered correct content but tilted to an eye-level landscape (reg 0.9817, wrong projection). Re-supplying the pin via an explicit dimetric-lock prompt clause recovered a high bird's-eye dimetric-ish view (iter2, the best candidate)."
+    }
+  ],
+  "panel": {
+    "scorers": 5, "scorer_model": "sonnet", "blind": true,
+    "house_anchor": "camp_clearing_night_v2.jpg", "control": "poe2_control.jpg",
+    "A_candidate_iter2": {"scores": [7,6,6,5,5], "median": 6.0, "house_style": "3 same-hand / 2 lesser"},
+    "B_camp_incumbent": {"scores": [6,7,6,6,7], "median": 6.0},
+    "C_realart_control": {"scores": [9,9,9,9,9], "median": 9.0, "valid_band_6.8_9.2": true},
+    "delta_vs_control": -3.0,
+    "read": "Candidate TIES the adopted outdoor house anchor (6.0 == 6.0) on an unseen structure; control valid at 9.0."
+  },
+  "convergence": {
+    "gate": "registration >= 0.95 AND panel median >= 7.0",
+    "registration": 0.6696, "panel_median": 6.0, "converged": false,
+    "caveat": "registration miss is Finding 2 (broken gate for organic content), not a bad plate; panel 6.0 == outdoor incumbent's own bar (at-parity)."
+  },
+  "best_candidate": "candidate_iter2_noref_dimetric_BEST.jpg (full-res: ~/worldos-session-notes/plate-sprint/forest_road/iter2/style_noref_dimetric/fr_iter2_noref_dimetric.png)",
+  "sidecar_note": "forest_road_greybox_{depth,normal}.png produced headlessly (qa/greybox_sidecars_headless.py, same camera basis as greybox, no GEX44 box). ARM-B does NOT consume them: flux ControlNet derives depth server-side from the greybox controlImage, and #1481 concluded the WOSRelight lane that consumed depth/normal sidecars should STOP (shared-greybox sidecars stamped vertical-banding seams onto warm plates). Shipped for parity + a reproducible no-box sidecar path."
+}

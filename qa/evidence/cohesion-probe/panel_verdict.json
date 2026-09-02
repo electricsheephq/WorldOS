@@ -1,0 +1,18 @@
+{
+  "run": "cohesion-probe-panel-1",
+  "date": "2026-07-09",
+  "question": "character-in-scene integration 0-10, blind, 5 scorers (sonnet)",
+  "images": {"A": "rung0_baseline (Standard+blob, 32 stacked lights)", "B": "rung3_v4 (plate-derived rig + contact shadows + PainterlyActor CL-params w/ proximity scaling)", "C": "poe2_ruins_brazier_integration_01 (disguised real-art control, band 6.8-9.2)"},
+  "scores": {"A": [3, 3.5, 3.8, 5.2, 4.5], "B": [5.3, 2.8, 2.6, 3.6, 3.2], "C": [9.3, 8.7, 8.7, 7.6, 8.5]},
+  "medians": {"A": 3.8, "B": 3.2, "C": 8.7},
+  "control_valid": true,
+  "rankings": ["C>B>A", "C>A>B", "C>A>B", "C>A>B", "C>A>B"],
+  "verdict": "B LOST to A (3.2 vs 3.8): the CL painterly parameterization does NOT transfer to a bright-fire-pool outdoor scene even with proximity scaling - the cool grade (AtmColor/desat/palette-snap toward the navy ambient) reads as blue-black cutouts inside the brightest light in frame, a louder integration violation than the baseline's pale flat-lit figures. The LIGHT RIG half drew praise (scorer 1: warm fire-facing rim, hue integrates better); the blame concentrates on the actor-shader grade + residual CG specular/crisp-edge tells present in BOTH arms.",
+  "next_iteration_hypotheses": [
+    "kill the cool atm/desat/palette-snap pull entirely for near01>0.5 actors; grade toward the WARM lit-ground band instead",
+    "raise key+ambient so fire-facing surfaces REACH the painted ground's value (painted logs read ~0.7-0.8 luma; clamp MaxLuma >= 0.8 near fire)",
+    "kill specular on both arms (baseline tells: glossy PBR hotspots); PainterlyActor rim should be warm not white",
+    "edge-feather is not registering at this scale - EdgeSoften up or resolution-aware"
+  ],
+  "baseline_vs_bar": "A=3.8 vs PoE2 control 8.7 - the cohesion seam is a ~5-point gap, the largest measured deficit in the visual stack"
+}

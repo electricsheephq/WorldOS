@@ -18,15 +18,33 @@ leaves the library byte-identical). It NEVER edits room_recipes.json or the asse
 entries REFERENCE recipe keys + asset_ids by value only (byte-identity of both files is a hard
 invariant, asserted in tests).
 
-THE GATE (ratified epic #1325)
-------------------------------
-An artifact is promoted to ``tier=stable`` iff ALL of:
-  * overall >= PROMOTE_OVERALL_MIN (4.0),
-  * every per-dimension score >= PROMOTE_DIM_MIN (3.0), and
-  * control-valid — the panel that produced the score had its disguised canon controls land in-band
-    (qa/artifact_calibration_panel's ``panel_valid``; derived here from the panel's control rows).
-``tier=canonical`` is HUMAN curation ONLY — promote.py never assigns it. A nomination that fails the
-gate is recorded as processed (so --batch is idempotent) but NOT written to the library.
+THE GATE — TWO STRATEGIES BY CLASS (epic #1325; visual split ratified 2026-07-08,
+docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md)
+------------------------------------------------------------------------------------------------------
+``GATE_STRATEGIES[class]`` selects the gate. The classes split into TEXT and VISUAL because their
+scoring doctrines genuinely differ (measured): text artifacts have citable 1-5 absolute thresholds;
+image panels do NOT (blind, real shipped PoE2/BG2 art scores 3.0-5.6 — an absolute number is never a
+quality verdict), so the visual gate is delta-anchored, never absolute.
+
+  * TEXT classes (quest / npc / location / encounter) → the byte-unchanged threshold gate
+    (``evaluate_gate``). ``tier=stable`` iff ALL of:
+      - overall >= PROMOTE_OVERALL_MIN (4.0),
+      - every per-dimension score >= PROMOTE_DIM_MIN (3.0), and
+      - control-valid — the panel that produced the score had its disguised canon controls land in-band
+        (qa/artifact_calibration_panel's ``panel_valid``; derived here from the panel's control rows).
+  * VISUAL classes ("room" today) → the delta-anchored visual gate (``evaluate_visual_gate``), which
+    reads the panel JSON at the nomination's ``source_path`` (NOT the `artifacts` DB table — visual
+    scores land in runs/surface=visual + panel JSONs). ``tier=stable`` iff ALL of, with NO absolute
+    threshold:
+      - the deterministic pre-gate HARD FLOOR PASSed (frame-lit + occupancy + pin/floor-contact; the
+        stylistic G6 staging-law band and reel-only G5 motion are NOT promotion floors — daylight
+        plates legitimately sit outside the dark-chiaroscuro band),
+      - the panel cited a control REGISTERED in qa/visual_controls_identity.json whose same-panel
+        median landed inside its band (the instrument was valid this panel), and
+      - candidate-minus-control delta >= -noise_law (-1.2 on the 0-10 panel scale).
+
+``tier=canonical`` is HUMAN curation ONLY — promote.py never assigns it (either strategy). A nomination
+that fails its gate is recorded as processed (so --batch is idempotent) but NOT written to the library.
 
 THE NOMINATION QUEUE (bootstrap ruling, epic addendum [HIGH])
 -------------------------------------------------------------
@@ -35,8 +53,13 @@ does, and it depends ON HV3. So for the FIRST batch this file is bootstrapped BY
 per artifact_id, sourced from HV2's qa/artifacts_out/<campaign>/**/*.json listings. promote.py does NOT
 invent its own nomination heuristic — that logic belongs solely to HV5's closeout auto-nominator. Each
 line is a JSON object; the ONLY required key is ``artifact_id``. Optional keys:
-  * ``source_path`` — repo-relative/absolute path to the extracted artifact JSON (needed only for the
-    score-if-unscored step and to embed the payload provenance into the library entry).
+  * ``class``       — the entry class. Selects the gate STRATEGY via GATE_STRATEGIES: absent / a text
+    class (quest/npc/location/encounter) → the text gate (class then read from the scored DB row, as
+    before); ``"room"`` → the VISUAL gate. A VISUAL nomination MUST declare its class here (its score
+    lives in a panel JSON, not the `artifacts` table, so the class can't be read from a DB row).
+  * ``source_path`` — repo-relative/absolute path. TEXT: the extracted artifact JSON (for score-if-
+    unscored + entry provenance). VISUAL: the control-anchored panel JSON the visual gate reads.
+  * ``room_ref``    — ``{recipe_key, asset_ids}`` a room entry REFERENCES by value (never inlined).
   * ``license``     — SPDX-ish license string for the entry (else --license default; else pack.json's).
   * ``curation_note`` — free text carried onto the entry.
 
@@ -56,7 +79,10 @@ CLI CONTRACT (epic addendum [MED], owned here as HV3 implements it first)
 
 ``--batch`` reads qa/nominations.jsonl top-to-bottom, processes every UNPROCESSED line (idempotent —
 re-running skips already-promoted / already-processed artifact_ids via the processed-log), exits 0 even
-with zero promotions. There is no single-nomination mode in v1.
+with zero promotions. There is no single-nomination mode in v1. Each nomination is routed to its gate
+STRATEGY by class (GATE_STRATEGIES): text classes take the DB-backed threshold gate; a ``room``
+nomination takes the visual gate (reads its panel JSON at ``source_path``; --skip-unscored / --dry-run
+still apply — --dry-run previews the visual verdict and writes nothing; score-if-unscored is text-only).
 """
 from __future__ import annotations
 
@@ -249,6 +275,172 @@ def evaluate_gate(score_row: dict, *, control_valid: bool) -> GateResult:
     return GateResult(passed, "stable" if passed else None, reasons, overall, dims, control_valid)
 
 
+# ── The VISUAL gate (class="room" and future visual classes) ─────────────────────────────────────
+# The image analogue of evaluate_gate. Its PASS rule encodes the visual-critic doctrine (decision
+# docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md): NO absolute threshold (an absolute panel number is
+# never a quality verdict for images), a delta anchored to a REGISTERED disguised-real-art control, and
+# a deterministic pre-gate hard floor. It reads a PANEL JSON (the nomination's source_path), NOT the
+# `artifacts` DB table — visual scores land in runs/surface=visual + panel JSONs.
+VISUAL_CLASSES: tuple[str, ...] = ("room",)
+GATE_STRATEGIES: dict[str, str] = {  # class -> strategy; absent/text class -> "text" (byte-unchanged)
+    "quest": "text", "npc": "text", "location": "text", "encounter": "text", "room": "visual",
+}
+_VISUAL_CONTROLS_IDENTITY = _QA_DIR / "visual_controls_identity.json"
+# ── The two-tier delta ladder (architect amendment 2026-07-08) ───────────────────────────────────
+# A single delta>=-1.2 PASS bar means "at statistical PARITY with real shipped PoE2 art" — the
+# DESTINATION bar, not the era-appropriate ADOPTION bar. Two measured taste-gated panels calibrate the
+# gap: camp_clearing_night (delta -2.0) PASSED both human taste-gates, so the adoption bar must sit
+# BELOW -2.0; market_square (delta -5.0) was a clear taste-REJECT. So the verdict ladder is:
+#   delta >= VIS_DELTA_PARITY (-1.2)                     → tier "canonical-candidate" (parity with real
+#                                                          art; a human MAY promote to canonical) — PASS.
+#   VIS_DELTA_ADOPT (-2.5) <= delta < VIS_DELTA_PARITY   → tier "stable" (adopted-quality) — PASS.
+#   delta < VIS_DELTA_ADOPT (-2.5)                       → REJECT.
+# VIS_DELTA_PARITY is the noise law (parity == within-noise of real art; == the registry noise_law).
+# VIS_DELTA_ADOPT=-2.5 is the era-appropriate adoption bar, calibrated 2026-07-08 on the two anchors:
+# camp_clearing_night delta -2.0 (taste-PASS) / market_square delta -5.0 (taste-REJECT). A later
+# taste/noise re-measure that moves the bar changes ONE constant here.
+VIS_DELTA_PARITY = -1.2
+VIS_DELTA_ADOPT = -2.5
+# The pre-gate gates that are a PROMOTION hard floor. The stylistic G6 luma-staging-law band (a
+# daylight plaza legitimately sits outside the dark-chiaroscuro band) and the reel-only G5 motion
+# liveness are deliberately EXCLUDED — they filter scorer spend / reels, they do not block adoption.
+_VISUAL_HARD_FLOOR_GATES = frozenset(
+    {"G1_frame_lit", "G2_occupancy", "G3_floor_contact", "G4_screen_scale"})
+
+
+def _strategy_for(nomination: dict) -> str:
+    """Route a nomination to its gate strategy by class (GATE_STRATEGIES). A nomination with no
+    ``class`` (every text nomination today) → "text" — the text path then reads the class off the
+    scored DB row exactly as before (byte-identical)."""
+    return GATE_STRATEGIES.get(nomination.get("class"), "text")
+
+
+def load_visual_registry(path: Path | str = _VISUAL_CONTROLS_IDENTITY) -> dict:
+    """The visual control registry (qa/visual_controls_identity.json). Missing/unreadable → an empty
+    registry (no controls) so the gate fails closed rather than raising — a panel can then never be
+    control-registered, which is the correct fail-closed verdict."""
+    p = Path(path)
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"controls": {}, "noise_law": 1.2}
+    if not isinstance(data, dict):
+        return {"controls": {}, "noise_law": 1.2}
+    data.setdefault("controls", {})
+    data.setdefault("noise_law", 1.2)
+    return data
+
+
+def load_visual_panel(source_path: Path | str) -> dict:
+    """Read the control-anchored panel JSON a visual nomination points at (source_path). Relative
+    paths resolve against the repo root (matching how a library entry stores 'qa/evidence/...')."""
+    p = Path(source_path)
+    if not p.is_absolute():
+        p = _REPO_ROOT / p
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def visual_pregate_floor_passed(pregate: Optional[dict]) -> bool:
+    """True iff the deterministic pre-gate HARD FLOOR passed: no hard-floor gate
+    (_VISUAL_HARD_FLOOR_GATES) fired CRITICAL/HIGH. ``pregate`` is the recorded run_pregates() output
+    (its ``gates`` list). A missing/empty pregate record fails closed (we cannot vouch for the floor).
+    The stylistic G6 staging-law band + reel-only G5 are ignored here on purpose (see the constant)."""
+    if not isinstance(pregate, dict):
+        return False
+    gates = pregate.get("gates")
+    if not isinstance(gates, list):
+        return False
+    saw_floor_gate = False
+    for g in gates:
+        if not isinstance(g, dict) or g.get("gate") not in _VISUAL_HARD_FLOOR_GATES:
+            continue
+        saw_floor_gate = True
+        if g.get("severity") in ("CRITICAL", "HIGH"):
+            return False
+    # At least G1 (frame-lit) always runs on any decodable plate; if not a single hard-floor gate is
+    # present, the pregate did not actually run the floor → fail closed.
+    return saw_floor_gate
+
+
+def _panel_delta(panel: dict) -> Optional[float]:
+    """Candidate-minus-control delta from the panel: the explicit numeric field if present, else
+    derived from candidate_median - control_median. None if neither is available/numeric."""
+    d = panel.get("delta_candidate_minus_control")
+    if isinstance(d, (int, float)) and not isinstance(d, bool):
+        return float(d)
+    cm, com = panel.get("candidate_median"), panel.get("control_median")
+    if isinstance(cm, (int, float)) and isinstance(com, (int, float)):
+        return float(cm) - float(com)
+    return None
+
+
+def evaluate_visual_gate(panel: dict, *, registry: dict, noise_law: float = 1.2) -> GateResult:
+    """Apply the delta-anchored visual gate to one control-anchored panel JSON. PASSES iff ALL of:
+      (i)   the deterministic pre-gate HARD FLOOR PASSed,
+      (ii)  the panel cited a control REGISTERED in the visual registry whose same-panel median landed
+            inside its band (the instrument was valid this panel), and
+      (iii) candidate-minus-control delta >= VIS_DELTA_ADOPT (the two-tier ladder).
+    On a PASS the tier is "canonical-candidate" (delta >= VIS_DELTA_PARITY, parity with real art) or
+    "stable" (adopted-quality, VIS_DELTA_ADOPT <= delta < VIS_DELTA_PARITY). NO absolute-threshold check
+    — the candidate_median is carried for provenance only, never gated. ``noise_law`` is kept for
+    call-site compatibility; the ladder uses the module constants (VIS_DELTA_PARITY == -noise_law by
+    construction). Returns a GateResult with the fail reasons."""
+    reasons: list[str] = []
+
+    # (i) deterministic pre-gate hard floor
+    pregate = panel.get("pregate")
+    if not visual_pregate_floor_passed(pregate):
+        if not isinstance(pregate, dict) or not isinstance(pregate.get("gates"), list):
+            reasons.append("no deterministic pre-gate record (cannot vouch for the hard floor)")
+        else:
+            blocked = [g.get("gate") for g in pregate["gates"]
+                       if isinstance(g, dict) and g.get("gate") in _VISUAL_HARD_FLOOR_GATES
+                       and g.get("severity") in ("CRITICAL", "HIGH")]
+            reasons.append(f"pre-gate hard floor did not PASS (blocking: {blocked or 'floor never ran'})")
+
+    # (ii) registered, in-band control
+    controls = registry.get("controls", {}) if isinstance(registry, dict) else {}
+    control_id = panel.get("control_id")
+    ctrl = controls.get(control_id) if control_id else None
+    control_median = panel.get("control_median")
+    if not control_id:
+        reasons.append("panel is not control-anchored (no control_id)")
+    elif ctrl is None:
+        reasons.append(f"control {control_id!r} is not in the visual control registry "
+                       f"(qa/visual_controls_identity.json)")
+    else:
+        band = ctrl.get("band")
+        if not (isinstance(control_median, (int, float)) and isinstance(band, (list, tuple))
+                and len(band) == 2 and band[0] <= control_median <= band[1]):
+            reasons.append(f"registered control median {control_median} outside its band {band} — "
+                           f"the instrument was not valid this panel")
+
+    # (iii) candidate-vs-control delta on the two-tier ladder (NO absolute threshold). Epsilon at each
+    # boundary so a delta EXACTLY at the bar counts on the passing side (float subtraction of medians).
+    delta = _panel_delta(panel)
+    visual_tier: Optional[str] = None
+    if delta is None:
+        reasons.append("no numeric candidate-vs-control delta")
+    elif delta < VIS_DELTA_ADOPT - 1e-9:  # below the era-appropriate adoption bar → reject
+        reasons.append(f"delta {delta} < {VIS_DELTA_ADOPT} adoption bar "
+                       f"(candidate below the adopted-quality band)")
+    elif delta >= VIS_DELTA_PARITY - 1e-9:  # at/above parity with real art
+        visual_tier = "canonical-candidate"
+    else:  # VIS_DELTA_ADOPT <= delta < VIS_DELTA_PARITY → adopted-quality
+        visual_tier = "stable"
+
+    passed = not reasons
+    control_valid = bool(ctrl is not None and not any("instrument was not valid" in r for r in reasons))
+    dims = {
+        "scores": panel.get("scores"),
+        "candidate_median": panel.get("candidate_median"),
+        "control_median": control_median,
+        "delta_candidate_minus_control": delta,
+    }
+    return GateResult(passed, visual_tier if passed else None, reasons,
+                      panel.get("candidate_median"), dims, control_valid)
+
+
 # ── Library entry writing ───────────────────────────────────────────────────────────────────────
 def ensure_pack(library_dir: Path, *, name: str = "worldos-harvest", license: str = DEFAULT_LICENSE,
                 provenance: Optional[dict] = None) -> Path:
@@ -359,6 +551,193 @@ def score_if_unscored(nomination: dict, *, budget: str = "1.50",
     return _artifacts_by_id(db_path).get(aid)
 
 
+# ── Paint-drift gate (W6.3, #1462) — a HARD FLOOR on room promotions ─────────────────────────────
+def _paint_drift_gate(nom: dict) -> dict:
+    """Deterministic paint-drift check for a ROOM nomination (qa/check_plate_drift.py). Runs iff the
+    nomination declares a ``candidate_plate`` (the plate being promoted) AND a per-room manifest exists
+    for its recipe_key; then the plate's painted set pieces must still sit on the authored logical cells
+    (reprojected bbox + NCC template match). A DRIFT is a HARD rejection — the eval-blindness #1462 fixed.
+
+    Returns {ran, passed, ...}. Non-blocking NO-OP (ran=False) when: no candidate_plate (today's
+    nominations), no committed manifest for the room, or the qa image lane (Pillow/numpy) is absent in
+    this interpreter — the standalone ci.yml `paint-drift-gate` job is the always-on enforcement; here
+    we never crash a text-heavy batch on a missing optional dep. A real DRIFT, when the check DOES run,
+    is loud (passed=False → the caller rejects)."""
+    candidate = nom.get("candidate_plate")
+    if not candidate:
+        return {"ran": False, "passed": True, "reason": "no candidate_plate on nomination"}
+    recipe_key = (nom.get("room_ref") or {}).get("recipe_key") or nom.get("room")
+    try:
+        import check_plate_drift as cpd  # noqa: PLC0415  (qa/ is on sys.path; PIL/numpy imported here)
+    except Exception as e:  # pragma: no cover - depends on the host interpreter's image lane
+        return {"ran": False, "passed": True, "reason": f"drift lane unavailable ({e})"}
+    manifest_path = cpd._find_manifest_for_recipe(recipe_key, candidate, cpd._MANIFESTS_DIR)
+    if manifest_path is None:
+        return {"ran": False, "passed": True, "reason": f"no manifest for recipe_key {recipe_key!r}"}
+    plate = Path(candidate)
+    if not plate.is_absolute():
+        plate = _REPO_ROOT / candidate
+    if not plate.is_file():
+        return {"ran": True, "passed": False, "reasons": [f"candidate_plate {candidate!r} not found"]}
+    baseline = nom.get("baseline_plate")
+    if baseline and not Path(baseline).is_absolute():
+        baseline = str(_REPO_ROOT / baseline)
+    res = cpd.check_plate_drift(plate, cpd.load_manifest(manifest_path), baseline=baseline)
+    out = res.as_dict()
+    out["ran"] = True
+    return out
+
+
+# ── Model-provenance gate (#1553) — a HARD FLOOR on room promotions ──────────────────────────────
+# Ends ad-hoc model selection structurally: a plate may only be promoted if every model in its recorded
+# model_chain (base + LoRAs + style-pass model) is REGISTERED in qa/model_registry.json. ADDITIVE by
+# construction — like _paint_drift_gate, it is a NON-BLOCKING NO-OP (ran=False) when the registry file is
+# absent (default-allow, byte-identical to pre-#1553 behaviour) OR when the candidate carries no
+# model_chain (legacy nominations / plates minted before plate_loop stamped provenance). It only REFUSES
+# (ran=True, passed=False) a candidate that DOES declare a chain using a model not in the registry.
+DEFAULT_MODEL_REGISTRY = _QA_DIR / "model_registry.json"
+
+
+def load_model_registry(path: Path | str = DEFAULT_MODEL_REGISTRY) -> Optional[dict]:
+    """The machine-readable Scenario model registry (qa/model_registry.json), or None when the file is
+    absent/unreadable. None means the provenance gate is a NO-OP (default-allow) — the ADDITIVE contract:
+    a repo without the registry file behaves exactly as it did before #1553."""
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _registry_allowed_ids(registry: dict) -> set[str]:
+    """The set of model ids a chain may reference: every registered model id PLUS the approved base /
+    foundation model ids (flux.1-dev, gemini, z-image, flux.2-dev …)."""
+    allowed: set[str] = set(registry.get("approved_bases") or [])
+    models = registry.get("models")
+    if isinstance(models, dict):
+        allowed |= set(models.keys())
+    return allowed
+
+
+def _chain_model_ids(chain: dict) -> list[str]:
+    """Flat, de-duplicated list of every model id a model_chain references. Prefers the chain's own
+    ``model_ids`` (what plate_loop stamps); otherwise derives it from base_model + controlnet_model +
+    every LoRA id + the style-pass model + its LoRA ids."""
+    explicit = chain.get("model_ids")
+    if isinstance(explicit, list):
+        return [x for x in explicit if isinstance(x, str) and x]
+    ids: list[str] = []
+
+    def _add(x: Any) -> None:
+        if isinstance(x, str) and x and x not in ids:
+            ids.append(x)
+
+    _add(chain.get("base_model"))
+    _add(chain.get("controlnet_model"))
+    for lora in chain.get("loras") or []:
+        _add(lora.get("id") if isinstance(lora, dict) else lora)
+    sp = chain.get("style_pass")
+    if isinstance(sp, dict):
+        _add(sp.get("model"))
+        for lora in sp.get("loras") or []:
+            _add(lora.get("id") if isinstance(lora, dict) else lora)
+    return ids
+
+
+def _model_registry_gate(nom: dict, panel: dict, registry: Optional[dict]) -> dict:
+    """Deterministic model-provenance check for a ROOM nomination. The candidate's model_chain is read
+    from the nomination (``model_chain``) or, failing that, the panel JSON (``model_chain`` — where
+    plate_loop stamps it). Returns {ran, passed, ...} mirroring _paint_drift_gate.
+
+    NON-BLOCKING NO-OP (ran=False, passed=True) when: the registry file is absent (registry is None →
+    default-allow), or the candidate carries no model_chain at all (legacy/additive). REFUSES (ran=True,
+    passed=False) only when a chain IS present and references a model absent from the registry."""
+    if registry is None:
+        return {"ran": False, "passed": True, "reason": "no model registry file (default-allow)"}
+    chain = nom.get("model_chain") or panel.get("model_chain")
+    if not isinstance(chain, dict) or not chain:
+        return {"ran": False, "passed": True,
+                "reason": "no model_chain recorded on candidate (legacy/additive no-op)"}
+    ids = _chain_model_ids(chain)
+    if not ids:
+        return {"ran": False, "passed": True, "reason": "model_chain present but lists no model ids"}
+    allowed = _registry_allowed_ids(registry)
+    unregistered = [i for i in ids if i not in allowed]
+    if unregistered:
+        return {"ran": True, "passed": False, "model_ids": ids, "unregistered": unregistered,
+                "reasons": [f"model_chain uses unregistered model(s) {unregistered} — not in "
+                            f"qa/model_registry.json (register the model or fix the lane)"]}
+    return {"ran": True, "passed": True, "model_ids": ids}
+
+
+# ── Visual nomination promotion (the "room" strategy branch of promote_batch) ────────────────────
+def _promote_visual(nom: dict, aid: str, *, registry: dict, library_dir: Path, promoted_at: str,
+                    default_license: str, dry_run: bool, report: dict,
+                    model_registry: Optional[dict] = None) -> None:
+    """Gate + (on pass) write ONE visual nomination, mutating ``report`` with the same bookkeeping the
+    text branch uses (promoted/rejected/skipped, details, entries, processed-log). The visual score is
+    a PANEL JSON at the nomination's source_path — there is no score-if-unscored for visual (a plate is
+    scored by the visual-critic panel upstream, not by promote.py), so a missing/unreadable panel is a
+    score-failed skip, not a live-scoring attempt."""
+    cls = nom.get("class")
+    src = nom.get("source_path")
+    if not src:
+        report["skipped"] += 1
+        report["details"].append({"artifact_id": aid, "verdict": "score-failed",
+                                  "error": "visual nomination has no 'source_path' (panel JSON)"})
+        if not dry_run:
+            _append_processed(library_dir, aid, "score-failed", None)
+        return
+    try:
+        panel = load_visual_panel(src)
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        report["skipped"] += 1
+        report["details"].append({"artifact_id": aid, "verdict": "score-failed",
+                                  "error": f"cannot read visual panel {src!r}: {e}"})
+        if not dry_run:
+            _append_processed(library_dir, aid, "score-failed", None)
+        return
+
+    noise = float(registry.get("noise_law", 1.2))
+    gate = evaluate_visual_gate(panel, registry=registry, noise_law=noise)
+    # #1462 paint-drift HARD FLOOR: a room plate that slid a set piece off its authored cell is
+    # rejected even if the taste/delta gate passed (that drift is what reads as "actors over the logs").
+    drift = _paint_drift_gate(nom)
+    # #1553 model-provenance HARD FLOOR: refuse a plate whose model_chain uses a model not registered in
+    # qa/model_registry.json (ends ad-hoc model selection). Additive: a no-op when the registry file is
+    # absent or the candidate carries no chain.
+    modelreg = _model_registry_gate(nom, panel, model_registry)
+    passed = gate.passed and drift.get("passed", True) and modelreg.get("passed", True)
+    detail = {"artifact_id": aid, "verdict": "promoted" if passed else "rejected", **gate.as_dict()}
+    if drift.get("ran"):
+        detail["paint_drift"] = drift
+    if modelreg.get("ran"):
+        detail["model_registry"] = modelreg
+    report["details"].append(detail)
+    if not passed:
+        report["rejected"] += 1
+        if not dry_run:
+            _append_processed(library_dir, aid, "rejected", None)
+        return
+
+    score_row = {"run_id": None, "world": nom.get("world") or panel.get("world") or "worldos",
+                 "sha": None, "source_path": src, "panel_id": panel.get("panel_id"),
+                 "ac_ruler": None, "class": cls}
+    entry = build_entry(aid, cls, score_row, gate, license=nom.get("license") or default_license,
+                        promoted_at=promoted_at, curation_note=nom.get("curation_note"),
+                        payload=nom.get("payload"), room_ref=nom.get("room_ref"))
+    report["promoted"] += 1
+    if not dry_run:
+        path = write_entry(library_dir, entry)
+        report["entries"].append(str(path))
+        _append_processed(library_dir, aid, "promoted", gate.tier)
+    else:
+        report["entries"].append(f"(dry-run) {cls}/{aid}")
+
+
 # ── The batch driver ────────────────────────────────────────────────────────────────────────────
 def promote_batch(
     *,
@@ -369,6 +748,7 @@ def promote_batch(
     skip_unscored: bool = False,
     dry_run: bool = False,
     budget: str = "1.50",
+    model_registry_path: Path | str = DEFAULT_MODEL_REGISTRY,
 ) -> dict:
     """Process every unprocessed nomination top-to-bottom. Returns a batch report dict.
 
@@ -381,6 +761,9 @@ def promote_batch(
     processed = read_processed(library_dir) if not dry_run else set()
     rows_by_id = _artifacts_by_id(db_path)
     all_rows = scores_db.fetch_artifacts(db_path)
+    visual_registry = load_visual_registry()  # cheap; empty registry if the file is absent (fail-closed)
+    # #1553 model registry: None when the file is absent → the provenance gate is a default-allow no-op.
+    model_registry = load_model_registry(model_registry_path)
     promoted_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     report: dict[str, Any] = {
@@ -400,6 +783,15 @@ def promote_batch(
         # nominations.jsonl with a duplicate artifact_id in the same file must not be scored/promoted
         # twice within one run (the on-disk processed-log only guards the NEXT run).
         processed.add(aid)
+
+        # GATE_STRATEGIES dispatch: a visual class ("room") takes the delta-anchored visual gate,
+        # which reads its panel JSON at source_path (NOT the `artifacts` DB table). Text classes fall
+        # through to the byte-unchanged DB-backed path below.
+        if _strategy_for(nom) == "visual":
+            _promote_visual(nom, aid, registry=visual_registry, library_dir=library_dir,
+                            promoted_at=promoted_at, default_license=default_license,
+                            dry_run=dry_run, report=report, model_registry=model_registry)
+            continue
 
         row = rows_by_id.get(aid)
         if row is None or row.get("overall") is None:
@@ -469,12 +861,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="gate preview only — write NOTHING (no scoring, no library, no processed-log)")
     ap.add_argument("--budget", default="1.50", help="per-scorer USD budget for score-if-unscored")
+    ap.add_argument("--model-registry", default=str(DEFAULT_MODEL_REGISTRY),
+                    help="qa/model_registry.json — the room provenance gate's allowlist (#1553); an "
+                         "absent file makes that gate a default-allow no-op")
     args = ap.parse_args(argv)
 
     report = promote_batch(
         library_dir=Path(args.library), nominations_path=Path(args.nominations), db_path=args.db,
         default_license=args.license, skip_unscored=args.skip_unscored, dry_run=args.dry_run,
-        budget=args.budget,
+        budget=args.budget, model_registry_path=Path(args.model_registry),
     )
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0  # batch always exits 0, even with zero promotions (CLI contract)

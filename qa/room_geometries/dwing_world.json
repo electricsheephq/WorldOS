@@ -1,0 +1,54 @@
+{
+ "town_id": "dwing",
+ "rooms": [
+  {
+   "room": "room_0",
+   "location_id": "dwing_room_0",
+   "geometry": "dwing_room_0_geometry.json",
+   "doors": [
+    {
+     "cell": [
+      11,
+      6
+     ],
+     "to": "dwing_room_1"
+    }
+   ]
+  },
+  {
+   "room": "room_1",
+   "location_id": "dwing_room_1",
+   "geometry": "dwing_room_1_geometry.json",
+   "doors": [
+    {
+     "cell": [
+      0,
+      3
+     ],
+     "to": "dwing_room_0"
+    },
+    {
+     "cell": [
+      11,
+      3
+     ],
+     "to": "dwing_room_2"
+    }
+   ]
+  },
+  {
+   "room": "room_2",
+   "location_id": "dwing_room_2",
+   "geometry": "dwing_room_2_geometry.json",
+   "doors": [
+    {
+     "cell": [
+      0,
+      6
+     ],
+     "to": "dwing_room_1"
+    }
+   ]
+  }
+ ]
+}

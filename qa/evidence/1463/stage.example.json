@@ -1,0 +1,5 @@
+{
+  "_comment": "W6.4 (#1463) OPTIONAL stage manifest. Copy to the PROJECT ROOT as stage.json to activate; BuildMacOSPlayer.EnsurePackaged then copies it into StreamingAssets. ABSENT at project root => no stage.json in the build => CombatSurfaceClient renders a byte-identical scene (no flicker, no glow quads). fire_anchors are WORLD [x, z] positions on the floor plane (distinct from the [c, r] grid cells used elsewhere); flicker.amplitude is the fractional swing around each brazier's base intensity, flicker.speed the Perlin time scale.",
+  "fire_anchors": [[-10.0, 9.0], [10.0, 9.0]],
+  "flicker": { "amplitude": 0.35, "speed": 6.0 }
+}

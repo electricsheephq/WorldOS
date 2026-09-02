@@ -128,6 +128,28 @@ _NARRATION_LEAK = [
     r"\bhere'?s how round \w+ (?:actually )?went\b",            # OOC combat-replay framing (round-anchored)
     r"\blet me set the order of it\b",                          # OOC initiative / turn-ordering preamble
     r"\binciting incident\b",                                   # plot-craft jargon (never in player fiction)
+    # #1360 — the DM-craft mechanic-leak class the clean v1.0.5 gate (rri-a1-gate3b) caught: a raw
+    # DC, an attitude/gauge transition, a roll verdict, and an INTERNAL IDENTIFIER (event-/flag-/
+    # quest-/npc- ids) leaking into the fiction the player reads. Each is OOC-ONLY — a hyphen-slug
+    # tool id, a `DC 14`, or a `wary → indifferent` gauge arrow never occurs in in-character prose.
+    r"\bDC\s*\d+",                                              # raw check DC ("DC 14", "DC 13 — FAIL")
+    # internal tool id (`event-fist-checkpoint`, flag-*, quest-*, npc-*). Two anchors keep it OOC-only
+    # and off fictional hyphenates ("flag-bearer", "quest-giver"): (a) backticked ANY id, or (b) bare
+    # only in the multi-segment slug form (>=2 hyphens, e.g. event-fist-checkpoint) tool ids take.
+    r"`(?:event|flag|quest|npc)-[a-z0-9][a-z0-9-]*`",           # backticked internal id
+    r"\b(?:event|flag|quest|npc)-[a-z0-9]+-[a-z0-9][a-z0-9-]*", # bare multi-segment slug id
+    (  # attitude/gauge transition — one pattern, deliberately split across 3 literals for
+       # readability; parenthesized so the concatenation reads as ONE list element, not three
+       # (avoids the "implicit string concat — missing comma?" lint false-positive).
+        r"\b(?:hostile|wary|indifferent|neutral|friendly|helpful|suspicious|cold|warm)\b"
+        r"\s*(?:→|-->|->)\s*"
+        r"\b(?:hostile|wary|indifferent|neutral|friendly|helpful|suspicious|cold|warm)\b"
+    ),
+    (  # check-name AS a mechanic in prose — same deliberate multi-literal concat, parenthesized
+       # for the same reason.
+        r"\ba\s+(?:perception|insight|investigation|persuasion|deception|intimidation|"
+        r"perception/insight|insight/perception)\s+(?:read|check)\b"
+    ),
 ]
 _NARRATION_LEAK_RE = [re.compile(p, re.I) for p in _NARRATION_LEAK]
 

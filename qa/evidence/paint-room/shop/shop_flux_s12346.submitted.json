@@ -1,0 +1,10 @@
+{
+ "prompt": "Painterly isometric medieval general-goods shop interior, firelit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. A warm timber-and-fieldstone trading room: along the back-left wall a TALL WOODEN SHELVING unit stacked with jars, bolts of cloth, coils of rope and sundry goods; at the center of the room a long wooden SHOP COUNTER with a polished lighter top, scales and a ledger on it, the clear focal point with open plank floor on all sides; a small till table against the back-right wall; two goods BARRELS along the right-hand aisle; a low wooden BENCH before the counter; a square wares DISPLAY TABLE spread with folded cloth and ceramics to the south; a stack of SUPPLY CRATES in the left corner; plump grain SACKS in the right corner; one lit iron BRAZIER on a pedestal stand at the counter's end casting warm light; an arched doorway in the back wall and a second doorway in the right wall exactly where the depth map shows openings; worn wooden plank floor, solid timber walls with NO windows, rich warm amber lighting pooled on the counter, cool blue-grey shadow falloff at the room edges, hand-painted texture detail, oil-painted texture, no people, no characters, empty room.",
+ "controlImage": "asset_SZa3e3ngB6ueW23ULMeyZcsz",
+ "controlModality": "depth",
+ "controlStrength": 0.85,
+ "width": 1344,
+ "height": 768,
+ "numSamples": 1,
+ "seed": 12346
+}

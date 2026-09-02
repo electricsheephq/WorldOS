@@ -9,7 +9,9 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-cov>=6.0", "pytest-timeout>=2.3"]
+# numpy + pillow: qa/walk_test.py's visual mode (pixel-diff actor localization) imports them lazily;
+# declared here so `--group dev` runs its full unit suite (they were venv-strays before — 3 silent fails).
+dev = ["pytest>=9.1.1", "pytest-cov>=6.0", "pytest-timeout>=2.3", "numpy>=1.26", "pillow>=10.0"]
 
 [tool.uv]
 package = false

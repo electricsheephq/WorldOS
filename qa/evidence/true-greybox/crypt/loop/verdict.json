@@ -1,0 +1,4 @@
+{"scores": {"A": [7.5], "B": [8.0], "C": [9.0]},
+ "medians": {"A": 7.5, "B": 8.0, "C": 9.0},
+ "control_valid": true,
+ "verdict": "1-scorer interim (blind 5-scorer packet staged): candidate A=7.5 correct-scale + registered, near incumbent B=8.0 (whose detail embeds the 2x tomb scale drift); control C=9.0 in-band."}

@@ -1,0 +1,61 @@
+{
+  "room": "crypt",
+  "image_ref": "asset_gAxojwQJitHwezoNrUrQUagL",
+  "strength": 0.45,
+  "steps": 40,
+  "guidance": 7.5,
+  "num_outputs": 4,
+  "model_id": "model_bfl-flux-1-dev",
+  "lora": "model_MB22WaRCBLtfhi5R2CRpHoEL",
+  "lora_scale": 0.78,
+  "prompt": "painterly isometric dimetric crypt interior background plate, Pillars of Eternity II Deadfire pre-rendered background quality, loose confident visible oil-paint brushstrokes, SINGLE warm brazier firelight as the sole dramatic key light, dramatic chiaroscuro tenebrism, steep warm-to-cool value falloff from a hot amber lit pool to near-black corners, DEEP saturated blue-violet shadows (not neutral grey) in the far corners and along the back and side walls, HARD-EDGED directional cast shadows thrown from the pillars, the sarcophagus, and the brazier legs across the floor, strong warm-key-to-cool-shadow contrast, warm amber rim on edges facing the flame, cool blue-violet bounce on shadow-side stone, low-key moody candlelit interior, varied unique pillar carvings, no two columns identical, crisply chiseled stone relief, crisp painterly flagstone mortar lines, weathered cracked stone relief, grime moss and water-staining in the cracks, fluted pillar detail, carved sarcophagus relief, environmental storytelling clutter along the walls, tactile hand-painted texture, rich oil-painted detail, atmospheric depth, fixed camera composition, cinematic torchlit interior",
+  "negative_prompt": "flat even ambient light, overcast lighting, museum lighting, uniform gray floor, washed out, blown highlights, clipped white hotspot, pure white, overexposed, low contrast, hazy, milky, foggy bloom, pale watercolor wash, mushy smeared detail, neutral gray shadows, desaturated shadows, evenly lit, no shadows, flat shading, soft diffuse fill light, second light source, multiple key lights, daylight, identical cloned columns, repeating tiled pattern, characters, people, figures, text, watermark, blurry, low detail, floating objects, items floating in mid-air, a lantern resting on top of a column, props balanced on top of pillars, objects stacked on columns, objects perched on top of furniture, duplicated furniture, repeated identical props, cloned objects, extra clutter, random scattered debris, misplaced objects, props merged into or clipping through walls, objects embedded in stone, nonsensical out-of-place objects, levitating props",
+  "job_id": "job_uz7r4CR5khiczVUvAxTPGP6S",
+  "assets": [
+    {
+      "asset_id": "asset_ThhJSdb8MYnyL9NicaBw1ehv",
+      "path": "/tmp/crypt1469_iter3/room_crypt.png",
+      "bytes": 890603
+    }
+  ],
+  "source": "generate_room-controlnet",
+  "controlnet": {
+    "modality": "depth",
+    "control_strength": 0.7,
+    "control_model": "model_bfl-flux-1-dev",
+    "control_image_ref": "asset_gAxojwQJitHwezoNrUrQUagL",
+    "loras": []
+  },
+  "layered": {
+    "day": false,
+    "pass1_selected": {
+      "asset_id": "asset_ThhJSdb8MYnyL9NicaBw1ehv",
+      "path": "/tmp/crypt1469_iter3/room_crypt.png",
+      "bytes": 890603
+    },
+    "pass2_job_id": "job_i9SQetksN9pSKtLLSE3N46CM",
+    "pass2_assets": [
+      {
+        "asset_id": "asset_6A1b6DGsJU6TufCCshfYdJgx",
+        "path": "/tmp/crypt1469_iter3/room_crypt_pass2_detail.png",
+        "bytes": 6256609
+      }
+    ],
+    "pass2_prompt": "Edit this painterly isometric dungeon plate. PRESERVE the exact composition, camera, room layout, and the dark dramatic lighting with its warm fire pools and deep shadows \u2014 do not brighten the scene. IMPROVE only the craft: re-sculpt every carved relief, capital, and the sarcophagus effigy so they read CRISPLY CHISELED with clean edge highlights; make every pillar and wall panel UNIQUE (remove cloned repeats); paint any flat gray or unfinished surfaces as weathered stone; add small environmental-storytelling clutter along walls and edges only (bones, fallen weapons, cobwebs, toppled urns, scattered coins, moss) keeping the open floor areas clear; deepen the black voids at the openings. Keep the hand-painted oil-paint brushwork feel throughout. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders \u2014 the plate must contain ONLY the diegetic painted scene. Do NOT add any characters, people, figures, animals, or creatures of any kind \u2014 this is an EMPTY background plate; actors are composited in separately by the engine.",
+    "pass3_job_id": "job_DrSCU6X44osCoUDBmaZ5QoGP",
+    "pass3_assets": [
+      {
+        "asset_id": "asset_rHg55GwSJWdJo2mU9zZjpb1t",
+        "path": "/tmp/crypt1469_iter3/room_crypt_pass3_staging.png",
+        "bytes": 5156957
+      }
+    ],
+    "pass3_prompt": "Edit this painterly isometric dungeon plate. PRESERVE every detail exactly \u2014 the room layout, all carved reliefs, props, bones, coins, cobwebs, pillars, the sarcophagus \u2014 change NOTHING about the content or composition. ONLY restage the LIGHTING into dramatic chiaroscuro: make the central fire pit the dominant warm key light with a bright hot pool around it, let the wall torches each cast a small local warm pool with HARD directional cast shadows from the pillars and props, and sink everything between the pools into deep cool blue-violet shadow \u2014 corners, far rooms, and floors away from lights should fall near-black. Steep warm-to-cool falloff, warm rim light on edges facing flames, cool bounce on shadow-side stone. The scene must read as small pools of firelight in a vast dark crypt, keeping the hand-painted oil feel. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders \u2014 the plate must contain ONLY the diegetic painted scene. Do NOT add any characters, people, figures, animals, or creatures of any kind \u2014 this is an EMPTY background plate; actors are composited in separately by the engine.",
+    "final_plate": {
+      "asset_id": "asset_rHg55GwSJWdJo2mU9zZjpb1t",
+      "path": "/tmp/crypt1469_iter3/room_crypt_pass3_staging.png",
+      "bytes": 5156957
+    },
+    "recipe_entry": "layered_pipeline_2026_07_02"
+  }
+}

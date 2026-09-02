@@ -1,0 +1,120 @@
+[chain] base recall vs greybox = 0.98
+[scenario_gen] uploaded base_fit2.png -> asset_id=asset_AkaVLrVkX49T8waJefJvh453
+[chain] p1_material: base base_fit2.png uploaded -> asset_AkaVLrVkX49T8waJefJvh453
+[chain] p1_material seed 1000 job job_siGAZWcwVF7kwgwXWuQs314v
+[scenario_gen] p1_material_s1000 status=in-progress progress=0
+[scenario_gen] p1_material_s1000 status=success progress=1
+[scenario_gen] downloaded p1_material_s1000.png (6091657 bytes)
+[chain] p1_material seed 1111 job job_smaSAWWyRuKHxW8bQi2r8GHj
+[scenario_gen] p1_material_s1111 status=in-progress progress=0
+[scenario_gen] p1_material_s1111 status=success progress=1
+[scenario_gen] downloaded p1_material_s1111.png (6295475 bytes)
+[chain] p1_material p1_material_s1000.png: vs_base=0.8392 vs_prev=0.8392 vs_greybox=0.8783
+[chain] p1_material p1_material_s1111.png: vs_base=0.9348 vs_prev=0.9348 vs_greybox=0.9173
+[chain] p1_material WINNER p1_material_s1111.png (vs_base=0.9348)
+[scenario_gen] uploaded p1_material_s1111.png -> asset_id=asset_v6nvaCxY6YK4Y5R4Hkr95bXs
+[chain] p2_lighting: base p1_material_s1111.png uploaded -> asset_v6nvaCxY6YK4Y5R4Hkr95bXs
+[chain] p2_lighting seed 2000 job job_Js5Uj6LiHS936Q5TvPSPZi2U
+[scenario_gen] p2_lighting_s2000 status=in-progress progress=0
+[scenario_gen] p2_lighting_s2000 status=success progress=1
+[scenario_gen] downloaded p2_lighting_s2000.png (4991645 bytes)
+[chain] p2_lighting seed 2111 job job_dpYjpRQ9rEko3ESHmC4fuDdn
+[scenario_gen] p2_lighting_s2111 status=in-progress progress=0
+[scenario_gen] p2_lighting_s2111 status=success progress=1
+[scenario_gen] downloaded p2_lighting_s2111.png (5350437 bytes)
+[chain] p2_lighting p2_lighting_s2000.png: vs_base=0.5769 vs_prev=0.5819 vs_greybox=0.5865
+[chain] p2_lighting p2_lighting_s2111.png: vs_base=0.6272 vs_prev=0.6693 vs_greybox=0.6242
+[chain] p2_lighting WINNER p2_lighting_s2111.png (vs_base=0.6272)
+[scenario_gen] uploaded p2_lighting_s2111.png -> asset_id=asset_ot6UBUF3yjRNf1zSgmricjcM
+[chain] p3_scatter: base p2_lighting_s2111.png uploaded -> asset_ot6UBUF3yjRNf1zSgmricjcM
+[chain] p3_scatter seed 3000 job job_Sy7zm6WgwL4e3fm9rravKLWD
+[scenario_gen] p3_scatter_s3000 status=in-progress progress=0
+[scenario_gen] p3_scatter_s3000 status=success progress=1
+[scenario_gen] downloaded p3_scatter_s3000.png (5738952 bytes)
+[chain] p3_scatter seed 3111 job job_YAjZmMQB8Qc7BXYyAf88R31o
+[scenario_gen] p3_scatter_s3111 status=in-progress progress=0
+[scenario_gen] p3_scatter_s3111 status=success progress=1
+[scenario_gen] downloaded p3_scatter_s3111.png (5581705 bytes)
+[chain] p3_scatter p3_scatter_s3000.png: vs_base=0.7941 vs_prev=0.7666 vs_greybox=0.8050
+[chain] p3_scatter p3_scatter_s3111.png: vs_base=0.5405 vs_prev=0.6014 vs_greybox=0.5510
+[chain] p3_scatter WINNER p3_scatter_s3000.png (vs_base=0.7941)
+[chain] DONE final winner qa/evidence/layered-reg/passes/p3_scatter_s3000.png
+{
+  "base": "qa/evidence/layered-reg/gen_base/base_fit2.png",
+  "base_recall_vs_greybox": 0.98,
+  "passes": [
+    {
+      "tag": "p1_material",
+      "prompt_file": "pass1_material.txt",
+      "samples": [
+        {
+          "path": "qa/evidence/layered-reg/passes/p1_material_s1000.png",
+          "recall_vs_base": 0.8392,
+          "recall_vs_prev": 0.8392,
+          "recall_vs_greybox": 0.8783
+        },
+        {
+          "path": "qa/evidence/layered-reg/passes/p1_material_s1111.png",
+          "recall_vs_base": 0.9348,
+          "recall_vs_prev": 0.9348,
+          "recall_vs_greybox": 0.9173
+        }
+      ],
+      "winner": {
+        "path": "qa/evidence/layered-reg/passes/p1_material_s1111.png",
+        "recall_vs_base": 0.9348,
+        "recall_vs_prev": 0.9348,
+        "recall_vs_greybox": 0.9173
+      }
+    },
+    {
+      "tag": "p2_lighting",
+      "prompt_file": "pass2_lighting.txt",
+      "samples": [
+        {
+          "path": "qa/evidence/layered-reg/passes/p2_lighting_s2000.png",
+          "recall_vs_base": 0.5769,
+          "recall_vs_prev": 0.5819,
+          "recall_vs_greybox": 0.5865
+        },
+        {
+          "path": "qa/evidence/layered-reg/passes/p2_lighting_s2111.png",
+          "recall_vs_base": 0.6272,
+          "recall_vs_prev": 0.6693,
+          "recall_vs_greybox": 0.6242
+        }
+      ],
+      "winner": {
+        "path": "qa/evidence/layered-reg/passes/p2_lighting_s2111.png",
+        "recall_vs_base": 0.6272,
+        "recall_vs_prev": 0.6693,
+        "recall_vs_greybox": 0.6242
+      }
+    },
+    {
+      "tag": "p3_scatter",
+      "prompt_file": "pass3_scatter.txt",
+      "samples": [
+        {
+          "path": "qa/evidence/layered-reg/passes/p3_scatter_s3000.png",
+          "recall_vs_base": 0.7941,
+          "recall_vs_prev": 0.7666,
+          "recall_vs_greybox": 0.805
+        },
+        {
+          "path": "qa/evidence/layered-reg/passes/p3_scatter_s3111.png",
+          "recall_vs_base": 0.5405,
+          "recall_vs_prev": 0.6014,
+          "recall_vs_greybox": 0.551
+        }
+      ],
+      "winner": {
+        "path": "qa/evidence/layered-reg/passes/p3_scatter_s3000.png",
+        "recall_vs_base": 0.7941,
+        "recall_vs_prev": 0.7666,
+        "recall_vs_greybox": 0.805
+      }
+    }
+  ],
+  "final_winner": "qa/evidence/layered-reg/passes/p3_scatter_s3000.png"
+}

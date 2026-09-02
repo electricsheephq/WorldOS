@@ -34,8 +34,16 @@ import artifact_calibration_panel as panel  # noqa: E402
 # would silently re-version every historical engine-duo score. These pin the exact current hashes
 # (origin/main @ the HV1 branch point). If a future edit changes them, this test goes RED and forces a
 # conscious re-baseline (the same discipline test_scores_db_comparability enforces for content edits).
-EXPECTED_SC = "sc_be859353df20"
-EXPECTED_LC = "lc_c603a22aac3d"
+EXPECTED_SC = "sc_38b768e2fd1b"  # re-baselined #1427: release_readiness.py touched by #1417/#1414
+EXPECTED_LC = "lc_b031bd9f47e1"  # ("qa: auto-persist scores rows for the manual-append bucket",
+# commit 9f244613) — that PR only ADDS a new --scores-db CLI arg and an auto-persist call for the
+# RRI row AFTER `result` is computed and written to --out; it does not touch any of the 11 RRI
+# gates, thresholds, or scoring logic. Verdict: NON-SEMANTIC to scoring — zero effect on what an
+# RRI/lens number MEANS — so only sc_ (which includes release_readiness.py) moves; lc_ (the 8
+# lens-only files) is confirmed BYTE-IDENTICAL (unchanged from the #1360 re-baseline), matching
+# scoring_config_version()'s file-byte hashing (it reads p.read_bytes(), so any edit to a listed
+# file re-versions sc_ regardless of semantic effect — this is a deliberate restamp of a
+# no-semantic-change edit, not a ruler recalibration).
 
 
 def test_engine_duo_rulers_are_byte_unchanged():
@@ -451,11 +459,16 @@ def test_calibration_panel_dryrun_is_valid_and_writes_db(tmp_path, monkeypatch):
     assert report["n_controls"] >= 2
     assert report["controls_in_band"] is True
     assert report["panel_valid"] is True
-    # 5 scorers per control → rows written
+    # 5 per-scorer rows + 1 bare-artifact_id aggregate row per control (#1355).
     rows = scores_db.fetch_artifacts(db)
-    assert len(rows) == report["n_controls"] * 5
+    assert len(rows) == report["n_controls"] * (5 + 1)
     assert all(r["is_control"] == 1 for r in rows)
     assert all(r["scorer_model"] == "sonnet" for r in rows)
+    # The aggregate row is addressable by the BARE artifact_id (no #panel_id#s{n} suffix) — this is
+    # exactly what tools/library/promote.py's bare-id lookup needs with no manual bridge.
+    control_aids = {cm["artifact_id"] for cm in report["control_medians"]}
+    row_ids = {r["artifact_id"] for r in rows}
+    assert control_aids <= row_ids, "every control's bare artifact_id must have a row in scores.db"
 
 
 def test_calibration_panel_flags_out_of_band_control(tmp_path, monkeypatch):
@@ -469,3 +482,95 @@ def test_calibration_panel_flags_out_of_band_control(tmp_path, monkeypatch):
     assert report["controls_in_band"] is False
     assert report["panel_valid"] is False
     assert len(report["out_of_band"]) >= 1
+
+
+# ---------------------------------------------------------------------------
+# #1380: v2 field-surface parity for quest controls + the band-staleness guard
+# ---------------------------------------------------------------------------
+def test_quest_controls_carry_v2_field_surface():
+    # The #1380 root cause: the quest controls predated extractor v2 (#1368) — real candidates carry
+    # `description` + `resolution.wrap_up`, the controls did not, so the field-poor control drifted
+    # below band. Every committed quest control must now carry the SAME v2 surface.
+    for p in (QA_DIR / "artifact_controls").glob("control__quest__*.json"):
+        payload = json.loads(p.read_text())["payload"]
+        assert payload.get("description"), f"{p.name}: quest control missing v2 `description`"
+        resolution = payload.get("resolution")
+        assert isinstance(resolution, dict), f"{p.name}: quest control missing v2 `resolution` object"
+        assert resolution.get("wrap_up"), f"{p.name}: quest control has empty `resolution.wrap_up`"
+        # wrap_up must be real canon (the outcome lore beats), not a placeholder.
+        assert all(isinstance(b, str) and b.strip() for b in resolution["wrap_up"])
+
+
+def test_v2_quest_control_shape_matches_extractor_payload_keys():
+    # A control's payload keys must be a superset of what a live v2 extract emits, so a disguised
+    # control presents the same field surface to the scorer as a real candidate of the same class.
+    import build_artifact_controls as bac  # noqa: E402
+    world = json.loads((REPO / "content" / "worlds" / "baldurs-gate" / "world.json").read_text())
+    controls = bac.quest_controls(world, "baldurs-gate")
+    v2_keys = {"id", "name", "description", "objectives", "completed_objectives",
+               "resolution_status", "resolution", "evolves_to", "consequences"}
+    for a in controls:
+        assert v2_keys <= set(a["payload"]), (
+            f"{a['artifact_id']}: payload missing v2 keys {v2_keys - set(a['payload'])}"
+        )
+
+
+def test_prompt_construction_hash_stable_and_tracks_the_card():
+    # The band-drift guard's hash must be deterministic, prefixed, and change iff the card changes.
+    a = artifact_score.load_artifact(
+        QA_DIR / "artifact_controls" / "control__quest__baldurs-gate__the-shadow-cursed-lands.json"
+    )
+    h1 = artifact_score.prompt_construction_hash(a)
+    assert h1.startswith("ph_") and artifact_score.prompt_construction_hash(a) == h1
+    # A payload edit that changes the card must change the hash (proves it tracks the prompt).
+    a2 = json.loads(json.dumps(a))
+    a2["payload"]["description"] = a2["payload"]["description"] + " (edited)"
+    assert artifact_score.prompt_construction_hash(a2) != h1
+
+
+def test_identity_bands_stamped_with_current_ruler_and_prompt_hash():
+    # Every committed control's band must be stamped with the ruler + prompt hash it was derived
+    # under, and those stamps must MATCH the current control card (else the panel is already stale).
+    identity = json.loads((QA_DIR / "artifact_controls_identity.json").read_text())
+    cur_ruler = scv.artifact_config_version()
+    for aid, entry in identity["controls"].items():
+        assert entry.get("band_ruler") == cur_ruler, f"{aid}: unstamped/stale band_ruler"
+        a = artifact_score.load_artifact(QA_DIR / "artifact_controls" / entry["file"])
+        assert entry.get("band_prompt_hash") == artifact_score.prompt_construction_hash(a), (
+            f"{aid}: band_prompt_hash does not match the committed control card"
+        )
+
+
+def test_calibration_panel_flags_stale_band_even_when_in_band(tmp_path, monkeypatch):
+    # The guard's whole point: a band derived under a DIFFERENT prompt construction is untrustworthy
+    # even if the control happens to land inside it. Corrupt one control's stamped prompt hash; under
+    # dryrun the control still scores at the anchor (in band), but the panel must report it STALE with
+    # a NAMED reason and fail — turning silent drift into a named error (#1380).
+    monkeypatch.setenv("WORLDOS_ARTIFACT_PANEL_DRYRUN", "1")
+    identity = json.loads((QA_DIR / "artifact_controls_identity.json").read_text())
+    for entry in identity["controls"].values():
+        if entry["class"] == "quest":
+            entry["band_prompt_hash"] = "ph_stale0000000"
+            break
+    stale_identity = tmp_path / "identity.json"
+    stale_identity.write_text(json.dumps(identity))
+    monkeypatch.setattr(panel, "IDENTITY_PATH", stale_identity)
+
+    report = panel.run_panel("quest", controls_only=True, panel_size=3,
+                             db_path=tmp_path / "t.db", write_db=False)
+    assert report["controls_in_band"] is True, "dryrun scores at anchor — bands are numerically fine"
+    assert report["panel_valid"] is False, "a stale band must invalidate the panel"
+    assert len(report["stale_bands"]) == 1
+    assert "different prompt construction" in report["stale_bands"][0]["reason"]
+
+
+def test_calibration_panel_valid_when_stamps_match():
+    # Sanity converse: with the committed (matching) stamps and dryrun scoring, no control is stale.
+    import os
+    os.environ["WORLDOS_ARTIFACT_PANEL_DRYRUN"] = "1"
+    try:
+        report = panel.run_panel("quest", controls_only=True, panel_size=3, write_db=False)
+    finally:
+        del os.environ["WORLDOS_ARTIFACT_PANEL_DRYRUN"]
+    assert report["stale_bands"] == []
+    assert report["panel_valid"] is True

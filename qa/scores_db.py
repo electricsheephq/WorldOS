@@ -32,6 +32,12 @@ SURFACE TAXONOMY (the crux of the forensics — classify EVERY run precisely)
                            ``scorer_model`` = the panel model; ``methodology`` = the lens set + round,
                            e.g. "vc-panel-6lens round=2". The visual quality numbers live in the
                            visual_* columns, NOT story/mech/angry (which stay NULL).
+* ``adventure``          — the A-series adventure-loop eval (``qa/adventure_eval.py``): an AGGREGATE
+                           over N arc-directed ``qa/run_adventure.sh`` runs against the one-call
+                           adventure fixture. ``methodology`` = "arc-duo N=<n>"; the row's
+                           story/mech/angry/behavioral/engagement columns are the per-dimension
+                           aggregate (median lenses, green-rate, etc.) and ``notes`` carries the
+                           WEAKEST-LINK verdict line (the routing instrument for the next sprint).
 
 USAGE
 -----
@@ -54,6 +60,7 @@ import json
 import os
 import re
 import sqlite3
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -83,7 +90,7 @@ DB_PATH = QA_DIR / "scores.db"
 MD_PATH = QA_DIR / "scores_ledger.md"
 
 # Allowed surface values (validated on insert; the crux of the forensic story).
-SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual")
+SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual", "adventure")
 
 # Column order is the canonical schema. Adding a column is additive: bump this list and
 # _ensure_schema() will ALTER TABLE ADD COLUMN on an existing db (old rows read NULL).
@@ -107,6 +114,10 @@ COLUMNS: tuple[str, ...] = (
                                # Fences the engine-duo quality trend. NULL on rows recorded before
                                # lens stamping (compare falls back to scoring_config_version).
     "rubric_label",       # human label for the ruler, e.g. "ruler@sc_a1b2c3d4e5f6 (9/9 files)"
+    "adventure_config_version",  # content hash of the ADVENTURE ruler (av_…) — the N-run adventure
+                               # aggregator's OWN hash family (see scoring_config_version.py
+                               # ADVENTURE_CONFIG_FILES). Stamped ONLY on surface="adventure" rows;
+                               # NULL on every other row (additive, migration-free — mirrors ac_ruler).
     "rc_label",           # release candidate this run scored, e.g. "v1.0.4-rc1" (NULL = ad-hoc)
     "story_overall",      # Tolkien/story-craft lens (0-5), NULL if not scored
     "mech_overall",       # Mechanical lens (0-5), NULL if not scored
@@ -220,7 +231,23 @@ def _coltype(col: str) -> str:
 # different dim set) rather than fixed columns, so adding a class/dim never migrates the table.
 # The ruler stamp is the ARTIFACT ruler (``ac_…``) — its OWN hash family (see scoring_config_version.py
 # ARTIFACT_CONFIG_FILES), NEVER the sc_/lc_ engine-duo rulers.
+#
+# TEXT vs VISUAL split (promotion-gate decision, 2026-07-08, docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md):
+# these four are the TEXT artifact classes — they score on the 1.0-5.0 rubric in THIS table and promote
+# through promote.py's text threshold gate (overall>=4.0, dims>=3.0, control-valid). The VISUAL class
+# "room" is deliberately NOT here: painterly backdrop plates score 0-10 in the `runs` table
+# (surface="visual", visual_overall/visual_dims_json) + panel JSONs, and promote through promote.py's
+# separate delta-anchored visual gate (GATE_STRATEGIES["room"]="visual"; registry
+# qa/visual_controls_identity.json). Adding "room" here would wrongly subject it to the 1-5 text gate.
 ARTIFACT_CLASSES: tuple[str, ...] = ("quest", "npc", "location", "encounter")
+
+# GATE-LEDGER classes: rows that carry an automated GATE VERDICT (walk_gate/walk_report_path), not a
+# rubric panel score. Deliberately NOT in ARTIFACT_CLASSES — that tuple drives the TEXT-eval
+# machinery's invariants (per-class rubric+schema files, >=2 committed disguised controls;
+# qa/test_artifact_evals.py), none of which apply to a verdict row. The beauty-gate strategy for
+# visual classes (0-10 panels vs the 1-5 text rubrics) is a separate, still-open decision; a room
+# row's `overall` stays NULL until that lands.
+GATE_LEDGER_CLASSES: tuple[str, ...] = ("room",)
 
 ARTIFACT_COLUMNS: tuple[str, ...] = (
     "class",          # one of ARTIFACT_CLASSES — selects the rubric that scored it
@@ -237,6 +264,8 @@ ARTIFACT_COLUMNS: tuple[str, ...] = (
     "control_anchor", # for a control: the expected anchor band midpoint (REAL), NULL otherwise
     "source_path",    # where the artifact JSON / evidence lives (repo-relative or LEXAR)
     "notes",          # free-text context / caveats
+    "walk_gate",        # "GREEN" | "RED" — the automated walkability verdict (rooms; NULL for text classes)
+    "walk_report_path", # pointer to the walk_report.json evidence that produced walk_gate
 )
 
 _ARTIFACT_REAL_COLS = {"overall", "control_anchor"}
@@ -247,6 +276,46 @@ def _artifact_coltype(col: str) -> str:
     if col in _ARTIFACT_REAL_COLS:
         return "REAL"
     if col in _ARTIFACT_INT_COLS:
+        return "INTEGER"
+    return "TEXT"
+
+
+# ---------------------------------------------------------------------------
+# The `library_metrics` table (HV5 slice 2, #1327): the flywheel's OWN eval.
+# ---------------------------------------------------------------------------
+# ADDITIVE and SEPARATE from both `runs` and `artifacts`: this table tracks the HEALTH of the
+# harvest loop itself (library size, reuse, promotion pass-rate), not any single scored run or
+# artifact. Sole writer is qa/library_metrics.py's snapshot_library() (mirrors "add_run is the sole
+# writer of runs" / "add_artifact is the sole writer of artifacts"). One row per SNAPSHOT — taken
+# whenever the owner/cadence wants a reading (nightly, weekly curation, or ad hoc); trend the size/
+# reuse/pass-rate/library-sourced numbers across snapshots exactly like trends_json does for runs.
+# No ruler stamp (ac_/sc_/lc_): this table doesn't SCORE anything — it measures the library's own
+# state, which needs no rubric-version fence.
+LIBRARY_METRICS_COLUMNS: tuple[str, ...] = (
+    "ts",                      # ISO8601 timestamp the snapshot was taken (UTC where known)
+    "library_sha",             # short git SHA of the repo state the snapshot was read at (NULL if unknown)
+    "size_total",              # total entry count across every class/tier in library/
+    "size_by_class_json",      # JSON {quest: N, npc: N, location: N, encounter: N, room: N}
+    "size_by_tier_json",       # JSON {experimental: N, stable: N, canonical: N}
+    "reuse_count_sum",         # Σ reuse_count over every entry (HV4's "less AI dependence" numerator)
+    "promotion_pass_rate",     # promoted / (promoted + rejected) over promote.py's processed-log,
+                               # 0.0-1.0, NULL if the log is absent/empty (no batch run yet)
+    "promoted_total",          # count of "promoted" lines in library/.promoted.jsonl
+    "rejected_total",          # count of "rejected" lines in library/.promoted.jsonl
+    "pct_library_sourced",     # % of a run's beats sourced from library/ vs freshly AI-generated,
+                               # 0.0-1.0, NULL if not measured this snapshot (HV4 wiring; additive)
+    "source_path",             # where the snapshot's evidence lives (library dir path read)
+    "notes",                   # free-text context / caveats
+)
+
+_LIBRARY_METRICS_REAL_COLS = {"promotion_pass_rate", "pct_library_sourced"}
+_LIBRARY_METRICS_INT_COLS = {"size_total", "reuse_count_sum", "promoted_total", "rejected_total"}
+
+
+def _library_metrics_coltype(col: str) -> str:
+    if col in _LIBRARY_METRICS_REAL_COLS:
+        return "REAL"
+    if col in _LIBRARY_METRICS_INT_COLS:
         return "INTEGER"
     return "TEXT"
 
@@ -275,6 +344,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         if col not in existing:
             conn.execute(f'ALTER TABLE runs ADD COLUMN "{col}" {_coltype(col)}')
     _ensure_artifacts_schema(conn)
+    _ensure_library_metrics_schema(conn)
     conn.commit()
 
 
@@ -293,6 +363,26 @@ def _ensure_artifacts_schema(conn: sqlite3.Connection) -> None:
         for col in ARTIFACT_COLUMNS:
             if col not in existing:
                 conn.execute(f'ALTER TABLE artifacts ADD COLUMN "{col}" {_artifact_coltype(col)}')
+
+
+def _ensure_library_metrics_schema(conn: sqlite3.Connection) -> None:
+    """Create the `library_metrics` table if missing; additively ALTER in any new
+    LIBRARY_METRICS_COLUMNS. Purely additive: on an existing db this ONLY creates a new table (and
+    back-fills any new column) — it never alters `runs` or `artifacts`. Unlike those two tables,
+    snapshots have no natural single-column key (a library can be snapshotted many times), so the
+    row id is a plain autoincrementing integer, not a caller-supplied PK."""
+    cols_ddl = ",\n  ".join(f'"{c}" {_library_metrics_coltype(c)}' for c in LIBRARY_METRICS_COLUMNS)
+    conn.execute(
+        f'CREATE TABLE IF NOT EXISTS library_metrics (\n'
+        f'  "id" INTEGER PRIMARY KEY AUTOINCREMENT,\n  {cols_ddl}\n)'
+    )
+    existing = {r["name"] for r in conn.execute('PRAGMA table_info(library_metrics)')}
+    if existing:  # table already existed → back-fill any newly-added columns
+        for col in LIBRARY_METRICS_COLUMNS:
+            if col not in existing:
+                conn.execute(
+                    f'ALTER TABLE library_metrics ADD COLUMN "{col}" {_library_metrics_coltype(col)}'
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +440,8 @@ def add_run(
     notes = fields.get("notes")
     if notes:
         for pattern, col in ((r"\bsc_[0-9a-f]{12}\b", "scoring_config_version"),
-                             (r"\blc_[0-9a-f]{12}\b", "lens_config_version")):
+                             (r"\blc_[0-9a-f]{12}\b", "lens_config_version"),
+                             (r"\bav_[0-9a-f]{12}\b", "adventure_config_version")):
             mismatched = sorted({h for h in re.findall(pattern, notes) if h != fields.get(col)})
             if mismatched:
                 raise ValueError(
@@ -416,8 +507,12 @@ def add_artifact(
         )
 
     cls = fields.get("class")
-    if cls is not None and cls not in ARTIFACT_CLASSES:
-        raise ValueError(f"class {cls!r} not in {ARTIFACT_CLASSES}")
+    if cls is not None and cls not in ARTIFACT_CLASSES + GATE_LEDGER_CLASSES:
+        raise ValueError(f"class {cls!r} not in {ARTIFACT_CLASSES + GATE_LEDGER_CLASSES}")
+
+    wg = fields.get("walk_gate")
+    if wg is not None and wg not in ("GREEN", "RED"):
+        raise ValueError(f"walk_gate {wg!r} must be 'GREEN' or 'RED'")
 
     if fields.get("ts") is None:
         fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -462,12 +557,104 @@ def add_artifact(
             conn.close()
 
 
+def record_room_walk(
+    room: str,
+    verdict: str,
+    *,
+    db_path: Path | str = DB_PATH,
+    sha: str | None = None,
+    walk_report_path: str | None = None,
+    source_path: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Record a room's CURRENT walkability verdict in the artifact ledger (class="room").
+
+    The artifact_id is the stable ``room:<room>`` — INSERT OR REPLACE semantics make this the
+    latest-verdict surface ("which rooms are walk-certified right now?"); history lives in git +
+    qa/certifications/. ``source_path`` should point at the certification json when one exists."""
+    add_artifact(
+        f"room:{room}",
+        db_path=db_path,
+        **{"class": "room"},
+        sha=sha,
+        walk_gate=verdict,
+        walk_report_path=walk_report_path,
+        source_path=source_path,
+        notes=notes,
+    )
+
+
 def fetch_artifacts(db_path: Path | str = DB_PATH) -> list[dict]:
     """Return all `artifacts` rows as dicts, newest-first (ts desc, then artifact_id)."""
     conn = connect(db_path)
     try:
         rows = conn.execute(
             "SELECT * FROM artifacts ORDER BY ts DESC, artifact_id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# The one append helper every future LIBRARY_METRICS snapshot should call (HV5 slice 2, #1327)
+# ---------------------------------------------------------------------------
+def add_library_metrics(
+    *,
+    db_path: Path | str = DB_PATH,
+    **fields: Any,
+) -> int:
+    """Append ONE library-health snapshot row to the additive `library_metrics` table.
+
+    Mirrors :func:`add_run` / :func:`add_artifact`'s validation discipline, but writes the SEPARATE
+    `library_metrics` table and NEVER touches `runs` or `artifacts`. Pass any subset of
+    :data:`LIBRARY_METRICS_COLUMNS` as keyword args. Unknown keys raise (a typo is caught, not
+    silently dropped). ``size_by_class_json`` / ``size_by_tier_json`` may be passed as dicts and are
+    JSON-encoded automatically. ``ts`` defaults to now (UTC, ISO8601) if omitted. Unlike ``runs``/
+    ``artifacts``, there is no caller-supplied id — every call INSERTS a new row (a snapshot never
+    replaces a prior one; the row id is autoincrement). Returns the new row's integer id.
+    """
+    unknown = set(fields) - set(LIBRARY_METRICS_COLUMNS)
+    if unknown:
+        raise ValueError(
+            f"unknown field(s) {sorted(unknown)}; valid: {sorted(LIBRARY_METRICS_COLUMNS)}"
+        )
+
+    if fields.get("ts") is None:
+        fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    for _jcol in ("size_by_class_json", "size_by_tier_json"):
+        _jv = fields.get(_jcol)
+        if _jv is not None and not isinstance(_jv, str):
+            fields[_jcol] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)
+
+    for _pcol in ("promotion_pass_rate", "pct_library_sourced"):
+        _pv = fields.get(_pcol)
+        if _pv is not None and not (0.0 <= float(_pv) <= 1.0):
+            raise ValueError(f"{_pcol} must be in [0.0, 1.0], got {_pv!r}")
+
+    cols = [c for c in LIBRARY_METRICS_COLUMNS if c in fields]
+    vals = [fields[c] for c in cols]
+    placeholders = ", ".join("?" for _ in cols)
+    quoted = ", ".join(f'"{c}"' for c in cols)
+
+    own = isinstance(db_path, (str, os.PathLike))
+    conn = connect(db_path) if own else db_path  # type: ignore[arg-type]
+    try:
+        cur = conn.execute(f"INSERT INTO library_metrics ({quoted}) VALUES ({placeholders})", vals)
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        if own:
+            conn.close()
+
+
+def fetch_library_metrics(db_path: Path | str = DB_PATH) -> list[dict]:
+    """Return all `library_metrics` snapshot rows as dicts, newest-first (ts desc, then id desc)."""
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM library_metrics ORDER BY ts DESC, id DESC"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -694,9 +881,150 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
             cells.append(_fmt(v))
         out.append("| " + " | ".join(cells) + " |")
     out.append("")
+    out.extend(_render_artifact_panels_section(db_path))
+    out.extend(_render_library_metrics_trend_section(db_path))
     text = "\n".join(out)
     Path(md_path).write_text(text, encoding="utf-8")
     return text
+
+
+# ---------------------------------------------------------------------------
+# Ledger unification (#1415): fold the `artifacts` and `library_metrics` stores into the SAME
+# qa/scores_ledger.md the `runs` table renders into, so "one place every scored run is recorded"
+# (the file's own header promise) is actually true — RUNBOOK-INDEX gap 2. Purely ADDITIVE to
+# render_markdown: the runs table renders exactly as before; these two sections are appended
+# after it, and each is OMITTED ENTIRELY (no header, no table) when its store has zero groupable
+# rows — a db with no artifacts/library_metrics yet renders byte-identically to before this PR.
+# The full per-row detail still lives in artifacts_ledger.md / library_metrics_ledger.md
+# (render_artifacts_markdown / render_library_metrics_markdown, unchanged) — these sections are a
+# roll-up, not a replacement.
+# ---------------------------------------------------------------------------
+def _median(vals: list[Optional[float]]) -> Optional[float]:
+    xs = [float(v) for v in vals if v is not None]
+    return statistics.median(xs) if xs else None
+
+
+# The ±1.2 per-panel noise-band already documented as bounding a control's drift (see the
+# `control_anchor` column doc above + qa/felt_rest_panel.md's CALIBRATION-CONTROL LAW) — reused
+# here as the artifact-panel control-band verdict so this section states an honest IN/OUT-OF-BAND
+# read rather than inventing a new threshold.
+_ARTIFACT_CONTROL_BAND = 1.2
+
+
+def _artifact_panel_rows(db_path: Path | str = DB_PATH) -> list[dict]:
+    """One roll-up row per (panel_id, class) pair present in the `artifacts` table, most-recent
+    panel first. Rows with no `panel_id` recorded are excluded from this per-panel view (they
+    still render in full in `qa/artifacts_ledger.md`) — a panel id is what makes "per-class
+    median" and "control-band verdict" a coherent unit; an unpanelled artifact score has no group
+    to summarize into."""
+    rows = fetch_artifacts(db_path)
+    groups: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
+    for r in rows:
+        panel_id, cls = r.get("panel_id"), r.get("class")
+        if not panel_id or not cls:
+            continue
+        key = (str(panel_id), str(cls))
+        if key not in groups:
+            groups[key] = {"scored": [], "control_anchors": [], "ts": r.get("ts") or ""}
+            order.append(key)
+        g = groups[key]
+        if r.get("ts") and r["ts"] > g["ts"]:
+            g["ts"] = r["ts"]
+        if r.get("is_control"):
+            if r.get("control_anchor") is not None:
+                g["control_anchors"].append(r["control_anchor"])
+        elif r.get("overall") is not None:
+            g["scored"].append(r["overall"])
+
+    out = []
+    for panel_id, cls in order:
+        g = groups[(panel_id, cls)]
+        median = _median(g["scored"])
+        anchor = _median(g["control_anchors"])
+        if anchor is None:
+            verdict = "NO-CONTROL"
+        elif median is None:
+            verdict = "UNSCORED"
+        elif abs(median - anchor) <= _ARTIFACT_CONTROL_BAND:
+            verdict = "IN-BAND"
+        else:
+            verdict = "OUT-OF-BAND"
+        out.append({
+            "panel_id": panel_id, "class": cls, "n": len(g["scored"]),
+            "median": median, "control_anchor": anchor, "verdict": verdict, "ts": g["ts"],
+        })
+    out.sort(key=lambda d: (d["ts"], d["panel_id"], d["class"]), reverse=True)
+    return out
+
+
+_ARTIFACT_PANEL_MD_COLS = [
+    ("panel_id", "Panel"), ("class", "Class"), ("n", "N"),
+    ("median", "Median"), ("control_anchor", "Control anchor"), ("verdict", "Verdict"),
+]
+
+
+def _render_artifact_panels_section(db_path: Path | str = DB_PATH) -> list[str]:
+    """Return the '## Artifact panels' section lines, or `[]` when the `artifacts` table has no
+    panelled rows (cleanly omitted — no header/table for an empty/unpanelled store)."""
+    panel_rows = _artifact_panel_rows(db_path)
+    if not panel_rows:
+        return []
+    out = ["## Artifact panels", ""]
+    out.append(
+        "> Per-`panel_id` roll-up of the `artifacts` table (HV1, #1323) — grouped by panel, then "
+        "class. **Median** is the scored (non-control) rows' median `overall`; **Control anchor** "
+        "is the disguised control's expected band midpoint (median across control rows, if >1); "
+        "**Verdict** applies the ±1.2 noise-band law: `IN-BAND` / `OUT-OF-BAND`, or `NO-CONTROL` "
+        "when the panel recorded no control row (`UNSCORED` when it recorded a control but no "
+        "scored artifact). Full per-artifact detail lives in `qa/artifacts_ledger.md` "
+        "(`--render-artifacts`)."
+    )
+    out.append("")
+    header = "| " + " | ".join(label for _, label in _ARTIFACT_PANEL_MD_COLS) + " |"
+    sep = "|" + "|".join("---" for _ in _ARTIFACT_PANEL_MD_COLS) + "|"
+    out.append(header)
+    out.append(sep)
+    for r in panel_rows:
+        cells = [_fmt(r.get(k)) for k, _ in _ARTIFACT_PANEL_MD_COLS]
+        out.append("| " + " | ".join(cells) + " |")
+    out.append("")
+    return out
+
+
+def _render_library_metrics_trend_section(db_path: Path | str = DB_PATH) -> list[str]:
+    """Return the '## Library metrics' section lines — a CHRONOLOGICAL (oldest-first, the natural
+    trend-reading order) render of every `library_metrics` snapshot — or `[]` when that table is
+    empty (cleanly omitted)."""
+    rows = list(reversed(fetch_library_metrics(db_path)))  # fetch is newest-first -> chronological
+    if not rows:
+        return []
+    out = ["## Library metrics", ""]
+    out.append(
+        "> Chronological trend (oldest first) of the `library_metrics` table (HV5 slice 2, #1327) "
+        "— the flywheel's own health, one row per snapshot. **Back-link** is the snapshot's "
+        "`notes` (falls back to `source_path` when notes is unset) so a size/reuse jump can be "
+        "traced to the run/curation pass that produced it. Full render lives in "
+        "`qa/library_metrics_ledger.md` (`--render-library-metrics`)."
+    )
+    out.append("")
+    cols = [
+        ("ts", "When"), ("library_sha", "SHA"), ("size_total", "Size"),
+        ("size_by_class_json", "By class"), ("size_by_tier_json", "By tier"),
+        ("reuse_count_sum", "Σreuse"), ("_backlink", "Back-link"),
+    ]
+    header = "| " + " | ".join(label for _, label in cols) + " |"
+    sep = "|" + "|".join("---" for _ in cols) + "|"
+    out.append(header)
+    out.append(sep)
+    for r in rows:
+        cells = []
+        for key, _ in cols:
+            v = (r.get("notes") or r.get("source_path") or "") if key == "_backlink" else r.get(key)
+            cells.append(_fmt(v))
+        out.append("| " + " | ".join(cells) + " |")
+    out.append("")
+    return out
 
 
 ARTIFACTS_MD_PATH = QA_DIR / "artifacts_ledger.md"
@@ -754,6 +1082,69 @@ def render_artifacts_markdown(db_path: Path | str = DB_PATH,
             v = r.get(key)
             if key == "is_control" and v is not None:
                 v = "control" if int(v) else ""
+            cells.append(_fmt(v))
+        out.append("| " + " | ".join(cells) + " |")
+    out.append("")
+    text = "\n".join(out)
+    Path(md_path).write_text(text, encoding="utf-8")
+    return text
+
+
+LIBRARY_METRICS_MD_PATH = QA_DIR / "library_metrics_ledger.md"
+
+_LIBRARY_METRICS_MD_COLS = [
+    ("ts", "When"),
+    ("library_sha", "SHA"),
+    ("size_total", "Size"),
+    ("size_by_class_json", "By class"),
+    ("size_by_tier_json", "By tier"),
+    ("reuse_count_sum", "Σreuse"),
+    ("promotion_pass_rate", "Promo pass%"),
+    ("promoted_total", "Promoted"),
+    ("rejected_total", "Rejected"),
+    ("pct_library_sourced", "Lib-sourced%"),
+    ("source_path", "Source"),
+    ("notes", "Notes"),
+]
+
+
+def render_library_metrics_markdown(db_path: Path | str = DB_PATH,
+                                    md_path: Path | str = LIBRARY_METRICS_MD_PATH) -> str:
+    """Deterministic Markdown mirror of the `library_metrics` table (HV5 slice 2, #1327). Separate
+    from both the runs ledger and the artifacts ledger — THE FLYWHEEL'S OWN EVAL: how big the library
+    is, how much it's reused, how often promotion passes, and (once HV4 wires it) what fraction of a
+    run's beats came from the library instead of fresh AI generation — the "less AI dependence" trend
+    the epic names, read as a number over time instead of eyeballed."""
+    rows = fetch_library_metrics(db_path)
+    out: list[str] = []
+    out.append("# WorldOS Library Metrics Ledger — the flywheel's own eval")
+    out.append("")
+    out.append(
+        "> **Auto-generated from `qa/scores.db` (`library_metrics` table) — do not hand-edit.** "
+        "Regenerate with `python3 qa/scores_db.py --render-library-metrics`. Rows are appended via "
+        "`qa/scores_db.add_library_metrics(...)`, called by `qa/library_metrics.py`'s "
+        "`snapshot_library()` (its sole writer). One row per SNAPSHOT of the harvest loop's own "
+        "health — library size, Σreuse_count, promotion pass-rate, and (once HV4 wires it) "
+        "%library-sourced beats per run."
+    )
+    out.append(
+        "> **Promo pass%** = promoted / (promoted + rejected) over "
+        "`library/.promoted.jsonl` (promote.py's processed-log); blank when no batch has run yet. "
+        "**Lib-sourced%** stays blank until HV4 wires per-run library-vs-fresh-gen attribution — "
+        "an unset column here is today's expected state, not a bug."
+    )
+    out.append(f"> Rows: **{len(rows)}** · rendered {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+    out.append("")
+    header = "| " + " | ".join(label for _, label in _LIBRARY_METRICS_MD_COLS) + " |"
+    sep = "|" + "|".join("---" for _ in _LIBRARY_METRICS_MD_COLS) + "|"
+    out.append(header)
+    out.append(sep)
+    for r in rows:
+        cells = []
+        for key, _ in _LIBRARY_METRICS_MD_COLS:
+            v = r.get(key)
+            if key in ("promotion_pass_rate", "pct_library_sourced") and v is not None:
+                v = f"{float(v) * 100:.0f}%"
             cells.append(_fmt(v))
         out.append("| " + " | ".join(cells) + " |")
     out.append("")
@@ -1202,6 +1593,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--artifact-id", dest="artifact_id", default=None)
     for col in ARTIFACT_COLUMNS:
         p.add_argument(f"--artifact-{col.replace('_', '-')}", dest=f"artifact__{col}", default=None)
+    # --- HV5 library_metrics table (separate; --libmetric-<col> flags) ---
+    p.add_argument("--add-library-metrics", action="store_true",
+                   help="append one library-health snapshot from the --libmetric-* flags below")
+    p.add_argument("--list-library-metrics", action="store_true",
+                   help="print library_metrics rows (newest first) as JSON")
+    p.add_argument("--render-library-metrics", action="store_true",
+                   help="regenerate qa/library_metrics_ledger.md from the library_metrics table")
+    for col in LIBRARY_METRICS_COLUMNS:
+        p.add_argument(f"--libmetric-{col.replace('_', '-')}", dest=f"libmetric__{col}", default=None)
     return p
 
 
@@ -1247,6 +1647,21 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.list_artifacts:
         print(json.dumps(fetch_artifacts(db), indent=2, ensure_ascii=False))
 
+    if args.add_library_metrics:
+        lfields = {c: getattr(args, f"libmetric__{c}") for c in LIBRARY_METRICS_COLUMNS
+                  if getattr(args, f"libmetric__{c}") is not None}
+        for c in _LIBRARY_METRICS_REAL_COLS:
+            if c in lfields:
+                lfields[c] = float(lfields[c])
+        for c in _LIBRARY_METRICS_INT_COLS:
+            if c in lfields:
+                lfields[c] = int(lfields[c])
+        new_id = add_library_metrics(db_path=db, **lfields)
+        print(f"added library_metrics snapshot id={new_id}")
+
+    if args.list_library_metrics:
+        print(json.dumps(fetch_library_metrics(db), indent=2, ensure_ascii=False))
+
     if args.render:
         render_markdown(db)
         print(f"rendered {MD_PATH} ({len(fetch_rows(db))} rows)")
@@ -1254,6 +1669,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.render_artifacts:
         render_artifacts_markdown(db)
         print(f"rendered {ARTIFACTS_MD_PATH} ({len(fetch_artifacts(db))} rows)")
+
+    if args.render_library_metrics:
+        render_library_metrics_markdown(db)
+        print(f"rendered {LIBRARY_METRICS_MD_PATH} ({len(fetch_library_metrics(db))} rows)")
 
     if args.compare:
         print(compare_rc(db, rc=args.rc, include_rc_surface=args.compare_rc_surface))
@@ -1281,7 +1700,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not any([args.init, args.add, args.list, args.render, args.compare,
                 args.trends_json, args.reconcile, args.release_verdict_rri,
-                args.add_artifact, args.list_artifacts, args.render_artifacts]):
+                args.add_artifact, args.list_artifacts, args.render_artifacts,
+                args.add_library_metrics, args.list_library_metrics,
+                args.render_library_metrics]):
         _build_parser().print_help()
     return 0
 

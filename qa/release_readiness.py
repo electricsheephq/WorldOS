@@ -767,6 +767,9 @@ def main() -> int:
     ap.add_argument("--abort-marker", default="", help="path to a sweep QUOTA_ABORT marker; if it "
                     "exists the rollup is forced to an ABORTED status (infra abort, not a product RRI)")
     ap.add_argument("--out", default="qa/RRI.json")
+    ap.add_argument("--scores-db", dest="scores_db", default="",
+                    help="(#1414) override qa/scores.db path — TESTING ONLY; production runs "
+                    "always persist to the committed ledger (scores_db.DB_PATH) when omitted")
     ap.add_argument("--scorecard-row", action="store_true")
     ap.add_argument("--deterministic-only", dest="deterministic_only", action="store_true",
                     help="evaluate ONLY the gates that need no live LLM/persona evidence "
@@ -1466,6 +1469,32 @@ def main() -> int:
 
     out = Path(args.out)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
+
+    # #1414: auto-persist the RRI verdict row (surface=GUI-built-app) whenever --out is written —
+    # FAIL LOUD (never swallow; a failed write is a failed run per the Universal Run Contract,
+    # docs/OPERATIONS.md "No row = no run"). run_id is keyed on the build SHA so re-running the
+    # rollup at the SAME candidate SHA replaces this row instead of duplicating (scores_db.add_run's
+    # INSERT OR REPLACE-on-run_id), while a new SHA gets its own trend row.
+    try:
+        from scores_persist import persist_rri_row  # noqa: E402 (qa/ is on sys.path as the script dir)
+    except ImportError:  # imported from a different cwd than `python3 qa/release_readiness.py`
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from scores_persist import persist_rri_row
+    sha_for_id = (args.build_sha or result.get("build_sha") or "unknown").strip() or "unknown"
+    rri_run_id = f"rri-{sha_for_id[:12]}"
+    persist_kwargs = {"rri_json": str(out), "build_sha": args.build_sha or None}
+    if args.scores_db:
+        persist_kwargs["db_path"] = args.scores_db
+    try:
+        persist_rri_row(rri_run_id, **persist_kwargs)
+    except Exception as exc:  # FAIL LOUD — never swallow (Universal Run Contract: no row = no run)
+        print(
+            f"FATAL: scores_db row write failed for run_id={rri_run_id!r}: {exc} — a failed row "
+            "write is a failed run per the Universal Run Contract (docs/OPERATIONS.md). See the "
+            "error above.",
+            file=sys.stderr,
+        )
+        return 2
 
     # human line
     if aborted:

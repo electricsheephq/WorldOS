@@ -1,0 +1,48 @@
+{
+  "verdict": "PASS",
+  "blocking": [],
+  "gates": [
+    {
+      "gate": "G1_frame_lit",
+      "severity": "PASS",
+      "metric": "mean_luminance",
+      "value": 0.146,
+      "threshold": null,
+      "detail": "lit (mean 0.146, var 0.01940)"
+    },
+    {
+      "gate": "G6_luma_staging_law",
+      "severity": "MED",
+      "metric": "staging_law_stats",
+      "value": {
+        "near_black_frac": 0.5143,
+        "lit_frac": 0.1438,
+        "median_L": 25.3
+      },
+      "threshold": {
+        "near_black_pass": [
+          0.66,
+          0.85
+        ],
+        "lit_pass": [
+          0.02,
+          0.05
+        ],
+        "median_pass": [
+          0,
+          15
+        ]
+      },
+      "detail": "WARN: plate is borderline vs the PoE staging-law band \u2014 near_black=51.4% (band 66-85% PASS / 50-66% WARN) [WARN], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=25.3 (band 0-15 PASS / 15-40 WARN) [WARN]"
+    },
+    {
+      "gate": "G5_motion_liveness",
+      "severity": "SKIPPED",
+      "metric": "reel",
+      "value": null,
+      "threshold": null,
+      "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+    }
+  ],
+  "summary": "PRE-GATE PASS\n  [PASS    ] G1_frame_lit       mean_luminance=0.146 :: lit (mean 0.146, var 0.01940)\n  [MED     ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.5143, 'lit_frac': 0.1438, 'median_L': 25.3} :: WARN: plate is borderline vs the PoE staging-law band \u2014 near_black=51.4% (band 66-85% PASS / 50-66% WARN) [WARN], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=25.3 (band 0-15 PASS / 15-40 WARN) [WARN]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+}

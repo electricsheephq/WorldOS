@@ -43,6 +43,15 @@ class MoveIntentVocabularyTests(unittest.TestCase):
         self.assertIsNone(move)
         self.assertIn("x", reason.lower())
 
+    def test_start_combat_intent_accepted_without_target(self):
+        """WALKABLE-SLICE-V1 item 4: start_combat carries no client-named target — the resolver
+        selects the combatants from the snapshot; sanitize only needs the whitelisted kind."""
+        move, reason = server.sanitize_move({"kind": "start_combat"})
+        self.assertEqual(reason, "")
+        self.assertIsNotNone(move)
+        self.assertEqual(move["kind"], "start_combat")
+        self.assertEqual(move["role"], "player")
+
     def test_travel_intent_accepted_with_target(self):
         move, reason = server.sanitize_move({"kind": "travel", "target": "loc-lower-city"})
         self.assertEqual(reason, "")
@@ -154,6 +163,87 @@ class GridCombatMoveKindTests(unittest.TestCase):
     def test_move_to_cell_drops_unknown_fields_and_forces_role(self):
         move, reason = server.sanitize_move(
             {"kind": "move_to_cell", "x": 1, "y": 1, "role": "dm", "narration": "boom"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["role"], "player")
+        self.assertNotIn("narration", move)
+
+
+class RestWalkMoveKindTests(unittest.TestCase):
+    """W2 (#1350) — the rest-mode `walk_to_cell` intent the ENGINE resolves in-process. Pure
+    sanitize_move checks: it validates x/y (like move_to_cell) PLUS a character_id (who walks),
+    keeps role forced + unknown fields dropped, and is additive (every existing kind unaffected)."""
+
+    def test_walk_to_cell_accepted_with_int_xy_and_character(self):
+        move, reason = server.sanitize_move(
+            {"kind": "walk_to_cell", "x": 5, "y": 2, "character_id": "char_hero"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["kind"], "walk_to_cell")
+        self.assertEqual((move["x"], move["y"]), (5, 2))
+        self.assertEqual(move["character_id"], "char_hero")
+        self.assertEqual(move["role"], "player")  # role still forced
+
+    def test_walk_to_cell_coerces_float_cell_to_int(self):
+        move, reason = server.sanitize_move(
+            {"kind": "walk_to_cell", "x": 4.0, "y": 0.0, "character_id": "c"}
+        )
+        self.assertEqual(reason, "")
+        self.assertIsInstance(move["x"], int)
+        self.assertEqual((move["x"], move["y"]), (4, 0))
+
+    def test_walk_to_cell_without_xy_rejected(self):
+        for bad in ({"kind": "walk_to_cell", "character_id": "c"},
+                    {"kind": "walk_to_cell", "x": 2, "character_id": "c"},
+                    {"kind": "walk_to_cell", "text": "over there", "character_id": "c"}):
+            with self.subTest(payload=bad):
+                move, reason = server.sanitize_move(bad)
+                self.assertIsNone(move)
+                self.assertIn("x", reason)
+
+    def test_walk_to_cell_without_character_rejected(self):
+        move, reason = server.sanitize_move({"kind": "walk_to_cell", "x": 3, "y": 3})
+        self.assertIsNone(move)
+        self.assertIn("character_id", reason)
+
+    def test_walk_to_cell_drops_unknown_fields_and_forces_role(self):
+        move, reason = server.sanitize_move(
+            {"kind": "walk_to_cell", "x": 1, "y": 1, "character_id": "c",
+             "role": "dm", "narration": "boom"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["role"], "player")
+        self.assertNotIn("narration", move)
+
+
+class ParleyApproachMoveKindTests(unittest.TestCase):
+    """W3 (#1363) — the rest-mode `parley_approach` (click-to-talk) intent the ENGINE resolves
+    in-process (generate_parley_options approach=True). Pure sanitize_move checks: it needs a
+    `target_id` (the NPC to talk to), keeps role forced + unknown fields dropped, and is additive."""
+
+    def test_parley_approach_accepted_with_target_id(self):
+        move, reason = server.sanitize_move(
+            {"kind": "parley_approach", "target_id": "npc_bram", "character_id": "char_hero"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["kind"], "parley_approach")
+        self.assertEqual(move["target_id"], "npc_bram")
+        self.assertEqual(move["character_id"], "char_hero")  # optional mover rides through
+        self.assertEqual(move["role"], "player")  # role still forced
+
+    def test_parley_approach_character_id_is_optional(self):
+        move, reason = server.sanitize_move({"kind": "parley_approach", "target_id": "npc_bram"})
+        self.assertEqual(reason, "")
+        self.assertEqual(move["target_id"], "npc_bram")
+
+    def test_parley_approach_without_target_rejected(self):
+        move, reason = server.sanitize_move({"kind": "parley_approach", "character_id": "c"})
+        self.assertIsNone(move)
+        self.assertIn("target_id", reason)
+
+    def test_parley_approach_drops_unknown_fields_and_forces_role(self):
+        move, reason = server.sanitize_move(
+            {"kind": "parley_approach", "target_id": "npc_bram", "role": "dm", "narration": "boom"}
         )
         self.assertEqual(reason, "")
         self.assertEqual(move["role"], "player")

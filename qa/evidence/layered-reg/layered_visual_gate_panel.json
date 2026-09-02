@@ -1,0 +1,19 @@
+{
+  "room": "tavern_layered_reg",
+  "panel_id": "panel-visual-layered-reg-20260711",
+  "protocol": "CORRECTED-ANCHORING (issue #1560) 5-scorer blind panel (fast-worker sonnet, independent, diverse lenses). Candidate A=layered_p3 (fit2 registered base recall 0.98 -> 3 sequential Gemini-3.1 instruction-edit passes: p1 material / p2 lighting / p3 staging-scatter, each STRUCTURE-LOCK+ADDITIONS-LOCK). Neutral anchors: C=disguised PoE2 real-art control + disclosed CAMP house-ref (non-competing room). Incumbent tavern_truegrey_v1 = DISCLOSED comparison, NOT house_best.",
+  "scale": "0-10 visual-critic delta-anchored (absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/layered-reg/passes/p3_scatter_s3000.png",
+  "incumbent_image": "qa/evidence/new-tavern/tavern_truegrey_v1.png",
+  "house_anchor": "qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire plate, band [6.8,9.2]) disguised as blind slot C.",
+  "pregate": {"verdict": "PASS", "blocking": [], "gates": [{"gate": "G1_frame_lit", "severity": "PASS", "metric": "mean_luminance", "value": 0.09, "threshold": null, "detail": "lit"}]},
+  "scores": {"A": [5,5,5,8,6], "C": [6,3,8,9,9]},
+  "candidate_median": 5.0,
+  "incumbent_median": 7.5,
+  "control_median": 8.0,
+  "delta_candidate_minus_control": -3.0,
+  "control_valid": true,
+  "verdict": "HONEST NEGATIVE — layered_p3 median 5.0 vs control 8.0 (delta -3.0 < -2.5 adopt floor); camera_break + structure_incoherent flagged by 2/5 scorers. The 3-pass layered relight BROKE registration (dimetric camera lost). Registration-safe variant layered_p1 scored 6.0 (delta -2.0), still below the incumbent band (7.5)."
+}

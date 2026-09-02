@@ -1,0 +1,49 @@
+{
+ "class": "throne_hall",
+ "control_asset": "asset_4wbnNtoRh1MKM9xmPbsNk1sB",
+ "draws": [
+  {
+   "seed": 12345,
+   "job": "job_CBxF1wMhF4kTXGC5ZCbbdGMJ",
+   "asset": "asset_p2MdQ1ecUhbufx6s3tVUmnWr"
+  },
+  {
+   "seed": 12346,
+   "job": "job_mYNAUigDENejsrfqHXMauoXi",
+   "asset": "asset_ca1sNmzUt6DSfLAiFJPQd3M6"
+  },
+  {
+   "seed": 12347,
+   "job": "job_gX7HLMwTEUvDR7vz6smP3L8V",
+   "asset": "asset_hMDueCivoYgExFQoo9p67n5u"
+  }
+ ],
+ "selection": [
+  {
+   "seed": 12346,
+   "recall": 0.984,
+   "path": "/tmp/paint/throne/throne_hall_flux_s12346.png"
+  },
+  {
+   "seed": 12345,
+   "recall": 0.916,
+   "path": "/tmp/paint/throne/throne_hall_flux_s12345.png"
+  },
+  {
+   "seed": 12347,
+   "recall": 0.8453,
+   "path": "/tmp/paint/throne/throne_hall_flux_s12347.png"
+  }
+ ],
+ "base": {
+  "seed": 12346,
+  "asset": "asset_ca1sNmzUt6DSfLAiFJPQd3M6",
+  "path": "/tmp/paint/throne/throne_hall_flux_s12346.png"
+ },
+ "styled": {
+  "job": "job_wmvs32MbBNgDqfjmnAm2vHdk",
+  "asset": "asset_5FubGyFbc5WYBXXf1KWAvkN2",
+  "path": "/tmp/paint/throne/throne_hall_final_1344.png",
+  "recall_vs_depth": 0.8265
+ }
+}

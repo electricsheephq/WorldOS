@@ -1,0 +1,6 @@
+{
+  "name": "dungen-spike-room1-cs70",
+  "room": "crypt",
+  "generate": { "candidate": "/Users/lume/WorldOS-worktrees/wt-dungen-spike/qa/evidence/dungen-spike/plate_room1/room_crypt.png" },
+  "registration": { "greybox": "/Users/lume/WorldOS-worktrees/wt-dungen-spike/qa/evidence/dungen-spike/dungen_basic_room_1_greybox.png", "min_recall": 0.95 }
+}

@@ -376,6 +376,39 @@ def _dt_decisions_recorded(ctx: Ctx) -> bool:
     return _tool(ctx, "record_decision") > 0
 
 
+# 11 library_reuse (HV4 #1326) — a world that opted into library_packs seeded >= 1 library-sourced
+#    hook (source=="library"); the reuse is ENGAGED (not decorative) when a library hook reached the
+#    play loop — promoted into a tracked Quest, or the DM pulled a template via lookup_library.
+#    PRECONDITION is snapshot-derived: a library-sourced hook can only EXIST if the world opted in,
+#    so its presence stands in for "library_packs non-empty" (the snapshot doesn't carry world
+#    config). A default (opted-out) run has no library hook -> precondition False -> N/A, never INERT.
+def _library_hooks(ctx: Ctx) -> list:
+    return [h for h in _as_list(ctx.state.get("quest_hooks"))
+            if isinstance(h, dict) and h.get("source") == "library"]
+
+
+def _pc_library_reuse(ctx: Ctx) -> Optional[bool]:
+    # OWED only when the world actually seeded a library candidate (proves the opt-in). Beats-keyed
+    # so a bare seed with zero play beats is N/A (safe under-detect), not INERT.
+    b = _beats_at_least(ctx, 6)
+    if b is None:
+        return None
+    return b and bool(_library_hooks(ctx))
+
+
+def _dt_library_reuse(ctx: Ctx) -> bool:
+    # ENGAGED if the DM pulled a template (lookup_library) OR a library-sourced hook was promoted
+    # to a tracked Quest (the party bit on it). Grievance-title match ties the seeded hook to the
+    # Quest the DM add_quest'd off it — the same title the engine bound at seed.
+    if _tool(ctx, "lookup_library") > 0:
+        return True
+    lib_titles = {str(h.get("grievance") or h.get("title") or "").strip().lower()
+                  for h in _library_hooks(ctx)}
+    lib_titles.discard("")
+    quests = [q for q in _as_list(ctx.state.get("quests")) if isinstance(q, dict)]
+    return any(str(q.get("title") or "").strip().lower() in lib_titles for q in quests)
+
+
 SYSTEMS: tuple[SystemSpec, ...] = (
     SystemSpec("companion_approval", _pc_companion_approval, _dt_companion_approval, "warn"),
     SystemSpec("camp_downtime", _pc_camp_downtime, _dt_camp_downtime, "warn"),
@@ -387,6 +420,7 @@ SYSTEMS: tuple[SystemSpec, ...] = (
     SystemSpec("companion_quest_arc", _pc_companion_quest_arc, _dt_companion_quest_arc, "warn"),
     SystemSpec("companion_agenda", _pc_companion_agenda, _dt_companion_agenda, "warn"),
     SystemSpec("decisions_recorded", _pc_decisions_recorded, _dt_decisions_recorded, "warn"),
+    SystemSpec("library_reuse", _pc_library_reuse, _dt_library_reuse, "warn"),
 )
 
 # The REVIEWED manifest — an INDEPENDENT hardcoded literal of the system ids a human has signed off
@@ -408,6 +442,7 @@ REVIEWED_SYSTEM_IDS = frozenset({
     "companion_quest_arc",
     "companion_agenda",
     "decisions_recorded",
+    "library_reuse",
 })
 
 # Systems that BLOCK on a known snapshot-only ambiguity (seeded-but-locked vs never-seeded) and
@@ -497,6 +532,8 @@ _WHY = {
     "companion_agenda": "a companion carries an authored agenda but it never fired and the arc was "
                         "never evaluated (check_companion_arc)",
     "decisions_recorded": "a substantial run recorded no callback-worthy decision",
+    "library_reuse": "a library_packs world seeded a reusable library hook but it was never engaged "
+                     "(no lookup_library, no library-sourced quest promoted to a tracked Quest)",
 }
 
 

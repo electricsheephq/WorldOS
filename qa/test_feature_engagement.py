@@ -357,3 +357,51 @@ def test_tool_counts_alone_can_engage_a_system():
     # The DM joined the faction via the tool but the snapshot latch wasn't captured here.
     block = fe.engagement_coverage(state, tool_counts={"join_faction": 1}, session_beats=12)
     assert "factions_membership" in _ids(block, "engaged")
+
+
+# ── HV4 (#1326) library_reuse ────────────────────────────────────────────────────────────────
+
+def _library_state(engaged: bool) -> dict:
+    """A world that opted into library_packs seeded a library-sourced hook. ``engaged`` promotes
+    that hook into a tracked Quest (the party bit on it) — else the reuse stays decorative/inert."""
+    s = _solo_state()
+    s["quest_hooks"] = [{"title": "The Stolen Relic", "grievance": "The Stolen Relic",
+                         "source": "library", "tier": "stable", "note": "recover it"}]
+    if engaged:
+        s["quests"] = {"q1": {"title": "The Stolen Relic", "status": "active"}}
+    return s
+
+
+def test_library_reuse_engaged_when_hook_promoted_to_quest():
+    """A library hook promoted to a same-title Quest ⇒ library_reuse ENGAGED (not decorative)."""
+    block = fe.engagement_coverage(_library_state(engaged=True), tool_counts={}, session_beats=12)
+    assert "library_reuse" in _ids(block, "engaged")
+
+
+def test_library_reuse_engaged_via_lookup_library_tool():
+    """The DM pulling a template (lookup_library) is itself engagement, even before a Quest lands."""
+    block = fe.engagement_coverage(_library_state(engaged=False),
+                                   tool_counts={"lookup_library": 1}, session_beats=12)
+    assert "library_reuse" in _ids(block, "engaged")
+
+
+def test_library_reuse_inert_when_seeded_but_never_engaged():
+    """Opted-in + a library hook seeded + a substantial run, but nothing engaged it ⇒ INERT."""
+    block = fe.engagement_coverage(_library_state(engaged=False), tool_counts={}, session_beats=12)
+    inert = {x["id"]: x for x in block["inert"]}
+    assert "library_reuse" in inert
+    assert inert["library_reuse"]["severity"] == "warn"
+
+
+def test_library_reuse_na_when_world_opted_out():
+    """A default (opted-out) run has no library-sourced hook ⇒ precondition False ⇒ N/A, never
+    INERT — the reuse surface is dormant and can't false-flag a pure-gen run."""
+    block = fe.engagement_coverage(_solo_state(), tool_counts={}, session_beats=12)
+    assert "library_reuse" in _ids(block, "na")
+    assert "library_reuse" not in _ids(block, "inert")
+
+
+def test_library_reuse_na_on_short_run():
+    """Beats-keyed: a <6-beat run with a seeded library hook is N/A (safe under-detect)."""
+    block = fe.engagement_coverage(_library_state(engaged=False), tool_counts={}, session_beats=4)
+    assert "library_reuse" in _ids(block, "na")

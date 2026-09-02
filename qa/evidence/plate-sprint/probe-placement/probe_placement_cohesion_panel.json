@@ -1,0 +1,46 @@
+{
+  "room": "crypt",
+  "panel_id": "panel-visual-probe-placement-crypt-20260710-v2",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), CHARACTER-IN-SCENE COHESION question (visual-critic recipe), same recipe as qa/evidence/plate-sprint/adopt-crypt/crypt_armb_iter3_cohesion_panel.json. Frame captured on the GEX44 box: M1CombatV1_canonical, PaintedBackdrop on crypt_armb_iter3_v1.png, camp occluders + stale live-combat cast (36 objs) disabled, Tools/WorldOS/Cohesion Probe 0b (baseline cast, hero@(11,3)/goblin@(1,8) post-#1386 fix) -> 1 RungB (plate-sampled light rig) -> 2 RungD (contact shadows) -> 3 RungA' (painterly actor materials) applied cumulatively. Rung 4/RungR (WOSRelight) deliberately NOT run per the PR #1488 STOP verdict.",
+  "scale": "0-10 character-in-scene cohesion (delta-anchored; absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/plate-sprint/probe-placement/cohesion-frames/probe_placement_frame1.jpg",
+  "incumbent_image": "qa/evidence/cohesion-probe/rung3_v4_warm_wrap.jpg",
+  "incumbent_note": "the prior BEST full-stack cohesion frame on record (cohesion-probe-panel-1, 2026-07-09: median 3.2 on the OLD camp scene backdrop). Also used, unchanged, as the disclosed house-style anchor for this panel (same file -- scorers correctly read it as 'the reference itself').",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate) from qa/visual_controls_identity.json, disguised as a blind slot.",
+  "prior_panel_ref": "qa/evidence/plate-sprint/adopt-crypt/crypt_armb_iter3_cohesion_panel.json (2026-07-10, PRE-FIX): candidate median 6.0 vs control 9.0 (delta -3.0); 3/5 scorers flagged the two baseline-cast actors as standing on the sarcophagus -- the exact bug PROBE-PLACEMENT (#1386) fixes.",
+  "scores": [
+    {"scorer": 1, "candidate": 7, "incumbent": 6, "control": 6},
+    {"scorer": 2, "candidate": 6, "incumbent": 4, "control": 4},
+    {"scorer": 3, "candidate": 6, "incumbent": 8, "control": 9},
+    {"scorer": 4, "candidate": 7, "incumbent": 8, "control": 9},
+    {"scorer": 5, "candidate": 7, "incumbent": 9, "control": 8}
+  ],
+  "candidate_median": 7.0,
+  "incumbent_median_this_panel": 8.0,
+  "control_median": 8.0,
+  "delta_candidate_minus_control": -1.0,
+  "control_band": 1.2,
+  "meets_bar": true,
+  "baseline_comparison": {
+    "pre_fix_candidate_median": 6.0,
+    "pre_fix_control_median": 9.0,
+    "pre_fix_delta": -3.0,
+    "this_run_candidate_median": 7.0,
+    "this_run_control_median": 8.0,
+    "this_run_delta": -1.0,
+    "delta_improvement": 1.0,
+    "read": "The PROBE-PLACEMENT fix (#1386: widened SARCOPHAGUS_CELLS to its true cols 3-9 x rows 3-7 footprint, relocated hero/goblin off it to (11,3)/(1,8)) both raised the candidate median (6.0 -> 7.0, +1.0) AND -- more importantly than the number -- eliminated the qualitative placement defect: where the pre-fix panel had 3/5 scorers flag actors standing on the sarcophagus, this panel has 5/5 scorers EXPLICITLY confirm no furniture-standing tell in the candidate ('goblin correctly grounded on the floor tile beside the sarcophagus's front-left corner, not on the tomb lid'). The candidate's delta-to-control (-1.0) now sits WITHIN the panel's own +/-1.2 noise band, meeting the bar this round (control medians are noisy panel-to-panel: 8.0 here vs 9.0 pre-fix, a normal ~1pt swing for a 5-scorer panel)."
+  },
+  "residual_defects": [
+    "2/5 scorers noted the actor sprites (hero + goblin) read flatter/more cutout-pasted than the richly painted stonework, a pre-existing PainterlyActor material gap (RungA') unrelated to placement",
+    "1/5 scorer (the harshest overall, who also scored the control/incumbent lowest at 4) rated the candidate 'lesser' house-style -- consistent with a globally stricter scale rather than a placement-specific issue"
+  ],
+  "relight_note": "Independent relight A/B (qa/evidence/1481/, PR #1488) already showed WOSRelight LOSES on this same styled plate. RungR/WOSRelight was NOT enabled for this capture.",
+  "iterations": 2,
+  "iteration_note": "iteration 1 (hero(11,3)/goblin(2,7)) still read as touching the tomb's front-left corner per a first blind panel pass (candidate median 6.0, house-style 'lesser' 4/5, all citing the goblin on the sarcophagus) -- widened SARCOPHAGUS_CELLS one more column (4-9 -> 3-9) and moved goblin to (1,8); iteration 2 is the panel recorded here.",
+  "verdict": "Candidate median 7.0 vs registered PoE2 control median 8.0 (delta -1.0, within the +/-1.2 control band -- MEETS the bar) vs incumbent/house-best 8.0 this panel (same-file tell). All 5/5 scorers independently confirmed the placement fix holds: no actor stands on the sarcophagus. Versus the PRE-FIX panel (candidate 6.0 vs control 9.0, delta -3.0, 3/5 scorers flagging the placement bug), this is both a +1.0-point gain and -- the part that matters -- a clean fix of the felt bug.",
+  "candidate_image_frame2": "qa/evidence/plate-sprint/probe-placement/cohesion-frames/probe_placement_frame2.jpg",
+  "scores_db_run_id": "plate-probe-placement-crypt-20260710-v2-20260710T090411Z"
+}

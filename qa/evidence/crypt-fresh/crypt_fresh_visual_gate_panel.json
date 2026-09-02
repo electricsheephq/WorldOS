@@ -1,0 +1,93 @@
+{
+ "room": "crypt",
+ "panel_id": "panel-visual-crypt-fresh-neutral-anchor-20260715",
+ "protocol": "FRESH-CRYPT neutral-anchor 5-scorer blind panel. Candidate=crypt_fresh (14x11 dense greybox w/ extent-contract camera-fit + continuous wall_run band + true 2x2 coffin -> flux.1-dev depth-CN base best-of-3 recall 0.96 clean-registered NO LoRA seed12345 -> Gemini-3.1-flash STRUCTURE-LOCK+ADDITIONS-LOCK style pass best-of-3 seed123, styled_3 recall 0.975). Blind slots A/B/C shuffled (seed 1546): A=incumbent(crypt_armb_iter3, deployed 8.0) B=disguised real-art control(PoE2 ruins_brazier) C=candidate. Camp plate = disclosed non-competing house ref.",
+ "scale": "0-10 visual-critic delta-anchored (an absolute number is NOT a quality verdict; real shipped PoE2/BG2 art scores 3.0-5.6 blind on this instrument; the control's in-band landing is what makes the panel citable)",
+ "candidate_image": "qa/evidence/crypt-fresh/candidate_final.png",
+ "incumbent_image": "qa/evidence/crypt-replicate/refs/incumbent_crypt_armb_iter3.jpg",
+ "house_anchor": "qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
+ "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+ "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate, band [6.8,9.2], tag ruins_warm_key \u2014 the closest room-match to a firelit ancient stone crypt) disguised as blind slot B.",
+ "blind_mapping": {
+  "A": "incumbent",
+  "B": "control",
+  "C": "candidate"
+ },
+ "pregate": {
+  "verdict": "PASS",
+  "blocking": [],
+  "gates": [
+   {
+    "gate": "G1_frame_lit",
+    "severity": "PASS",
+    "metric": "mean_luma",
+    "value": {
+     "mean_luma": 0.2125,
+     "single_color_frac": 0.0006
+    },
+    "detail": "frame lit: mean luma 0.213, dominant color 0.1%"
+   },
+   {
+    "gate": "G2_occupancy",
+    "severity": "PASS",
+    "metric": "actor_bbox_count",
+    "value": {
+     "expected": 0,
+     "found": 0
+    },
+    "detail": "found 0/0 expected actor bbox(es)"
+   },
+   {
+    "gate": "G3_floor_contact",
+    "severity": "PASS",
+    "metric": "feet_vs_floor_band_px",
+    "value": [],
+    "detail": "0 actor bbox(es) grounded"
+   },
+   {
+    "gate": "G4_screen_scale",
+    "severity": "MED",
+    "metric": "bbox_height_frac",
+    "value": [],
+    "detail": "no actor bbox available; occupancy check owns the missing-actor failure"
+   },
+   {
+    "gate": "G7_pose",
+    "severity": "MED",
+    "metric": "bbox_aspect_ratio",
+    "value": [],
+    "detail": "no actor bbox available; occupancy check owns the missing-actor failure"
+   }
+  ]
+ },
+ "scores": {
+  "A": [
+   8.0,
+   8.0,
+   7.5,
+   8.0,
+   7.5
+  ],
+  "B": [
+   8.0,
+   7.5,
+   8.0,
+   8.0,
+   8.0
+  ],
+  "C": [
+   7.0,
+   7.5,
+   7.0,
+   7.5,
+   7.0
+  ]
+ },
+ "candidate_median": 7.0,
+ "incumbent_median": 8.0,
+ "control_median": 8.0,
+ "delta_candidate_minus_control": -1.0,
+ "delta_candidate_minus_incumbent": -1.0,
+ "control_valid": true,
+ "verdict": "ADOPT \u2014 candidate median 7.0 vs incumbent 8.0 (|delta| 1.0 <= 1.5 parity) vs control 8.0 in-band [6.8,9.2]; delta candidate-control -1.0 >= -1.2 parity bar (tier canonical-candidate). A fresh crypt at neutral-anchor parity, cleared honestly."
+}

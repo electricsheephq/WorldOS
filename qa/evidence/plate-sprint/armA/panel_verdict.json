@@ -1,0 +1,76 @@
+{
+  "run": "plate-sprint-armA-two-stage-registered-base-plus-style-pass",
+  "date": "2026-07-10",
+  "arm": "A \u2014 registered flux-controlnet(depth,0.7,seed42) base + z-image+painterly-LoRA img2img STYLE pass",
+  "question": "painterly craft 0-10, blind, 5 scorers (sonnet), same rubric/method as ARM D",
+  "blind_shuffle": {
+    "img_1": "incumbent",
+    "img_2": "cand_str045_retry040",
+    "img_3": "cand_str025",
+    "img_4": "control",
+    "img_5": "cand_str035"
+  },
+  "registration": {
+    "armA_str025": 0.9655,
+    "armA_str035": 0.9701,
+    "armA_str045": 0.9043,
+    "armA_str045_retry040": 0.9399,
+    "method": "#1470 edge-alignment recall vs crypt greybox; gate >=0.95",
+    "base_pass_recall": 0.9996
+  },
+  "scores": {
+    "incumbent_crypt_dense_v1": [
+      7.5,
+      8,
+      8,
+      7.5,
+      8
+    ],
+    "armA_str045_retry040": [
+      4.5,
+      5,
+      5.5,
+      5,
+      5.5
+    ],
+    "armA_str025": [
+      3.5,
+      4,
+      4.5,
+      4.5,
+      4.5
+    ],
+    "poe2_control": [
+      9.5,
+      9.5,
+      9.5,
+      9.5,
+      9.5
+    ],
+    "armA_str035": [
+      5,
+      5.5,
+      6.5,
+      5.5,
+      6
+    ]
+  },
+  "medians": {
+    "incumbent_crypt_dense_v1": 8,
+    "armA_str045_retry040": 5,
+    "armA_str025": 4.5,
+    "poe2_control": 9.5,
+    "armA_str035": 5.5
+  },
+  "means": {
+    "incumbent_crypt_dense_v1": 7.8,
+    "armA_str045_retry040": 5.1,
+    "armA_str025": 4.2,
+    "poe2_control": 9.5,
+    "armA_str035": 5.7
+  },
+  "control_valid": false,
+  "control_note": "PoE2 control median 9.5 again ABOVE the 6.8-9.2 band (identical to ARM D this week) \u2014 absolute top-scale loose; RELATIVE ranking valid. Incumbent median 8.0 reproduces ARM D exactly (calibration consistent).",
+  "convergence_target": "registration>=0.95 AND panel median>=7.0 (ceiling); comparator incumbent 8.0",
+  "verdict": "Best ARM A candidate = str035 (style strength 0.35): registration 0.9701 PASS, panel median 5.5 \u2014 1.5 below the 7.0 ceiling and 2.5 below the incumbent (8.0). str025 (0.25) under-styles to 4.5 (flat, no hot key pool); str045 (0.45->retry 0.40) drifts below the registration gate (0.90/0.94 FAIL) so its 5.0 beauty does not count. STRUCTURAL ceiling: style strength trades directly against registration \u2014 the strength that would add dramatic chiaroscuro (>=0.45) breaks the >=0.95 lock, so the two-stage approach caps ~5.5 registered. Dominant flaw (all 5 scorers): flat value structure / underdressed, not the ARM D frieze artifact (repetition flagged only as secondary). NOT CONVERGED on beauty; registration solid."
+}

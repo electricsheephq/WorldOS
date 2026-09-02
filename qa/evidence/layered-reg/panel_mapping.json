@@ -1,0 +1,13 @@
+{
+  "blind_labels": {
+    "A": "layered_p3_scatter_s3000 (full 3-pass layered; camera broken)",
+    "B": "fit2_singlepass_s1111 (single Gemini pass; the #1559 6.0 result)",
+    "C": "poe2_control (disguised neutral real-art control; validity band 6.8-9.2)",
+    "D": "layered_p1_material_s1111 (material-only pass; registration-locked 0.93)"
+  },
+  "disclosed": {
+    "HOUSE_REF_camp": "camp_clearing_night deployed plate (house painterly quality bar, a NON-COMPETING room)",
+    "INCUMBENT_tavern": "tavern_truegrey_v1 deployed incumbent (disclosed comparison only, NOT the quality anchor)"
+  },
+  "anchoring": "CORRECTED per #1560: quality anchored on HOUSE_REF_camp + the blind control C; incumbent is disclosed context, never house_best."
+}

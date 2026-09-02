@@ -248,6 +248,45 @@ class HandSeededEnvelopeTests(_ServerCase):
         self.assertEqual(body["entries"][0]["verb"], "narrate")
         self.assertEqual(body["entries"][0]["anim_hint"], "none")
 
+    def test_monster_instant_death_damage_beat_projects_to_death_verb(self):
+        """#1347: a monster/NPC dies OUTRIGHT at 0 HP (combat.py's _apply_total_to_hp ->
+        _die) — there is no death_save event at all, only a `damage` beat whose nested
+        `result` carries the engine's `dead: true`. Before the fix this beat stayed
+        verb="damage" forever and the renderer's death animation (topple+fade, #1345)
+        never fired on a live kill."""
+        cid = "camp_instant_death"
+        rows = [
+            _combat_row("damage",
+                        target={"id": "mon_goblin01", "name": "Goblin"},
+                        amount=7, damage_type="slashing",
+                        result={"current_hp": 0, "dead": True, "dying": False, "stable": False}),
+        ]
+        self._seed_session_log(cid, "sess_instant", rows)
+        _status, body = self._get_json(f"/events-replay?campaign={cid}")
+        beat = body["entries"][0]
+        self.assertEqual(beat["verb"], "death")
+        self.assertEqual(beat["target_fk"], "mon_goblin01")
+        self.assertEqual(beat["anim_hint"], "death_fall")
+        self.assertEqual(beat["result"]["outcome"], "dead")
+        # The damage numbers still ride along on the death beat (never dropped).
+        self.assertEqual(beat["result"]["hp_after"], 0)
+
+    def test_non_lethal_damage_beat_stays_damage_verb(self):
+        """A damage beat that does NOT kill the target must keep verb="damage" (no
+        false-positive death animation on a routine hit)."""
+        cid = "camp_nonlethal"
+        rows = [
+            _combat_row("damage",
+                        target={"id": "mon_goblin02", "name": "Goblin"},
+                        amount=3, damage_type="slashing",
+                        result={"current_hp": 4, "dead": False, "dying": False, "stable": False}),
+        ]
+        self._seed_session_log(cid, "sess_nonlethal", rows)
+        _status, body = self._get_json(f"/events-replay?campaign={cid}")
+        beat = body["entries"][0]
+        self.assertEqual(beat["verb"], "damage")
+        self.assertEqual(beat["anim_hint"], "damage_flinch")
+
 
 def _engine_importable() -> bool:
     """The real-combat test needs the engine package (servers/engine), which pulls in

@@ -1,0 +1,863 @@
+{
+  "hub": "crypt",
+  "overall_clean_pct": 94.5,
+  "per_room": [
+    {
+      "room": "crypt",
+      "plate_status": "resolved",
+      "hero_steps": 1,
+      "hero_pass": 1,
+      "walkable_floor_cells": 94,
+      "inverse_coherence_flags": 9,
+      "occlusion_exempted": 12,
+      "clean_pct": 90.5,
+      "meets_95": false
+    },
+    {
+      "room": "camp_clearing_night",
+      "plate_status": "resolved",
+      "hero_steps": 1,
+      "hero_pass": 1,
+      "walkable_floor_cells": 134,
+      "inverse_coherence_flags": 6,
+      "occlusion_exempted": 0,
+      "clean_pct": 95.6,
+      "meets_95": true
+    },
+    {
+      "room": "tavern",
+      "plate_status": "resolved",
+      "hero_steps": 1,
+      "hero_pass": 1,
+      "walkable_floor_cells": 43,
+      "inverse_coherence_flags": 0,
+      "occlusion_exempted": 0,
+      "clean_pct": 100.0,
+      "meets_95": true
+    }
+  ],
+  "findings_by_class": {
+    "invented_furniture_flags": 15,
+    "reciprocal_door_failures": 0,
+    "hero_position_failures": 0
+  },
+  "rooms": [
+    {
+      "room": "crypt",
+      "cols": 14,
+      "rows": 11,
+      "plate": "/Users/lume/WorldOS-worktrees/wt-sweep-precision/qa/evidence/crypt-fresh/crypt_fresh_v1.png",
+      "plate_status": "resolved",
+      "inverse_coherence": {
+        "room": "crypt",
+        "edge_thr": 128,
+        "z_cut": 3.0,
+        "baseline_median": 0.0116,
+        "mad": 0.0087,
+        "threshold": 0.0502,
+        "n_cells": 94,
+        "flagged": [
+          {
+            "cell": [
+              11,
+              4
+            ],
+            "density": 0.1063,
+            "z": 7.36,
+            "ratio": 9.14
+          },
+          {
+            "cell": [
+              4,
+              2
+            ],
+            "density": 0.1051,
+            "z": 7.27,
+            "ratio": 9.04
+          },
+          {
+            "cell": [
+              11,
+              3
+            ],
+            "density": 0.0912,
+            "z": 6.19,
+            "ratio": 7.85
+          },
+          {
+            "cell": [
+              12,
+              4
+            ],
+            "density": 0.0842,
+            "z": 5.64,
+            "ratio": 7.24
+          },
+          {
+            "cell": [
+              12,
+              3
+            ],
+            "density": 0.0813,
+            "z": 5.42,
+            "ratio": 6.99
+          },
+          {
+            "cell": [
+              10,
+              4
+            ],
+            "density": 0.0761,
+            "z": 5.02,
+            "ratio": 6.55
+          },
+          {
+            "cell": [
+              5,
+              1
+            ],
+            "density": 0.0734,
+            "z": 4.8,
+            "ratio": 6.31
+          },
+          {
+            "cell": [
+              10,
+              3
+            ],
+            "density": 0.0577,
+            "z": 3.59,
+            "ratio": 4.97
+          },
+          {
+            "cell": [
+              5,
+              2
+            ],
+            "density": 0.0531,
+            "z": 3.22,
+            "ratio": 4.56
+          }
+        ],
+        "exempted": [
+          {
+            "cell": [
+              6,
+              5
+            ],
+            "density": 0.1093,
+            "z": 7.59,
+            "ratio": 9.4
+          },
+          {
+            "cell": [
+              8,
+              4
+            ],
+            "density": 0.1069,
+            "z": 7.41,
+            "ratio": 9.2
+          },
+          {
+            "cell": [
+              6,
+              4
+            ],
+            "density": 0.101,
+            "z": 6.95,
+            "ratio": 8.69
+          },
+          {
+            "cell": [
+              7,
+              4
+            ],
+            "density": 0.0946,
+            "z": 6.45,
+            "ratio": 8.14
+          },
+          {
+            "cell": [
+              7,
+              5
+            ],
+            "density": 0.0928,
+            "z": 6.31,
+            "ratio": 7.98
+          },
+          {
+            "cell": [
+              7,
+              3
+            ],
+            "density": 0.0677,
+            "z": 4.36,
+            "ratio": 5.82
+          },
+          {
+            "cell": [
+              9,
+              4
+            ],
+            "density": 0.0672,
+            "z": 4.32,
+            "ratio": 5.78
+          },
+          {
+            "cell": [
+              8,
+              3
+            ],
+            "density": 0.0649,
+            "z": 4.14,
+            "ratio": 5.58
+          },
+          {
+            "cell": [
+              5,
+              5
+            ],
+            "density": 0.0579,
+            "z": 3.6,
+            "ratio": 4.98
+          },
+          {
+            "cell": [
+              4,
+              3
+            ],
+            "density": 0.0544,
+            "z": 3.32,
+            "ratio": 4.68
+          },
+          {
+            "cell": [
+              9,
+              3
+            ],
+            "density": 0.0543,
+            "z": 3.32,
+            "ratio": 4.67
+          },
+          {
+            "cell": [
+              8,
+              5
+            ],
+            "density": 0.0522,
+            "z": 3.15,
+            "ratio": 4.49
+          }
+        ],
+        "n_exempted": 12
+      },
+      "flagged_cells": [
+        [
+          11,
+          4
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          11,
+          3
+        ],
+        [
+          12,
+          4
+        ],
+        [
+          12,
+          3
+        ],
+        [
+          10,
+          4
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          10,
+          3
+        ],
+        [
+          5,
+          2
+        ]
+      ],
+      "exempted_cells": [
+        [
+          6,
+          5
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          9,
+          3
+        ],
+        [
+          8,
+          5
+        ]
+      ],
+      "occlusion_notes": [
+        "pillar_l: occlusion from crypt_dense_v1.cells.json (2 cells)",
+        "pillar_r: occlusion from crypt_dense_v1.cells.json (2 cells)",
+        "sarcophagus: occlusion from crypt_dense_v1.cells.json (35 cells)"
+      ],
+      "n_walkable_floor": 94,
+      "calibration": null,
+      "hero_checks": [
+        {
+          "step": 0,
+          "pass": true,
+          "cell": [
+            3,
+            5
+          ],
+          "feet": [
+            525.8,
+            457.1
+          ],
+          "feet_in_quad": true,
+          "on_flagged_cell": false,
+          "reason": null
+        }
+      ]
+    },
+    {
+      "room": "camp_clearing_night",
+      "cols": 16,
+      "rows": 12,
+      "plate": "/Users/lume/WorldOS-worktrees/wt-sweep-precision/qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
+      "plate_status": "resolved",
+      "inverse_coherence": {
+        "room": "camp_clearing_night",
+        "edge_thr": 128,
+        "z_cut": 3.0,
+        "baseline_median": 0.0036,
+        "mad": 0.0033,
+        "threshold": 0.02,
+        "n_cells": 134,
+        "flagged": [
+          {
+            "cell": [
+              3,
+              10
+            ],
+            "density": 0.0553,
+            "z": 10.52,
+            "ratio": 15.47
+          },
+          {
+            "cell": [
+              9,
+              5
+            ],
+            "density": 0.0358,
+            "z": 6.55,
+            "ratio": 10.01
+          },
+          {
+            "cell": [
+              9,
+              7
+            ],
+            "density": 0.0309,
+            "z": 5.56,
+            "ratio": 8.64
+          },
+          {
+            "cell": [
+              4,
+              10
+            ],
+            "density": 0.0302,
+            "z": 5.42,
+            "ratio": 8.46
+          },
+          {
+            "cell": [
+              9,
+              8
+            ],
+            "density": 0.0279,
+            "z": 4.95,
+            "ratio": 7.81
+          },
+          {
+            "cell": [
+              9,
+              6
+            ],
+            "density": 0.0276,
+            "z": 4.88,
+            "ratio": 7.71
+          }
+        ],
+        "exempted": [],
+        "n_exempted": 0
+      },
+      "flagged_cells": [
+        [
+          3,
+          10
+        ],
+        [
+          9,
+          5
+        ],
+        [
+          9,
+          7
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          9,
+          8
+        ],
+        [
+          9,
+          6
+        ]
+      ],
+      "exempted_cells": [],
+      "occlusion_notes": [
+        "bedroll_l: occlusion from camp_clearing_night_v2.cells.json (4 cells)",
+        "bedroll_r: occlusion from camp_clearing_night_v2.cells.json (3 cells)",
+        "camp_sack: no manifest prop matches this id+footprint \u2014 occlusion NOT exempted (current behaviour)",
+        "campfire: occlusion from camp_clearing_night_v2.cells.json (4 cells)",
+        "crate_c: occlusion from camp_clearing_night_v2.cells.json (2 cells)",
+        "crate_l: occlusion from camp_truegrey.cells.json (12 cells)",
+        "crate_r: occlusion from camp_clearing_night_v2.cells.json (3 cells)",
+        "crate_wall: occlusion from camp_clearing_night_v2.cells.json (1 cells)",
+        "firewood: occlusion from camp_truegrey.cells.json (4 cells)",
+        "firewood_tail: no manifest prop matches this id+footprint \u2014 occlusion NOT exempted (current behaviour)",
+        "gear_stones: no manifest prop matches this id+footprint \u2014 occlusion NOT exempted (current behaviour)",
+        "ruin_link: occlusion from camp_truegrey.cells.json (7 cells)",
+        "ruin_rubble1: no manifest prop matches this id+footprint \u2014 occlusion NOT exempted (current behaviour)",
+        "ruin_rubble2: no manifest prop matches this id+footprint \u2014 occlusion NOT exempted (current behaviour)",
+        "ruin_tower1: occlusion from camp_truegrey.cells.json (3 cells)",
+        "ruin_tower2: occlusion from camp_truegrey.cells.json (10 cells)",
+        "shelter: occlusion from camp_truegrey.cells.json (14 cells)",
+        "shelter_post_r: no manifest prop matches this id+footprint \u2014 occlusion NOT exempted (current behaviour)",
+        "wall_bl: occlusion from camp_clearing_night_v2.cells.json (3 cells)",
+        "wall_br: occlusion from camp_truegrey.cells.json (7 cells)",
+        "wall_br2: occlusion from camp_truegrey.cells.json (7 cells)",
+        "wall_br3: occlusion from camp_truegrey.cells.json (7 cells)"
+      ],
+      "n_walkable_floor": 134,
+      "calibration": {
+        "clean_cells": [
+          [
+            4,
+            3
+          ],
+          [
+            5,
+            3
+          ],
+          [
+            6,
+            3
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            5,
+            4
+          ],
+          [
+            6,
+            4
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            6,
+            5
+          ]
+        ],
+        "clean_cells_flagged": [],
+        "ok": true
+      },
+      "hero_checks": [
+        {
+          "step": 1,
+          "pass": true,
+          "cell": [
+            4,
+            0
+          ],
+          "feet": [
+            296.0,
+            342.2
+          ],
+          "feet_in_quad": true,
+          "on_flagged_cell": false,
+          "reason": null
+        }
+      ]
+    },
+    {
+      "room": "tavern",
+      "cols": 12,
+      "rows": 10,
+      "plate": "/Users/lume/WorldOS-worktrees/wt-sweep-precision/qa/evidence/tavern-fit2/tavern_fit2_v1.png",
+      "plate_status": "resolved",
+      "inverse_coherence": {
+        "room": "tavern",
+        "edge_thr": 128,
+        "z_cut": 3.0,
+        "baseline_median": 0.0395,
+        "mad": 0.0162,
+        "threshold": 0.1116,
+        "n_cells": 43,
+        "flagged": [],
+        "exempted": [],
+        "n_exempted": 0
+      },
+      "flagged_cells": [],
+      "exempted_cells": [],
+      "occlusion_notes": [
+        "bar_counter: occlusion from tavern_fit.cells.json (20 cells)",
+        "barrels: occlusion from tavern_fit.cells.json (7 cells)",
+        "barrels_corner: occlusion from tavern_fit2.cells.json (6 cells)",
+        "bench_ne: occlusion from tavern_fit2.cells.json (4 cells)",
+        "bench_nw: occlusion from tavern_fit2.cells.json (4 cells)",
+        "bench_s: occlusion from tavern_fit2.cells.json (4 cells)",
+        "casks_bar: occlusion from tavern_fit2.cells.json (6 cells)",
+        "hearth: occlusion from tavern_fit.cells.json (6 cells)",
+        "shelf_bar: occlusion from tavern_fit2.cells.json (6 cells)",
+        "stools_bar: occlusion from tavern_fit2.cells.json (4 cells)",
+        "table_ne: occlusion from tavern_fit.cells.json (7 cells)",
+        "table_nw: occlusion from tavern_fit.cells.json (7 cells)",
+        "table_s: occlusion from tavern_fit.cells.json (7 cells)",
+        "woodpile: occlusion from tavern_fit2.cells.json (4 cells)"
+      ],
+      "n_walkable_floor": 43,
+      "calibration": null,
+      "hero_checks": [
+        {
+          "step": 3,
+          "pass": true,
+          "cell": [
+            7,
+            1
+          ],
+          "feet": [
+            588.5,
+            279.6
+          ],
+          "feet_in_quad": true,
+          "on_flagged_cell": false,
+          "reason": null
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "from": "crypt",
+      "to": "camp_clearing_night",
+      "crossed": true,
+      "arrival": [
+        4,
+        0
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          4,
+          0
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          5,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "from": "camp_clearing_night",
+      "to": "crypt",
+      "crossed": true,
+      "arrival": [
+        5,
+        1
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          5,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          6,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "from": "crypt",
+      "to": "tavern",
+      "crossed": true,
+      "arrival": [
+        7,
+        1
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          7,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          8,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "from": "tavern",
+      "to": "crypt",
+      "crossed": true,
+      "arrival": [
+        12,
+        3
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          12,
+          3
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          13,
+          4
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "kind": "spawn",
+      "room": "crypt",
+      "label": "spawn in crypt",
+      "frame": "frames/step00_spawn_crypt.png",
+      "hero_check": {
+        "pass": true,
+        "cell": [
+          3,
+          5
+        ],
+        "feet": [
+          525.8,
+          457.1
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": false,
+        "reason": null
+      },
+      "reciprocal": null
+    },
+    {
+      "step": 1,
+      "kind": "arrive",
+      "room": "camp_clearing_night",
+      "label": "crossed crypt -> camp_clearing_night",
+      "frame": "frames/step01_arrive_camp_clearing_night.png",
+      "hero_check": {
+        "pass": true,
+        "cell": [
+          4,
+          0
+        ],
+        "feet": [
+          296.0,
+          342.2
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": false,
+        "reason": null
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          4,
+          0
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          5,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "step": 2,
+      "kind": "return",
+      "room": "crypt",
+      "label": "returned camp_clearing_night -> crypt",
+      "frame": "frames/step02_return_crypt.png",
+      "hero_check": {
+        "pass": false,
+        "cell": [
+          5,
+          1
+        ],
+        "feet": [
+          442.2,
+          331.8
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": true,
+        "reason": "hero stands on cell [5, 1] the plate painted an object onto (inverse-coherence flag) \u2014 actor-inside-the-object"
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          5,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          6,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "step": 3,
+      "kind": "arrive",
+      "room": "tavern",
+      "label": "crossed crypt -> tavern",
+      "frame": "frames/step03_arrive_tavern.png",
+      "hero_check": {
+        "pass": true,
+        "cell": [
+          7,
+          1
+        ],
+        "feet": [
+          588.5,
+          279.6
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": false,
+        "reason": null
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          7,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          8,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "step": 4,
+      "kind": "return",
+      "room": "crypt",
+      "label": "returned tavern -> crypt",
+      "frame": "frames/step04_return_crypt.png",
+      "hero_check": {
+        "pass": false,
+        "cell": [
+          12,
+          3
+        ],
+        "feet": [
+          818.2,
+          227.3
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": true,
+        "reason": "hero stands on cell [12, 3] the plate painted an object onto (inverse-coherence flag) \u2014 actor-inside-the-object"
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          12,
+          3
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          13,
+          4
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    }
+  ]
+}

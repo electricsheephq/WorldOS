@@ -820,6 +820,54 @@ function shouldApplySurface(prev, next) {
 }
 if (typeof window !== "undefined") window.shouldApplySurface = shouldApplySurface;
 
+// #1375 — last-known-good session-surface cache (survives location.assign). Resuming via "Continue
+// Chronicle" does a FULL reload (screen-launcher startPlay -> location.assign), so ScreenTable
+// remounts with `surface = null`. If the very first /session-surface fetch fails — the backend is
+// momentarily unreachable / not-yet-ready on resume, or genuinely down — the catch path leaves
+// `surface` null and the whole table blanks: "No party", 0 inventory items, no actions, a truncated
+// chronicle. A first-timer reads that as DATA LOSS. We persist the freshest surface per-campaign in
+// sessionStorage (mirrors building-universe.jsx's cross-reload facade) so the table can HYDRATE from
+// the last-known-good snapshot on remount and hold party+inventory+chronicle in view while the
+// "Session surface unavailable" banner shows and live play stays gated (surfaceStatus !== "ready").
+// The engine remains the sole writer; this is a read-only projection cache of what it last served.
+const OW_SURFACE_CACHE_PREFIX = "openworlds.surface:";
+// Generous cross-reload backstop: "restore where I left off" spans a resume days later, and a stale
+// snapshot is only ever shown when the LIVE fetch is failing (it's replaced the instant a poll
+// succeeds), gated read-only, and under an explicit unavailable banner — strictly better than a
+// blanked table. A record older than this is dropped so we never resurrect an ancient session.
+const OW_SURFACE_CACHE_BACKSTOP_MS = 7 * 24 * 60 * 60 * 1000;
+const SessionSurfaceCache = {
+  _key(campaignId) {
+    return OW_SURFACE_CACHE_PREFIX + (campaignId || "_");
+  },
+  read(campaignId) {
+    if (!campaignId) return null;
+    try {
+      const raw = window.sessionStorage.getItem(this._key(campaignId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.at !== "number" || !parsed.surface) return null;
+      if (Date.now() - parsed.at > OW_SURFACE_CACHE_BACKSTOP_MS) {
+        this.clear(campaignId);
+        return null;
+      }
+      return parsed.surface;
+    } catch (_e) {
+      return null;
+    }
+  },
+  write(campaignId, surface) {
+    if (!campaignId || !surface || typeof surface !== "object") return;
+    try {
+      window.sessionStorage.setItem(this._key(campaignId), JSON.stringify({ at: Date.now(), surface }));
+    } catch (_e) { /* private mode / quota — keep the in-memory surface only */ }
+  },
+  clear(campaignId) {
+    try { window.sessionStorage.removeItem(this._key(campaignId)); } catch (_e) {}
+  },
+};
+if (typeof window !== "undefined") window.SessionSurfaceCache = SessionSurfaceCache;
+
 function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -827,7 +875,11 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     campaigns[0] ||
     {};
   const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
-  const [surface, setSurface] = React.useState(null);
+  // #1375: hydrate from the last-known-good cache for THIS campaign so a resume/remount renders the
+  // party + inventory + chronicle immediately (and holds them if the first live fetch fails), rather
+  // than flashing a blanked "No party" table. surfaceStatus stays "loading" until a live fetch lands,
+  // so play stays gated on the real backend — the cache only restores the VIEW, never enables acting.
+  const [surface, setSurface] = React.useState(() => SessionSurfaceCache.read(campaignId));
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   const [appStatus, setAppStatus] = React.useState(null);
   const demoLog = [];
@@ -976,10 +1028,18 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       setSurface((prev) => (shouldApplySurface(prev, payload) ? payload : prev));
       setAppStatus(statusPayload);
       setSurfaceStatus("ready");
+      // #1375: persist the freshest server truth so a later resume/remount can restore the party +
+      // inventory + chronicle from view even when the backend is momentarily unreachable.
+      SessionSurfaceCache.write(campaignId, payload);
     } catch (error) {
       if (isCancelled()) return;
       setSurfaceStatus(error?.message || "unavailable");
       setAppStatus(null);
+      // #1375: keep whatever surface we already show; if we have none yet (a fresh resume mount whose
+      // FIRST fetch failed — the exact Continue-Chronicle "Failed to fetch" case), fall back to the
+      // last-known-good cache so party + inventory + chronicle stay in view under the unavailable
+      // banner instead of blanking to "No party" / 0 items. A later successful poll replaces it.
+      setSurface((prev) => prev || SessionSurfaceCache.read(campaignId));
     }
     // #357 (nb3): the GM Advisory (Campaign Director #72) fetch was removed here — its only
     // consumer was the GM-bookkeeping panel that leaked into the player's live-play sidebar
@@ -1009,16 +1069,39 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
         timer = window.setInterval(guardedLoad, 5000);
       }
     };
+    // #1636: a STANDALONE-SANDBOX / headless surface (the A-G walked eval, an eyes-on preview via
+    // viewer/server.py with no native DM attached) mounts this screen in a tab that reports
+    // `visibilityState === "hidden"` for its whole life. The old gate only fetched /session-surface
+    // when the tab was VISIBLE, so in that context the surface was requested ZERO times and the play
+    // screen sat on "Loading session surface." forever with empty party/quest/action panels — while
+    // the app-level campaigns.json poll (never visibility-gated) looped. The backend was fine the
+    // whole time (`curl /session-surface?campaign=<id>` returns the complete surface). Fix (additive;
+    // the live/visible player path is byte-for-byte unchanged): ALWAYS do the initial load and start
+    // polling on mount regardless of visibility, so the surface binds and stays fresh even hidden.
+    // `standalone` (hidden AT MOUNT — a never-focused sandbox surface) keeps polling when the tab is
+    // hidden; a tab that started VISIBLE keeps the battery-friendly pause-on-background behavior so a
+    // real player who tabs away still pauses the poll.
+    let standalone = document.visibilityState !== "visible";
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
+        // A tab that has EVER been visible is a real player surface from here on — demote it out of
+        // standalone so backgrounding it again pauses the poll (only never-visible sandbox tabs keep
+        // polling forever).
+        standalone = false;
         guardedLoad();
         startPolling();
-      } else {
+      } else if (!standalone) {
+        // A real player backgrounded a foreground session — pause the poll to save requests.
         stopPolling();
       }
+      // standalone (hidden at mount): keep polling; the sandbox surface must stay bound + fresh.
     };
     document.addEventListener("visibilitychange", handleVisibility);
-    handleVisibility();
+    // Unconditional initial load + poll: the surface must bind even in a permanently-hidden sandbox
+    // tab (the old `handleVisibility()` on mount skipped the fetch entirely when hidden). This is the
+    // plain /session-surface polling fallback for a context with no live-channel attach (#1636).
+    guardedLoad();
+    startPolling();
     return () => {
       cancelled = true;
       stopPolling();
@@ -2260,3 +2343,5 @@ function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint, a
 }
 
 window.EncounterButton = EncounterButton;
+// Exposed for the #1375 resume-resilience harness (additive — App renders <ScreenTable/> directly).
+if (typeof window !== "undefined") window.ScreenTable = ScreenTable;

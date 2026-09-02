@@ -1,0 +1,8 @@
+{
+  "note": "Raw returns from the 5 independent blind sonnet scorers (blind to slot mapping). Slot identity: A=iter3_flux_s40, B=iter3_a2 (PRIMARY candidate), C=poe2_control (disguised), D=iter3_a1, INCUMBENT=crypt_armb_iter3.",
+  "brushwork":   {"scores": {"A":6,"B":7,"C":8,"D":7,"INCUMBENT":8}, "defect_notes": "C invented_structure; INCUMBENT invented_structure. one_line B: 'well-blended grime and leaf litter, richer painterly variety'."},
+  "lighting":    {"scores": {"A":8,"B":7,"C":8,"D":7,"INCUMBENT":7}, "defect_notes": "C camera_break+invented_structure (outdoor real-art); INCUMBENT invented_structure. 'multiple scattered light sources dilute one dramatic pool'."},
+  "readability": {"scores": {"A":8,"B":7,"C":6,"D":8,"INCUMBENT":6}, "defect_notes": "C invented_structure; INCUMBENT invented_structure ('extra archways/stairs blur the room edge')."},
+  "material":    {"scores": {"A":5,"B":6,"C":7,"D":6,"INCUMBENT":8}, "defect_notes": "C camera_break+invented_structure; INCUMBENT invented_structure ('richest set: archways, dual pillars, sword/shield/coin')."},
+  "holistic":    {"scores": {"A":7,"B":8,"C":4,"D":7,"INCUMBENT":6}, "defect_notes": "C invented_structure ('jungle-temple exterior, not a crypt cutaway'); D+INCUMBENT invented_structure ('extra arches/stairs break single-chamber believability')."}
+}

@@ -18,11 +18,11 @@
                    re-measure could move several gates at once. RELEASE MODEL = RRI-FIRST: v1.0.x tags =
                    semver feature-labels; RRI 10/10 = release-authority; tag-after-proof ("Player-Ready
                    Beta" = first RRI 10/10; "1.0 GA" = +notarized +feature-parity). Milestone v1.0.4 (#27).
-     CANONICAL:    /Users/lume/WorldOS is now the synced local app/private-art checkout and
+     CANONICAL:    /Users/m1/WorldOS is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
                    local disk so macOS does not prompt on Lexar-hosted assets.
      WORKTREES:    For tracked edits, prefer same-disk local worktrees when GUI/app tests need assets.
-                   Use /Volumes/LEXAR/Codex for evidence/snapshots and Lexar worktrees only for
+                   Use /Users/m1/Codex for evidence/snapshots and Lexar worktrees only for
                    non-GUI/doc/backend slices that do not launch the app against private art.
      SUPPORT VM:   32GB owner-provided support VM (`support-vm-1`). Connection/auth details live
                    in local operator-only evidence/runbooks, not tracked repo docs. Use it for
@@ -34,7 +34,7 @@
                    repo HEAD/local `origin/main` on the VM is `e5c0a5f` while queried GitHub
                    `origin/main` is `da05101`, Codex CLI auth/profile is not proven, and #466
                    release-RRI readiness requires `--private-art-mode required`. Artifact:
-                   `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/`.
+                   `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/` (historical path — /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/; that machine is gone, see NOW.md).
      LAST MEASURED GATE BUILD:
                    NONE valid since rc2. rc1 = 3.6/10 @`fa97b34`; rc2 = 2.7/10 @`c92a393` (criticals
                    4→1, sat 4.8→5.8 — product IMPROVED; RRI dip was native-skip + newbie stall, both
@@ -44,12 +44,11 @@
                    4 remaining cold-opens 429'd → never seated → the OLD parallel harness rolled a junk
                    1.8. NO scores.db row written. #844 hardened the harness (sequential personas +
                    429-abort + ABORTED-not-a-number). Mac part-A handoff @a245a2c = 100/100 with full
-                   image evidence (banked at /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/
-                   handoff-20260610T115322Z-a245a2c). NEXT MEASURE = hardened sequential sweep at CURRENT
+                   image evidence (banked at /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260610T115322Z-a245a2c) (historical path — /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260610T115322Z-a245a2c; that machine is gone, see NOW.md). NEXT MEASURE = hardened sequential sweep at CURRENT
                    main + that (or a fresh) Mac handoff — pending claude quota (rc3 429 reset hint 3:50pm UTC).
      LAST BUILT-APP PLAY PROOF:
                    Last built-app handoff proof is `da05101`
-                   (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/`):
+                   (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/`; historical path — /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/; that machine is gone, see NOW.md):
                    `qa/app_handoff_gate.py` scored `handoff_score=100` with web-scripted smoke
                    5 moves, built `dist/WorldOS.app` scripted smoke 5 moves, and built
                    `dist/WorldOS.app` Codex-provider playtest 1 move. Private BG art was present,
@@ -252,7 +251,7 @@ verifier; can revert the goal to "fix" anytime.
   NEXT build is the evidence. Close issues only on next-build non-reproduction. **Honest scores only.**
 - Engine (`servers/engine`) = **SOLE writer** of campaign state. Don't touch wire contracts
   (`worldos-*` / `WORLDOS_*` / `dev.worldos.app`). Build/run/test the Mac app from
-  `/Users/lume/WorldOS` so private art stays on the local disk and macOS does not prompt on Lexar
+  `/Users/m1/WorldOS` so private art stays on the local disk and macOS does not prompt on Lexar
   files. Use **same-disk local worktrees** for GUI-affecting tracked edits, Lexar for evidence/snapshots,
   and the 32GB support VM / GitHub CI for heavy tests. `_private/` never committed.
 
@@ -272,11 +271,11 @@ verifier; can revert the goal to "fix" anytime.
   added the hybrid 100/100 app handoff gate. PR #505 then hardened the RRI bridge so Mac handoff
   evidence can be supplied with `--handoff-json` while support-VM persona artifacts supply the heavy
   sweep. PR #506 then synced these docs to the `fd9dba5` proof without changing product code. PR #508 added the
-  support-VM preflight artifact gate. The local app/private-art checkout `/Users/lume/WorldOS` was
+  support-VM preflight artifact gate. The local app/private-art checkout `/Users/lume/WorldOS` (historical path — /Users/lume/WorldOS; that machine is gone, see NOW.md) was
   later verified against current `origin/main` at `da05101`, and the Mac app handoff was rerun on that
-  exact SHA from a clean same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS`.
+  exact SHA from a clean same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS` (historical path — /Users/lume/WorldOS; that machine is gone, see NOW.md).
 - The stale local pre-sync artifacts were preserved before the fast-forward at
-  `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
+  `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` (historical path — /Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923; that machine is gone, see NOW.md) and in `stash@{0}`
   (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
 - The `f5500ac` RRI (`2.7/10`) is preserved as partial evidence only. It proves the gate/harness was
   not trustworthy enough for release scoring: one persona completed, others lacked `score.json`, and
@@ -288,7 +287,7 @@ verifier; can revert the goal to "fix" anytime.
 - Early Codex-DM local built-app evidence is preserved: private BG art loaded,
   Alfira seated as `player`, visible DM narration, enabled actions, a real player move appended to
   `player_moves.jsonl`, and a post-move DM response with `can_act:true` in `/session-surface`.
-  Evidence is in `/Volumes/LEXAR/Codex/worldos-built-app-proof/`:
+  Evidence is in `/Volumes/LEXAR/Codex/worldos-built-app-proof/` (historical path — /Volumes/LEXAR/Codex/worldos-built-app-proof/; that machine is gone, see NOW.md):
   `session-surface-racefix-after-dm-response-20260601T012410.json`,
   `worldos-racefix-first-turn-20260601T012110.png`, and
   `worldos-racefix-dm-response-dismissed-permission-20260601T012516.png`.
@@ -303,7 +302,7 @@ verifier; can revert the goal to "fix" anytime.
   Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
   are intentionally installed there; connection details are kept outside tracked docs. The 2026-06-07
   repo-owned support preflight for `da05101` wrote
-  `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/` and returned `verdict=blocked`:
+  `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/` (historical path — /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/; that machine is gone, see NOW.md) and returned `verdict=blocked`:
   VM repo HEAD/local `origin/main` were `e5c0a5f`, queried GitHub `origin/main` was `da05101`, Codex
   CLI auth/profile was not proven, and `--private-art-mode optional` is insufficient for #466 release-RRI
   readiness. Do not run personas until the VM checkout is synced to `da05101`, Codex auth/profile passes,
@@ -352,7 +351,7 @@ verifier; can revert the goal to "fix" anytime.
   campaign, provider, private-art presence, move sink, actor, enabled actions, readiness, and failure buckets
   without mutating state; the scripted provider can prove wiring behind a dev/test gate; and stable a11y/DOM
   hooks make the UI more driveable. A current-session `:8899` probe briefly showed `080497e`, scripted
-  provider, private art root at `/Users/lume/WorldOS`, `can_act:true`, five enabled actions,
+  provider, private art root at `/Users/lume/WorldOS` (historical path — /Users/lume/WorldOS; that machine is gone, see NOW.md), `can_act:true`, five enabled actions,
   `ready_for_smoke:true`, and no reported console/network failures; a later read found the port already
   down. Browser-based checks should use the live port discovered from `run.json` or `/app-status`, and if
   a browser session cannot reach local URLs, fall back to `/app-status`, `/session-surface`, app screenshots,

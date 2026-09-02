@@ -9,8 +9,8 @@
 > `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and
 > `qa/SCORECARD.md`. The work queue later in this file is historical unless it agrees with those
 > sources.
-> **Local/VM routing, 2026-06-01:** `/Users/lume/WorldOS` is the synced local app/private-art
-> checkout and should be used for GUI/native-app testing. Use `/Volumes/LEXAR/Codex` for evidence,
+> **Local/VM routing, 2026-06-01:** `/Users/m1/WorldOS` is the synced local app/private-art
+> checkout and should be used for GUI/native-app testing. Use `/Users/m1/Codex` for evidence,
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
 > permissions can break local AI/browser tests. Heavy backend/persona sweeps belong on GitHub CI or
 > the owner-provided 32GB support VM (`support-vm-1`) after remote access and Codex config are
@@ -169,7 +169,7 @@ change must respect them.
 > you have explicitly verified your machine can handle parallel workers.
 
 1. **Branch off main in a fresh worktree** (keeps lanes disjoint from the app-testing checkout).
-   For GUI/native-app work, prefer same-disk local worktrees under `/Users/lume/WorldOS-worktrees`
+   For GUI/native-app work, prefer same-disk local worktrees under `/Users/m1/repos/WorldOS-worktrees`
    so private-art reads stay on the local disk. Lexar worktrees are fine for docs/backend/non-GUI
    slices that do not launch the app against art. Implement **additively** (honor every invariant above).
 2. **Run focused local tests single-process:**
@@ -213,6 +213,11 @@ change must respect them.
    git worktree prune
    ```
 
+**Merging:** once checks are green and review threads are resolved: `gh pr merge <n> --squash --auto`.
+Auto-merge works — the earlier repo-wide hang was a red required Woodpecker check, not a GitHub bug
+(resolved #1431/#1434, see closed #1389); `--admin` is emergency-only (it bypasses branch protection).
+Never push-and-abandon — shepherd to merged. Full detail: `docs/OPERATIONS.md` "Merging" section.
+
 **The whole shape:** worktree off main → implement additive → focused single-process test →
 push → `gh pr create` (no `tail` in an `&&` chain) → merge after checks pass →
 `git pull --ff-only origin main` → remove worktree + delete branch + prune.
@@ -222,10 +227,12 @@ push → `gh pr create` (no `tail` in an `&&` chain) → merge after checks pass
 ## THE QA LOOP
 
 **Pick the TIER — don't run the 90-min sweep to iterate.** Tier 0 `qa/fast_gate.sh` ($0 / ~2s, every
-change) → Tier 1 `qa/fast_probe.sh` (~$2–3 / ~20 min, DM-craft/UX/satisfaction) → Tier 2 the milestone
-5-persona `.app` sweep (~$10 / ~90 min, only before a version bump). Strategy + the adversarial-validated
-signal accounting: `docs/qa/FAST_GATE.md` and the `worldos-dev` skill's "QA STRATEGY" table. The runners
-below are what each tier composes.
+change) → Tier 1.5 `qa/mechanism_probe.sh` (~$1 / ~10 min, a seeded-fixture + 2–3 real DM beats
+yielding a deterministic ACTED / IGNORED / INCONCLUSIVE / CUE_ABSENT verdict — no LLM lens; iteration
+signal only, never a release verdict) → Tier 1 `qa/fast_probe.sh` (~$2–3 / ~20 min, DM-craft/UX/
+satisfaction) → Tier 2 the milestone 5-persona `.app` sweep (~$10 / ~90 min, only before a version
+bump). Strategy + the adversarial-validated signal accounting: `docs/qa/FAST_GATE.md` and the
+`worldos-dev` skill's "QA STRATEGY" table. The runners below are what each tier composes.
 
 The fitness function = **1 hard behavioral gate** + **3 LLM lenses**. Spec: `qa/SCORING.md`.
 **Log every scored run to the ledger: `qa/scores_db.py` → SQLite `scores.db` → rendered to
@@ -298,8 +305,8 @@ fresh scored evidence explicitly changes that decision.
 Preflight, from the Mac where Codex CLI is logged in:
 
 ```bash
-cd /Users/lume/WorldOS
-scripts/codex_qa_home.sh ~/.codex-worldos-qa /Users/lume/WorldOS
+cd /Users/m1/WorldOS
+scripts/codex_qa_home.sh ~/.codex-worldos-qa /Users/m1/WorldOS
 CODEX_HOME=~/.codex-worldos-qa codex login status
 CODEX_HOME=~/.codex-worldos-qa codex --version
 ```
@@ -329,7 +336,7 @@ Fair-test shape:
   a release verdict.
 - Behavioral gate: always run `qa/assert_behavioral.py` on the provider's tool stream. A RED
   behavioral gate still caps story/mechanical scorecards to INVALID.
-- Evidence stays private under `/Volumes/LEXAR/Codex`; do not commit raw transcripts,
+- Evidence stays private under `/Users/m1/Codex`; do not commit raw transcripts,
   private art, or credentials.
 
 Current #691 result after #700 on `f228815`: native Codex GPT is mechanically capable enough
@@ -342,6 +349,9 @@ Opus-comparable story/mechanical scores.
 ---
 
 ## AGENT DELEGATION
+
+> Absolute paths below and elsewhere in this section reflect the primary dev machine — substitute
+> your own checkout root.
 
 Orchestrate via subagents; verify from the top.
 

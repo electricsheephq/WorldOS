@@ -1,0 +1,27 @@
+{
+  "panel_id": "panel-visual-m15-spend-gate-20260710",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), CHARACTER-IN-SCENE COHESION question (visual-critic recipe, CALIBRATION-CONTROL PROTOCOL), run for the unity-asset-stack skill's M1.5 asset spend-gate (issue #1386). Frame captured on the GEX44 box: M1CombatV1_canonical scene, PaintedBackdrop forced to the ADOPTED crypt_armb_iter3_v1.png, 12 stale live-combat-cast objects disabled, 6 free Unity Capsule primitives (3-party gold-ring + 3-foe red-ring, matching #1418 target heights 3.2/4.2) placed at #1386 PROBE-PLACEMENT-verified clear cells via Tools/WorldOS/M1.5 Spend Gate/0.",
+  "scale": "0-10 character-in-scene cohesion (delta-anchored; absolute number is NOT a quality verdict per the calibration-control protocol)",
+  "candidate_image": "qa/evidence/m15-gate/m15_gate_capsules_clean.jpg",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate) from qa/visual_controls_identity.json, same control used by the #1386 ADOPT-CRYPT cohesion panel for continuity.",
+  "scores": [
+    {"scorer": 1, "candidate": 1, "control": 8},
+    {"scorer": 2, "candidate": 1, "control": 8},
+    {"scorer": 3, "candidate": 2, "control": 8},
+    {"scorer": 4, "candidate": 1, "control": 8},
+    {"scorer": 5, "candidate": 1, "control": 7}
+  ],
+  "candidate_median": 1.0,
+  "control_median": 8.0,
+  "delta_candidate_minus_control": -7.0,
+  "ranking": "control > candidate, unanimous 5/5",
+  "residual_defects": [
+    "5/5 scorers independently identified the capsules as generic engine primitives/UI markers, not character art -- 'flat-shaded capsule', 'default engine mesh', 'ability-radius/UI targeting token' were used unprompted by multiple scorers",
+    "5/5 scorers flagged the team-ring ground decal as reading like a UI selection ring rather than a rendered contact shadow (no soft falloff, no color tint from the floor, no directional bias matching the scene's key light)",
+    "5/5 scorers flagged zero scene-relit color pickup -- the capsules are a flat saturated hue with no warm torchlight bounce or rim light, unlike the plate's warm/cool graded stonework",
+    "no occlusion was actually exercised (all 6 units placed on open floor per the #1386 PROBE-PLACEMENT clear-cell list, so no unit crosses behind a pillar/prop in this frame)"
+  ],
+  "interpretation": "This score is EXPECTED for a raw, undressed primitive and is a MATERIAL/SHADING gap, not evidence the multi-unit architecture fails to scale. The existing Cohesion Probe stack (RungB plate-sampled light rig -> RungD contact shadows -> RungA' painterly actor materials, extensions/renderers/unity/scripts/CohesionProbe.cs) already solves exactly this class of defect for REAL actor meshes (hero/goblin), lifting cohesion from ~3.0 to ~6.0-7.0 on this same instrument (qa/evidence/plate-sprint/adopt-crypt/crypt_armb_iter3_cohesion_panel.json) -- it was simply not applied to these disposable capsule stand-ins. The DETERMINISTIC architecture sub-test (can 6 simultaneous engine-placed units register floor-contact + legible screen-scale + upright pose under the locked camera) is scored SEPARATELY and PASSED cleanly -- see m15_gate_pregate_report.json."
+}

@@ -1,0 +1,58 @@
+{
+  "stamps": [
+    {
+      "stage": "reached_giver",
+      "beat": 1,
+      "ts": "2026-09-02T08:50:29+00:00",
+      "signal": "location:at-giver"
+    },
+    {
+      "stage": "quest_accepted",
+      "beat": 1,
+      "ts": "2026-09-02T08:50:29+00:00",
+      "signal": "objective:'Speak with Keeper Maera'"
+    },
+    {
+      "stage": "entered_dungeon",
+      "beat": 2,
+      "ts": "2026-09-02T08:55:48+00:00",
+      "signal": "location:in-dungeon"
+    },
+    {
+      "stage": "boss_dead",
+      "beat": 15,
+      "ts": "2026-09-02T09:43:41+00:00",
+      "signal": "objective:'Slay the goblin boss'"
+    },
+    {
+      "stage": "reward_received",
+      "beat": 19,
+      "ts": "2026-09-02T09:58:07+00:00",
+      "signal": "objective:'Return to Maera for the reward'"
+    },
+    {
+      "stage": "quest_completed",
+      "beat": 19,
+      "ts": "2026-09-02T09:58:07+00:00",
+      "signal": "status:completed"
+    }
+  ],
+  "campaign_id": "adventure_demo_v1",
+  "quest_id": "quest_dcc22689df9d",
+  "quest_title": "The Crypt Below",
+  "quest_status": "completed",
+  "completed_objectives": [
+    "Speak with Keeper Maera",
+    "Slay the goblin boss",
+    "Clear the crypt of goblins",
+    "Return to Maera for the reward"
+  ],
+  "objectives": [
+    "Speak with Keeper Maera",
+    "Clear the crypt of goblins",
+    "Slay the goblin boss",
+    "Return to Maera for the reward"
+  ],
+  "updated_ts": "2026-09-02T09:58:07+00:00",
+  "updated_beat": 19
+}

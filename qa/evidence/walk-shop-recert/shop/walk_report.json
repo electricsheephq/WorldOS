@@ -1,0 +1,614 @@
+{
+  "schema_version": 1,
+  "repo_sha": "22f9a61d",
+  "manifest_sha256": "772677b5a4c7bd3f0ad60331ec3781235655b7f822d175e586c3322f5bd559d7",
+  "ts": "2026-07-22T11:46:18.233456+00:00",
+  "engine_url": "http://127.0.0.1:8866",
+  "qa_url": "http://127.0.0.1:8972",
+  "room": "shop",
+  "ortho": 9.6806,
+  "sceneId": "camp_townslice01:adventure_demo_v1_shop",
+  "grid": {
+    "cols": 13,
+    "rows": 10
+  },
+  "camera": {
+    "dbg": {
+      "ok": true,
+      "enq": 0,
+      "deq": 0,
+      "acted": 0,
+      "surf": 11,
+      "busy": false,
+      "last": "none",
+      "camOrtho": 9.6806,
+      "camRx": 30,
+      "camRy": 45,
+      "camRz": 0,
+      "camPx": -48.9898,
+      "camPy": 40,
+      "camPz": -48.9898,
+      "originVX": 0.5,
+      "originVY": 0.5,
+      "occCount": 27,
+      "plateLocMatch": true,
+      "actorVX": 0.39019,
+      "actorVY": 0.45304
+    },
+    "fails": [],
+    "ok": true,
+    "pose_mismatch": false
+  },
+  "orphans": [],
+  "path": {
+    "pass": 21,
+    "fail": 0,
+    "violations": []
+  },
+  "reachable": {
+    "pass": 21,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          1,
+          1
+        ],
+        "landed": [
+          1,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          4
+        ],
+        "landed": [
+          1,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          7
+        ],
+        "landed": [
+          1,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          3
+        ],
+        "landed": [
+          2,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          8
+        ],
+        "landed": [
+          2,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          4
+        ],
+        "landed": [
+          3,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          2
+        ],
+        "landed": [
+          4,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          5
+        ],
+        "landed": [
+          4,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          8
+        ],
+        "landed": [
+          4,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          6
+        ],
+        "landed": [
+          5,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          1
+        ],
+        "landed": [
+          6,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          6
+        ],
+        "landed": [
+          6,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          1
+        ],
+        "landed": [
+          7,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          5
+        ],
+        "landed": [
+          7,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          2
+        ],
+        "landed": [
+          8,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          8
+        ],
+        "landed": [
+          8,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          4
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          7
+        ],
+        "landed": [
+          9,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          3
+        ],
+        "landed": [
+          10,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          2
+        ],
+        "landed": [
+          11,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "impassable": {
+    "pass": 22,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          0,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          4
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          4
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "doors": {
+    "pass": 1,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          6,
+          0
+        ],
+        "to": "tavern_snug",
+        "ok": true,
+        "detail": {
+          "crossed_to": "tavern_snug",
+          "target": "tavern_snug",
+          "pose": {
+            "dest": {
+              "ortho": 9.2597,
+              "dbg": {
+                "ok": true,
+                "enq": 44,
+                "deq": 44,
+                "acted": 44,
+                "surf": 114,
+                "busy": false,
+                "last": "cell(6,0) rest=True foe=(-1,-1)'' imp=n occ=n",
+                "camOrtho": 9.2597,
+                "camRx": 30,
+                "camRy": 45,
+                "camRz": 0,
+                "camPx": -48.9898,
+                "camPy": 40,
+                "camPz": -48.9898,
+                "originVX": 0.5,
+                "originVY": 0.5,
+                "occCount": 33,
+                "plateLocMatch": true,
+                "actorVX": 0.74326,
+                "actorVY": 0.5843
+              }
+            },
+            "home": {
+              "ortho": 9.6806,
+              "dbg": {
+                "ok": true,
+                "enq": 45,
+                "deq": 45,
+                "acted": 45,
+                "surf": 115,
+                "busy": false,
+                "last": "cell(11,4) rest=True foe=(-1,-1)'' imp=n occ=n",
+                "camOrtho": 9.6806,
+                "camRx": 30,
+                "camRy": 45,
+                "camRz": 0,
+                "camPx": -48.9898,
+                "camPy": 40,
+                "camPz": -48.9898,
+                "originVX": 0.5,
+                "originVY": 0.5,
+                "occCount": 27,
+                "plateLocMatch": true,
+                "actorVX": 0.3894,
+                "actorVY": 0.66496
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "visual": {
+    "pass": 0,
+    "fail": 0,
+    "cases": []
+  },
+  "harness_errors": [],
+  "door_pose_fail": [],
+  "shots": [
+    "/Volumes/LEXAR/Codex/session-notes/2026-07-22/player-cert-live/artifacts/shop_pipeline/shop/walk/shot_shop_final.png"
+  ],
+  "verdict": "GREEN"
+}

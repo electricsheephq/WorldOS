@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -279,7 +280,7 @@ public class IntegrationBuilder
         // In Built-in RP: set material.SetInt("_ColorMask", 0) disables color writes.
         
         // Prefer depth-only shader (invisible + ZWrite=On). Falls back to disabled renderer.
-        var depthShader = Shader.Find("WorldOS/OccluderDepthOnly");
+        var depthShader = Shader.Find("WorldOS/OccluderDepth");  // #1460: was "…OccluderDepthOnly" (never resolved -> visible black boxes); committed shader is "WorldOS/OccluderDepth" (#1433)
         Material occluderMat;
         bool useDepthShader = (depthShader != null);
         if (useDepthShader)
@@ -585,3 +586,5 @@ public class IntegrationBuilder
         Debug.Log($"[Integration] Screenshot saved: Captures/{fname}.png");
     }
 }
+
+#endif // UNITY_EDITOR

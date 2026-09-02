@@ -43,6 +43,13 @@ _LEGACY_KEYS = {
     "encounter", "grid", "lastPath", "impassable", "doors", "occluders", "tokens", "initiative",
     "zones", "selectedTokenId", "actionEconomy", "commandCenter", "actionBar", "battleLog",
     "live", "is_live_view", "can_act", "state_authority", "write_lane",
+    # W4 (#1321) The Living Stage — the clock-driven day/night lighting token. Additive
+    # presentation-only key (see build_combat_surface); folded into the established set so the
+    # `stage`-is-the-only-NEW-key guard still trips on any UNEXPECTED (non-additive) key change.
+    "timePhase",
+    # #1582 rest-walk path audit — the most-recent REST walk route (combat.last_walk_path), the
+    # additive sibling of lastPath (which stays combat-only). Same deliberate fold-in as timePhase.
+    "lastWalkPath",
 }
 
 
@@ -131,6 +138,11 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         # Rest tokens are idle-posed derived hints, never authoritative.
         self.assertEqual(by_id["npc_keeper"]["pose"], "idle")
         self.assertEqual(by_id["npc_keeper"]["positionAuthority"], "derived")
+        # W3 (#1363): each rest token carries a rest_role so the board tells a walkable party mover
+        # from a click-to-talk NPC target (both are team "ally"). The party PC is "party"; a
+        # present non-party NPC is "npc".
+        self.assertEqual(by_id["pc_hero"]["rest_role"], "party")
+        self.assertEqual(by_id["npc_keeper"]["rest_role"], "npc")
 
     def test_npc_at_another_location_is_not_placed(self):
         stage = _surface(_rest_snapshot())["stage"]
@@ -235,6 +247,150 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         stage = _surface(snap)["stage"]
         ids = {t["id"] for t in stage["tokens"]}
         self.assertIn("comp_shade", ids)
+
+
+class SceneAtRestStageCellTests(unittest.TestCase):
+    """W2 (#1350): the rest projection RENDERS a character at its engine-authoritative
+    ``Character.stage_cell`` (walk_to's sole-writer field) when set, so a click-to-move walk lands
+    the token at the confirmed destination on the next surface reload — instead of snapping it back
+    to the authored spawn cell. ADDITIVE: stage_cell is None until a first walk, so an un-walked
+    character projects at its spawn cell exactly as before (byte-identical)."""
+
+    def test_walked_pc_renders_at_stage_cell_not_spawn(self):
+        snap = _rest_snapshot()
+        # pc_hero has WALKED: its engine stage_cell is (2, 3), NOT the party spawn cell (6, 8).
+        snap["characters"]["pc_hero"]["stage_cell"] = [2, 3]
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertIn("pc_hero", by_id)
+        self.assertEqual((by_id["pc_hero"]["x"], by_id["pc_hero"]["y"]), (2, 3))
+
+    def test_unwalked_pc_still_renders_at_spawn_cell(self):
+        """No stage_cell == today: the character falls straight through to the spawn projection."""
+        snap = _rest_snapshot()  # pc_hero carries no stage_cell
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertEqual((by_id["pc_hero"]["x"], by_id["pc_hero"]["y"]), (6, 8))
+
+    def test_stage_cell_token_stays_a_derived_hint(self):
+        """The engine remains the sole writer: a stage_cell-placed token is still a derived render
+        hint, never authoritative — same discipline as the spawn projection."""
+        snap = _rest_snapshot()
+        snap["characters"]["pc_hero"]["stage_cell"] = [4, 4]
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertEqual(by_id["pc_hero"]["positionAuthority"], "derived")
+
+
+class SceneAtRestLiveMonsterTests(unittest.TestCase):
+    """#1639 CAST PRESENCE: the rest/walk surface must show the resident LIVE monsters at the
+    party's current location (the Goblin Boss on his throne), not just the party — monsters
+    surfaced ONLY in combat before, so the walked world rendered empty of its cast. Additive,
+    combat-inert, hp>0-gated projection (the SAME dead/downed rule the party + NPC branches use)."""
+
+    @staticmethod
+    def _monster(loc: str, **over) -> dict:
+        m = {"id": over.pop("id", "mon_boss"), "name": over.pop("name", "Goblin Boss"),
+             "kind": "monster", "location_id": loc, "current_hp": 21}
+        m.update(over)
+        return m
+
+    def test_live_monster_and_npc_both_placed_not_party_only(self):
+        """Red-first repro of #1639: a location holding a present NPC AND a live monster must emit
+        BOTH — before this change the monster was dropped and the surface was party+NPC only (and
+        the eval fixture's boss room, party-ONLY). team "foe" distinguishes the monster."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1")
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        # the party PC and the present NPC still project (unchanged)...
+        self.assertIn("pc_hero", by_id)
+        self.assertIn("npc_keeper", by_id)
+        # ...AND the resident live monster now projects too — the #1639 fix.
+        self.assertIn("mon_boss", by_id)
+        self.assertEqual(by_id["mon_boss"]["team"], "foe")
+        self.assertEqual(by_id["mon_boss"]["kind"], "monster")
+
+    def test_live_monster_uses_foes_spawn_bucket_when_unwalked(self):
+        """A monster carrying no seeded stage_cell lands on the `foes` spawn cell the generators
+        author (scene_grid.py) — the first foe cell in _tavern_scene_grid is (6, 2)."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1")  # no stage_cell
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertEqual((by_id["mon_boss"]["x"], by_id["mon_boss"]["y"]), (6, 2))
+
+    def test_live_monster_renders_at_stage_cell_when_set(self):
+        """A seeded/walked monster (engine-authoritative stage_cell) renders WHERE IT STANDS, not
+        at its spawn cell — same W2 discipline as the party/NPC branches."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1", stage_cell=[10, 5])
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertEqual((by_id["mon_boss"]["x"], by_id["mon_boss"]["y"]), (10, 5))
+
+    def test_dead_monster_is_never_placed(self):
+        """A cleared foe (dead flag) never re-stands in the walked scene."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_slain"] = self._monster("loc1", id="mon_slain",
+                                                         name="Slain Goblin", dead=True)
+        ids = {t["id"] for t in _surface(snap)["stage"]["tokens"]}
+        self.assertNotIn("mon_slain", ids)
+
+    def test_downed_monster_at_zero_hp_is_never_placed(self):
+        """hp>0 gate: a monster at 0 HP that is not yet flagged `dead` is excluded too (the same
+        _is_dead_or_downed predicate the party/NPC branches apply)."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_downed"] = self._monster("loc1", id="mon_downed",
+                                                         current_hp=0, dead=False)
+        ids = {t["id"] for t in _surface(snap)["stage"]["tokens"]}
+        self.assertNotIn("mon_downed", ids)
+
+    def test_monster_at_another_location_is_not_placed(self):
+        """A live monster anchored at a DIFFERENT location does not leak onto this scene."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_far"] = self._monster("loc2", id="mon_far", name="Distant Ogre")
+        ids = {t["id"] for t in _surface(snap)["stage"]["tokens"]}
+        self.assertNotIn("mon_far", ids)
+
+    def test_monster_token_is_a_derived_hint(self):
+        """The engine stays sole writer: a monster rest token is a derived render hint, idle-posed,
+        never authoritative — same discipline as every other rest token."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1", stage_cell=[10, 5])
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertEqual(by_id["mon_boss"]["positionAuthority"], "derived")
+        self.assertEqual(by_id["mon_boss"]["pose"], "idle")
+        # rest_role "foe" — NOT "npc", so the client's click-to-TALK path never fires on a monster.
+        self.assertEqual(by_id["mon_boss"]["rest_role"], "foe")
+
+    def test_combat_mode_carries_no_monster_tokens(self):
+        """Combat-inertness: with a live monster present but combat ACTIVE, the stage block is
+        empty (the authoritative tokens are the top-level combat board) — the #1639 addition
+        cannot double-emit onto the combat surface."""
+        snap = _combat_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1")
+        surface = _surface(snap)
+        self.assertEqual(surface["stage"]["mode"], "combat")
+        self.assertEqual(surface["stage"]["tokens"], [])
+        self.assertTrue(surface["tokens"])  # the combat board itself is unchanged
+
+    def test_monster_present_surface_is_still_stage_only_new_key(self):
+        """Byte-identity holds with a monster present: the surface gains no NON-stage top-level
+        key, so every existing consumer of the combat surface is unaffected."""
+        snap = _rest_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1")
+        surface = _surface(snap)
+        self.assertEqual(set(surface) - _LEGACY_KEYS, {"stage"})
+
+    def test_projection_does_not_mutate_the_snapshot(self):
+        """The viewer is a pure reader: projecting a monster never writes back to the engine-owned
+        snapshot (no stage_cell is minted, no field added)."""
+        import copy
+        snap = _rest_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1")
+        before = copy.deepcopy(snap)
+        _surface(snap)
+        self.assertEqual(snap, before)
+
+    def test_projection_is_deterministic_with_monsters(self):
+        snap = _rest_snapshot()
+        snap["characters"]["mon_boss"] = self._monster("loc1")
+        self.assertEqual(_surface(snap)["stage"], _surface(snap)["stage"])
 
 
 if __name__ == "__main__":

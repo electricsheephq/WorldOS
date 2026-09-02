@@ -15,6 +15,7 @@ final class AppProcessService: ObservableObject {
     private var providerProcess: ManagedProcess?
     private var intentionallyStoppingProviderPIDs: Set<Int32> = []
     private let registry = ProviderRegistry()
+    private let playerLauncher = PlayerLauncher()
     private let maxLogCharacters = 120_000
 
     var activeProviderOpenWorldsURL: URL? {
@@ -283,6 +284,34 @@ final class AppProcessService: ObservableObject {
         guard var endpoint = viewerEndpoint, endpoint.name == "Provider viewer" else { return }
         endpoint.status = .running
         viewerEndpoint = endpoint
+    }
+
+    /// Hand the active campaign off to the standalone Unity **player build** (issue #1322 / W5).
+    /// Additive + defaulted: when no `WorldOSPlayer.app` is installed (configured path or default)
+    /// this is a no-op returning `.notConfigured`, and the app behaves exactly as before. The player
+    /// is launched BESIDE the app as an INDEPENDENT process — its exit never affects the running
+    /// viewer/provider (engine), and a repeat call is idempotent (an already-running player is
+    /// activated, not duplicated). The base URL handed over is the ORIGIN the player consumes
+    /// (`/combat-surface`, `/events`, `POST /move`) — not the `/openworlds/` UI path.
+    @discardableResult
+    func launchPlayer(playerAppPath: String) -> PlayerLaunchOutcome {
+        guard let endpoint = viewerEndpoint, endpoint.status != .stopped else {
+            append("Player launch skipped: no running engine/viewer to hand off.", stream: .supervisor)
+            return .notConfigured
+        }
+        let outcome = playerLauncher.launch(
+            configuredPath: playerAppPath,
+            baseURL: endpoint.url,
+            campaignID: activeCampaignID
+        )
+        switch outcome {
+        case .notConfigured:
+            append("Player launch: no \(PlayerLaunchContract.defaultAppName) found (configured or default) — player tier absent.", stream: .supervisor)
+        case let .launch(invocation):
+            let base = invocation.environment[PlayerLaunchContract.baseURLKey] ?? endpoint.url.absoluteString
+            append("Launched WorldOS player at \(invocation.appURL.path) → \(base)", stream: .supervisor)
+        }
+        return outcome
     }
 
     func stopProvider() {

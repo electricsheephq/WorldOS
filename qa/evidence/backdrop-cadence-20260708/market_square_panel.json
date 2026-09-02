@@ -1,0 +1,34 @@
+{
+  "room": "market_square",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), same protocol as the church/#1274 staging-law adoption — visual-critic SKILL.md CALIBRATION-CONTROL PROTOCOL. No AI-prior primer; scorers judge craft on what they see, not assumed origin.",
+  "candidate_image": "image_B.png = /tmp/worldos-backdrop-gen/market_retry/room_market_square_pass3_staging_day.png (our generated plate, ITERATION 2 / retry, layered day pipeline, strength=0.55, --day --lighting daylight_outdoor, post anti-hallucination-guard fix)",
+  "control_image": "image_A.jpg = /Volumes/LEXAR/WorldOS-Unity-spike/refs/bg2ee_fortress_party_tactical_02.jpg (REAL Baldur's Gate II: Enhanced Edition shipped screenshot, disguised as a candidate)",
+  "control_defect_disclosed": "This control image was a POOR pick for this round: unanimously (5/5 scorers) flagged as a full gameplay screenshot with baked-in UI chrome (portrait rail, spell/action bar, health orb, floating combat-log text 'Fire Giant did 6 damage to Militia Guard') AND the wrong scene (a dusk/night fortress-siege courtyard, not a bright daylight plaza) — scored 2-3/10 for reasons UNRELATED to painterly craft (should have been cropped UI-free per the calibration protocol's own 'comparable resolution/crop/UI-free' requirement). This is a methodology mistake on the orchestrator's part, disclosed rather than silently reported as a passing delta.",
+  "generation_pass": 2,
+  "iteration_1_rejected": {
+    "plate": "qa/evidence/backdrop-cadence-20260708/market_square_ITERATION1_REJECTED_frame_defect.jpg",
+    "defects": [
+      "Gemini pass2 (detail/populate) hallucinated multiple armed NPCs (guards, a merchant woman, a townsperson) wandering the plaza — the templates' hard-negative guard forbade text/labels/frames but NOT characters",
+      "Gemini pass3 (staging) added a decorative wooden picture-frame/oval border around the entire scene — the known #1274/#1291 Gemini instruction-edit hallucination failure mode"
+    ],
+    "fix_applied": "Added an explicit 'Do NOT add any characters, people, figures, animals, or creatures of any kind — this is an EMPTY background plate; actors are composited in separately by the engine.' clause to all four pass2/pass3 prompt_templates in room_recipes.json (pass2_detail_populate, pass2_detail_populate_day, pass3_staging_last, pass3_staging_last_day) — a production-wide robustness fix, not market_square-specific."
+  },
+  "scores": [
+    {"scorer": 1, "control": 2, "candidate": 7},
+    {"scorer": 2, "control": 3, "candidate": 5},
+    {"scorer": 3, "control": 2, "candidate": 7},
+    {"scorer": 4, "control": 2, "candidate": 6},
+    {"scorer": 5, "control": 2, "candidate": 6}
+  ],
+  "candidate_median": 6.0,
+  "control_median": 2.0,
+  "delta_candidate_minus_control": "N/A — control invalidated (see control_defect_disclosed); do not cite this delta as a quality signal",
+  "interpretation": "Candidate's absolute median (6.0) matches the incumbent-class bar (crypt_dense_v1 ~6.2) and this batch's camp_clearing_night (6.0). ADOPTED on the absolute-bar reading; the control comparison for this room is inconclusive this round due to a disclosed control-selection defect, not a candidate defect.",
+  "residual_defects": [
+    "repeated dormer/window patterns across building facades (a cloning tell)",
+    "one illegible/garbled hanging-sign glyph ('REV') — a known Gemini text-hallucination tell on a tiny background sign, not scene-breaking",
+    "cel-shaded/flat-illustration lean vs true painterly brush texture",
+    "scene reads slightly sterile/depopulated for a 'plaza' (no ambient life) — expected, since actors are engine-composited separately"
+  ],
+  "iterations": 2
+}

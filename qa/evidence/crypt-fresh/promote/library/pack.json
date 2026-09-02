@@ -1,0 +1,9 @@
+{
+  "license": "proprietary",
+  "name": "worldos-harvest",
+  "provenance": {
+    "produced_by": "tools/library/promote.py",
+    "roadmap": "Act II \u00a74c HV3 (#1325)"
+  },
+  "version": "0.1.0"
+}

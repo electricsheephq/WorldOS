@@ -1,0 +1,12 @@
+# #1433 shader-inclusion evidence (build log grep)
+## OccluderDepth import + compile
+Serialized binary data for shader WorldOS/OccluderDepth in 0.00s
+Importing 'GUID: 8c8c25e667dc257838b5af82e82d5378 - Path: Assets/OccluderDepth.shader' with importer (ShaderImporter)
+Compiling shader "WorldOS/OccluderDepth"
+Serialized binary data for shader WorldOS/OccluderDepth in 0.00s
+Compiling shader "WorldOS/OccluderDepth"
+Serialized binary data for shader WorldOS/OccluderDepth in 0.00s
+
+## scene occluder material now references the committed shader ASSET (type:3), not the stripped inline shader
+  m_Name: WorldOS/OccluderDepth
+  m_Shader: {fileID: 4800000, guid: 8c8c25e667dc257838b5af82e82d5378, type: 3}

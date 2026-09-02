@@ -1,0 +1,30 @@
+{
+  "panel_id": "panel-visual-m15-spend-gate-RERUN-20260711",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), CHARACTER-IN-SCENE COHESION question (visual-critic CALIBRATION-CONTROL PROTOCOL). #1503 gate re-verdict item (i): the 6 gate test units are now REAL OWNED MESHES (3x fighter party + 3x goblin foe, Actor_M15_*) put through the existing CohesionProbe stack (RungB plate-sampled light rig -> RungD directional contact shadows -> RungA' PainterlyActor materials), instead of the bare Cap_* capsules the first run scored. Frame captured on GEX44: M1CombatV1_canonical, PaintedBackdrop forced to ADOPTED crypt_armb_iter3_v1.png, 12 stale live-cast objects disabled, 6 actors at the #1386 PROBE-PLACEMENT clear cells.",
+  "scale": "0-10 character-in-scene cohesion (delta-anchored; absolute number is NOT a quality verdict per the calibration-control protocol). Control band [6.8, 9.2], anchor 8.0.",
+  "candidate_image": "qa/evidence/m15-gate/rerun/m15_rerun_cohesion_6actors.png",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+  "control_note": "REGISTERED disguised-real-art control (shipped PoE2:Deadfire ruins/brazier plate) from qa/visual_controls_identity.json — same control the first-run #1503 panel and the #1386 ADOPT-CRYPT panel used, for continuity.",
+  "blind_mapping": "frame_A=CONTROL, frame_B=CANDIDATE (mapping kept OUTSIDE the panel image dir; scorers judged blind at 1600x900)",
+  "scores": [
+    {"scorer": 1, "candidate": 2, "control": 8},
+    {"scorer": 2, "candidate": 3, "control": 7},
+    {"scorer": 3, "candidate": 1, "control": 8},
+    {"scorer": 4, "candidate": 2, "control": 6},
+    {"scorer": 5, "candidate": 2, "control": 8}
+  ],
+  "candidate_median": 2.0,
+  "candidate_mean": 2.0,
+  "control_median": 8.0,
+  "control_mean": 7.4,
+  "delta_candidate_minus_control": -6.0,
+  "ranking": "control > candidate, unanimous 5/5",
+  "in_band": false,
+  "residual_defects": [
+    "UNANIMOUS (5/5): the team-ring ground decals (Actor_*_Ring, cyan party / red foe) read as GAME-ENGINE UI SELECTION RINGS, not rendered contact shadows — the single dominant cohesion tell. These are a gameplay UI overlay carried by the CohesionProbe baseline spawn, NOT part of character-in-scene art.",
+    "4/5: figures do not pick up the plate's warm torchlight grade — they read cool/flat. Root cause: the RungA' PainterlyActor relight scales warmth by fire-proximity (near01), and the 6 combat-formation cells sit FAR from the plate's warm hearth center, so the party cluster in particular renders as dark/cool silhouettes.",
+    "3/5: at the LOCKED combat camera the 6 units are small in-frame (combat distance), amplifying the 'token' read vs a 2-actor closeup."
+  ],
+  "interpretation": "FAITHFUL application of the shipped stack to 6 real meshes. Verdict FAIL (candidate 2.0, far below the [6.8,9.2] band). The dominant driver is the team-ring UI decal (see the rings-off diagnostic panel m15_rerun_cohesion_panel_noring.json which isolates the stack's contribution with the UI overlay removed), compounded by combat-distance placement leaving actors small + cool. This is NOT an architecture-scale failure (the deterministic 6-unit grounding pre-gate passed in #1503, same cells/heights) — it is a UI-overlay + relight-tuning gap for the multi-unit combat framing."
+}

@@ -95,6 +95,49 @@ opening turn seats a living canon PC + companion and opens a scene) so the launc
 through the *real* launcher start-flow — which is exactly the flow that exercises #305 (a dead
 character must not be offered/seated as a PC; if it is, the newbie reports it).
 
+## The T3 native-window variant (issue #1436 U2 / #1322)
+
+The T3 gate exits on the RENDERED surface, not the browser: a blind AI playtester completes a quest
+loop in the standalone Unity **WorldOSPlayer.app** window. `qa/ui_playtest_player.sh` is the browser
+harness's native twin — it exposes the **same 9-tool contract** to the player agent but backs it with
+macOS primitives instead of Playwright, and scores with the **same** `qa/ui_playtest_score.py`.
+
+```sh
+qa/ui_playtest_player.sh --preflight            # check app + deps + swift helper + PERMISSIONS, no run
+qa/ui_playtest_player.sh <runid> <beats> <budget> [--force]   # seed → viewer → player app → DM loop → play → score
+```
+
+- Boot recipe: the **scene-paired seed** (default `qa/seed_gfx_camp.py`, see the pairing table just
+  below) mints `camp_gfxdemo01` → `viewer/server.py` serves `/combat-surface` (move sink + chat
+  wired) → `WorldOSPlayer.app` is launched with the env launch-contract `WORLDOS_ENGINE_BASE_URL` /
+  `WORLDOS_CAMPAIGN_ID` → the **unchanged** `run_duo` DM loop resolves the player's moves → the
+  native palette drives the window → teardown → score.
+
+**SCENE ↔ FIXTURE pairing (#1441 Phase 2 — read this before changing the seed or the baked scene):**
+the Unity player build bakes exactly one scene's painted props into its plate, and the seed script's
+`scene_grid` impassable set must match that same scene or the painted props render walkable — this is
+precisely how the felt bug shipped: the player build baked the `camp_clearing_night` plate (fire pit,
+log seat, bedrolls, supply crates, boulders, tree line) while the harness kept seeding the older
+crypt-shaped grid (pillars + a sarcophagus) under the same `camp_gfxdemo01` campaign id, so none of the
+camp's painted scenery was pathing-solid and actors could stand *in* the campfire or *on* the log seat
+(the owner's "stacking on everything" report). `qa/ui_playtest_player.sh` now resolves the seed script
+from a `WORLDOS_PLAYER_SCENE` env var (`camp` default, or `crypt`) via a fixed pairing table —
+`camp` → `qa/seed_gfx_camp.py`, `crypt` → `qa/seed_gfx_combat.py` — and refuses to run with an explicit
+`WORLDOS_PLAYER_SEED_SCRIPT` override that doesn't match the requested scene unless you pass `--force`;
+when the player app's baked scene changes again, update the pairing table (or set
+`WORLDOS_PLAYER_SCENE=crypt`) rather than swapping the seed's grid contents in place.
+- Palette backing (`qa/native_palette/native_palette_server.js`): `screenshot` = `screencapture -l
+  <windowid>` (window found via `CGWindowList`); `click(x,y)` = a `CGEvent` click at window-relative
+  pixels mapped to global points (via `qa/native_palette/native_input.swift`, or `cliclick` if
+  installed); `type`/`key` = synthetic keystrokes; `a11y_tree` = a **pixels-only stub** (the T3
+  persona plays from screenshots); `wait`/`report_bug`/`give_up`/`finish` identical to the browser
+  palette. Persona brief: `qa/native_palette/play_player_native_t3.txt`.
+- **macOS permissions (owner action, FAIL-LOUD):** the palette needs **Screen Recording** (System
+  Settings ▸ Privacy & Security ▸ Screen Recording — for the capture AND for `CGWindowList` to see the
+  window) and **Accessibility** (▸ Accessibility — for synthetic input). A missing grant aborts the
+  run with the exact pane to open; it is never silently skipped. Run `--preflight` to check both.
+- One live GUI harness at a time; the palette never touches Eva; the engine stays the sole writer.
+
 ## The Player palette (the constrained tool surface)
 
 `qa/playwright/palette_server.js` is an **MCP server** that is the Player's *entire* tool surface
@@ -186,6 +229,42 @@ npx playwright install chromium  # ONLY if chromium isn't already cached (it oft
 - `WORLDOS_UIPT_CHANNEL=chrome` — reuse system Chrome instead of bundled Chromium.
 - `WORLDOS_DM_MODEL` / `WORLDOS_UIPT_PLAYER_MODEL` — model per agent (DM default `opus`; player `sonnet`).
 - `WORLDOS_UIPT_DM_BUDGET` — USD per DM turn (default `1.50`).
+
+## Journey eval — factual VQA (qa/journey_eval.py)
+
+The aesthetic panels measure **beauty-vs-bar**, so a T-posing actor, a wrong-plate bundle, a character
+standing inside a painted prop, and a failed door-cross plate swap all reached owner builds *scored
+around*. `journey_eval.py` walks the playable loop and asks **factual YES/NO** questions of every frame
+(YES = defect); any yes fails the journey and names the frame. It drives the SAME box player as
+`qa/player_smoke.sh` (`lib_native_player_boot.sh` boot + the #1466 `WORLDOS_QA_INPUT` cell-click channel).
+
+Three phases (split so the box drive and the LLM VQA run independently):
+
+```sh
+# 1. derive the scripted path from a room manifest (+ an optional plan of parley/door/combat cells).
+#    One step adjacent to EVERY impassable prop; transitions capture both sides.
+python3 qa/journey_eval.py build-script qa/room_manifests/camp_clearing_night_v2.cells.json \
+  --plan qa/journey_plans/camp.json -o /tmp/journey/script.json
+
+# 2+3. ON THE BOX: boot the player, drive the script, capture frames, then VQA + verdict end to end.
+#    (needs Screen Recording + Accessibility grants + WorldOSPlayer.app, same as player_smoke.sh)
+python3 qa/journey_eval.py run qa/room_manifests/camp_clearing_night_v2.cells.json \
+  --plan qa/journey_plans/camp.json --campaign camp_gfxdemo01 --rundir qa/journey_runs/camp-1
+
+# VQA-only over an already-captured frames dir (anywhere claude is authed — no box):
+python3 qa/journey_eval.py vqa qa/journey_runs/camp-1/frames_manifest.json \
+  -o qa/journey_runs/camp-1/journey_verdict.json
+```
+
+- **Questions** are versioned + reviewable in `qa/journey_vqa_questions.md` (the harness reads only the
+  fenced `json` block; `applies_to: all|transition`). Every question is phrased YES = defect.
+- **Scorer**: `qa/vqa_frame.sh` runs one `sonnet` `claude -p` per frame over the image, reusing
+  `score.sh`'s auth-isolation (fresh config dir + keychain token + GLM-neutralised env). Env:
+  `WORLDOS_VQA_MODEL` (default `sonnet`), `WORLDOS_VQA_TIMEOUT` (default `180`),
+  `WORLDOS_VQA_GUARD_ONLY=1` (offline wiring proof, no LLM).
+- **Verdict**: `journey_verdict.json` — `passed:false` with the offending frames + flags if ANY yes.
+- The aggregation is unit-tested with a stub scorer (`qa/test_journey_eval.py`); the box capture + live
+  VQA are exercised on the box.
 
 ## Scope notes
 

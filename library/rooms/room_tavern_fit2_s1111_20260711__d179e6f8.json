@@ -1,0 +1,69 @@
+{
+  "artifact_id": "room:tavern:fit2_s1111:20260711",
+  "class": "room",
+  "curation_note": "TAVERN-FIT2 ADOPTION (M-ALIGN wave-2 close, ruling on #1557): playability-first canonical tavern. Density-law 14-prop coherence-perfect greybox -> flux.1-dev depth-CN base (recall 0.98) -> Gemini-3.1 single-pass s1111. Corrected-anchor (#1560) 5-scorer panel (PR #1561): candidate 7.0 vs registered PoE2 control 8.0 (delta -1.0, control_valid) vs incumbent 7.5/-0.5. The 0.5 gap is inside +/-1.5 scorer variance; the alignment gap is total. Adopted plate = s1111 (the exact asset the corrected panel scored 7.0; sibling s1000 had no corrected score).",
+  "license": "proprietary",
+  "promoted_at": "2026-07-11T07:24:19+00:00",
+  "provenance": {
+    "run_id": null,
+    "sha": null,
+    "source_path": "qa/evidence/tavern-fit2/tavern_fit2_promote_panel.json",
+    "world": "worldos"
+  },
+  "reuse_count": 0,
+  "room_ref": {
+    "asset_ids": [
+      "asset_3gjXLdhfHKnnQQRnbHA25Hcd",
+      "asset_2Bc7ghubvijhMsvVbcnvnZzu"
+    ],
+    "recipe_key": "tavern"
+  },
+  "scores": {
+    "ac_ruler": null,
+    "dims": {
+      "candidate_median": 7.0,
+      "control_median": 8.0,
+      "delta_candidate_minus_control": -1.0,
+      "scores": [
+        {
+          "candidate": 7,
+          "control": 6,
+          "incumbent": 6,
+          "lens": "brushwork",
+          "scorer": 1
+        },
+        {
+          "candidate": 8,
+          "control": 3,
+          "incumbent": 8,
+          "lens": "lighting",
+          "scorer": 2
+        },
+        {
+          "candidate": 7,
+          "control": 8,
+          "incumbent": 8,
+          "lens": "readability",
+          "scorer": 3
+        },
+        {
+          "candidate": 7,
+          "control": 9,
+          "incumbent": 6,
+          "lens": "material",
+          "scorer": 4
+        },
+        {
+          "candidate": 5.5,
+          "control": 9,
+          "incumbent": 7.5,
+          "lens": "holistic",
+          "scorer": 5
+        }
+      ]
+    },
+    "overall": 7.0,
+    "panel_id": "panel-visual-tavern-fit2-corrected-anchor-20260711"
+  },
+  "tier": "canonical-candidate"
+}

@@ -1,0 +1,49 @@
+{
+ "class": "tavern_snug",
+ "control_asset": "asset_DaLsZPNzK7ZZgmH5ARSGicQL",
+ "draws": [
+  {
+   "seed": 12345,
+   "job": "job_ktcQfnkvt8mtdPpFT9zHTp31",
+   "asset": "asset_wUhRJnwWjFPhJjcRVRggbrFm"
+  },
+  {
+   "seed": 12346,
+   "job": "job_d4zSnPWhCxUu1Cc7F9Vm7bhd",
+   "asset": "asset_iFxdYW2N3Wj5geEb52xveAj2"
+  },
+  {
+   "seed": 12347,
+   "job": "job_3G2VEX92bS5NnvhUrmTgivXj",
+   "asset": "asset_fwAzEfpfoEnwZ2robuj3Ns3R"
+  }
+ ],
+ "selection": [
+  {
+   "seed": 12345,
+   "recall": 0.9101,
+   "path": "qa/evidence/paint-room/tavern_snug_c3/tavern_snug_flux_s12345.png"
+  },
+  {
+   "seed": 12346,
+   "recall": 0.9096,
+   "path": "qa/evidence/paint-room/tavern_snug_c3/tavern_snug_flux_s12346.png"
+  },
+  {
+   "seed": 12347,
+   "recall": 0.8327,
+   "path": "qa/evidence/paint-room/tavern_snug_c3/tavern_snug_flux_s12347.png"
+  }
+ ],
+ "base": {
+  "seed": 12345,
+  "asset": "asset_wUhRJnwWjFPhJjcRVRggbrFm",
+  "path": "qa/evidence/paint-room/tavern_snug_c3/tavern_snug_flux_s12345.png"
+ },
+ "styled": {
+  "job": "job_YU4Tcv5D4fDENML5rWUrgnG4",
+  "asset": "asset_tJYk7RPcYrbzTuZ79cCzLWXg",
+  "path": "qa/evidence/paint-room/tavern_snug_c3/tavern_snug_final_1344.png",
+  "recall_vs_depth": 0.8415
+ }
+}

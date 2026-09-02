@@ -1,0 +1,6 @@
+{
+  "scores": {"image_1": [2, 2, 2, 2, 3]},
+  "medians": {"image_1": 2.0},
+  "control_valid": false,
+  "verdict": "DunGen room1 flux depth-CN plate (cs0.70): median 2.0/10, unanimous house-style 'lesser'. No character defects (no chars). Structure registers but the bare DunGen room is under-dressed/abstract vs the PoE2 bar; single base pass without the Gemini style-pass step 2. Candidate-only panel (no in-band real-art control staged for this ad-hoc room), so uncalibrated."
+}

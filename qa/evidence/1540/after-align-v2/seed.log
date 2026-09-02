@@ -1,0 +1,2 @@
+{"campaign_id": "walkslice_smoke01", "crypt_id": "crypt", "camp_id": "camp_clearing_night", "tavern_id": "tavern", "door_cell": [6, 0], "tavern_door_cell": [13, 4], "hero_id": "char_29066ce38468", "npc_id": "char_6d2a2ae3ba07", "goblin_id": "char_88416111a2b4", "crypt_connections": ["camp_clearing_night", "tavern"]}
+warning: `VIRTUAL_ENV=/Users/lume/.cache/uv/builds-v0/.tmpsIbr6F` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead

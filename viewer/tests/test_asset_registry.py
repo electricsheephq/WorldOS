@@ -44,8 +44,17 @@ class AssetRegistryConformanceTests(unittest.TestCase):
         self.assertEqual(r["asset_id"], "fighter")
         self.assertEqual(r["resolved_via"], "exact")
         self.assertFalse(r["default_used"])
-        self.assertEqual(r["model_ref"], "Assets/painterly/models/hero.fbx")
-        self.assertEqual(r["albedo_ref"], "Assets/painterly/models/hero_albedo.png")
+        # #1418: fighter now points at the real skinned asset (was the stale
+        # clipless Assets/painterly/models/hero.fbx placeholder). anim_ref stays
+        # null -- its own embedded Idle clip is used. #1423: albedo_ref was ALSO
+        # null here, but that was a real gap (not an intentional "own material"
+        # convention) -- fighter.fbx's own imported material has no texture bound
+        # at all, so the Unity renderer's registry-miss fallback was silently
+        # substituting the DEFAULT TEMPLATE's hero_albedo.png (a different mesh's
+        # UVs) onto it. Fixed by extracting the real albedo from fighter's source
+        # Meshy model.glb (extract_glb_albedo.py) and wiring it here.
+        self.assertEqual(r["model_ref"], "Assets/cast/fighter/fighter.fbx")
+        self.assertEqual(r["albedo_ref"], "Assets/cast/fighter/albedo.jpg")
 
     def test_goblin_exact_hit_is_monster_real_ref(self):
         r = self.reg.resolve("goblin", "monster")
@@ -60,7 +69,7 @@ class AssetRegistryConformanceTests(unittest.TestCase):
         self.assertEqual(r["asset_id"], "fighter")
         self.assertEqual(r["resolved_via"], "alias")
         self.assertTrue(r["default_used"])
-        self.assertEqual(r["model_ref"], "Assets/painterly/models/hero.fbx")
+        self.assertEqual(r["model_ref"], "Assets/cast/fighter/fighter.fbx")
 
     # -- miss on a character -> template_human, default:character ---------
     def test_character_miss_falls_to_template_human(self):
@@ -128,6 +137,74 @@ class AssetRegistryConformanceTests(unittest.TestCase):
         self.assertTrue(r["default_used"])
         self.assertIsNotNone(r["model_ref"])
 
+    # -- #1601 anti-T-pose invariants ------------------------------------
+    # A runtime-spawned actor is resolved by its in-game NAME (slugified), so a
+    # rogue like 'Gauge'/'Sable' is neither an asset nor an alias key and falls to
+    # defaults.character. That floor MUST be an animated humanoid, never the
+    # clipless hero.fbx template (isHuman=false, no resolvable idle) that rendered
+    # the reported sideways T-pose. These lints keep the floor animatable so a
+    # T-pose can never re-enter through a registry regression.
+
+    _TPOSE_MODEL = "Assets/painterly/models/hero.fbx"
+
+    def _assert_animatable_character(self, r, ctx):
+        """A resolved character ref that can NEVER be a T-pose: has a model, is not
+        flagged needs_remodel, and can actually play an idle — either a valid
+        humanoid avatar (controller-driven) OR a separate idle moveset (anim_ref,
+        the per-frame idle-graph fallback path)."""
+        self.assertIsNotNone(r.get("model_ref"), "%s: no model_ref" % ctx)
+        self.assertNotEqual(
+            r.get("model_ref"), self._TPOSE_MODEL,
+            "%s: resolves to the clipless T-pose template hero.fbx" % ctx,
+        )
+        self.assertNotEqual(
+            r.get("needs_remodel"), True,
+            "%s: resolves to a needs_remodel asset (T-pose risk)" % ctx,
+        )
+        self.assertTrue(
+            r.get("humanoid") is True or bool(r.get("anim_ref")),
+            "%s: resolved asset has no humanoid avatar and no idle moveset -> T-pose" % ctx,
+        )
+
+    def test_reported_rogues_gauge_and_sable_animate(self):
+        # The two #1601 repros: names that match no asset/alias -> character floor.
+        for name in ("Gauge", "Sable", "gauge", "sable"):
+            r = self.reg.resolve(name.lower(), "character")
+            self.assertEqual(r["asset_id"], "template_human")
+            self._assert_animatable_character(r, "rogue %r" % name)
+
+    def test_arbitrary_character_names_never_tpose(self):
+        for name in ("nobody", "a-strange-name", "rogue", "cleric", "ranger", ""):
+            r = self.reg.resolve(name, "character")
+            self._assert_animatable_character(r, "character %r" % name)
+
+    def test_unknown_kind_floor_is_animatable(self):
+        # __any__ also points at the character floor; it must animate too.
+        self._assert_animatable_character(
+            self.reg.resolve("mystery", "tarot"), "__any__ floor",
+        )
+
+    def test_in_code_floor_is_animatable(self):
+        # Registry missing/corrupt -> _HARDCODED_FLOOR. It must NOT be hero.fbx.
+        reg = AssetRegistry(path="/nonexistent/path/registry.json")
+        self._assert_animatable_character(
+            reg.resolve("anything", "character"), "in-code floor",
+        )
+
+    def test_every_default_and_alias_target_resolves(self):
+        import json as _json
+        raw = _json.loads(_REGISTRY_JSON.read_text(encoding="utf-8"))
+        assets = raw.get("assets", {})
+        for kind, target in raw.get("defaults", {}).items():
+            self.assertIn(target, assets, "defaults[%r] -> missing asset %r" % (kind, target))
+        for alias, target in raw.get("aliases", {}).items():
+            self.assertIn(target, assets, "alias %r -> missing asset %r" % (alias, target))
+        # Every character/monster asset row names a model (sound rows legitimately
+        # carry only anim_ref) -> the renderer always has something to instantiate.
+        for aid, row in assets.items():
+            if row.get("kind") in ("character", "monster"):
+                self.assertIsNotNone(row.get("model_ref"), "asset %r has no model_ref" % aid)
+
     # -- module-level convenience uses the same rule ---------------------
     def test_module_level_resolve(self):
         os.environ["WORLDOS_ASSET_REGISTRY"] = str(_REGISTRY_JSON)
@@ -143,3 +220,18 @@ class AssetRegistryConformanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_no_cs_twin_floors_to_the_clipless_hero_model():
+    """#1601 / evaOS #1616-P3: the Unity twins (CombatSurfaceClient.ResolveAsset,
+    paint_combat_v1.resolveAsset, AssetRegistry.HardcodedFloor) have no C# test rig, so pin the
+    anti-T-pose invariant at the source level: with comments stripped, NO .cs twin may reference
+    hero.fbx in code — after #1601 the only legitimate mentions are comments. A reappearing code
+    literal means a floor regressed to the clipless non-humanoid model."""
+    import re
+    root = Path(__file__).resolve().parents[2] / "extensions" / "renderers" / "unity" / "scripts"
+    for name in ("CombatSurfaceClient.cs", "paint_combat_v1.cs", "AssetRegistry.cs"):
+        src = (root / name).read_text(encoding="utf-8")
+        src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+        code = "\n".join(line.split("//", 1)[0] for line in src.splitlines())
+        assert "hero.fbx" not in code, f"{name}: hero.fbx re-appeared in CODE (floor regression)"

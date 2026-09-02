@@ -294,5 +294,118 @@ def test_build_report_end_to_end_ignored(tmp_path):
     assert report["dm_engagement_tools_called"] == {}
 
 
+# ── #1405 authoring/capture cues: verdict movement signals + the two new fixtures ───────────────
+
+def test_quest_authoring_progressed_detects_gained_objectives():
+    before = {"quests": {"q1": {"id": "q1", "objectives": [], "giver_id": None, "location_id": None}}}
+    after = {"quests": {"q1": {"id": "q1", "objectives": ["ask around"], "giver_id": None, "location_id": None}}}
+    assert probe_verdict.quest_authoring_progressed(before, after) is True
+
+
+def test_quest_authoring_progressed_detects_new_authored_quest():
+    before = {"quests": {"q1": {"id": "q1", "objectives": [], "giver_id": None, "location_id": None}}}
+    # The realistic path: no update-fields tool, so the DM re-calls add_quest WITH a spine.
+    after = {"quests": {
+        "q1": {"id": "q1", "objectives": [], "giver_id": None, "location_id": None},
+        "q2": {"id": "q2", "objectives": ["meet the contact"], "giver_id": "npc_1", "location_id": "loc_1"},
+    }}
+    assert probe_verdict.quest_authoring_progressed(before, after) is True
+
+
+def test_quest_authoring_progressed_false_when_still_bare():
+    same = {"quests": {"q1": {"id": "q1", "objectives": [], "giver_id": None, "location_id": None}}}
+    assert probe_verdict.quest_authoring_progressed(same, json.loads(json.dumps(same))) is False
+
+
+def test_quest_echo_captured_detects_new_consequence():
+    before = {"quests": {"q1": {"id": "q1", "evolves_to": ""}}, "consequences": []}
+    after = {"quests": {"q1": {"id": "q1", "evolves_to": ""}}, "consequences": [{"id": "c1", "text": "fallout"}]}
+    assert probe_verdict.quest_echo_captured(before, after) is True
+
+
+def test_quest_echo_captured_detects_evolves_to_set():
+    before = {"quests": {"q1": {"id": "q1", "evolves_to": ""}}, "consequences": []}
+    after = {"quests": {"q1": {"id": "q1", "evolves_to": "the patron seeks revenge"}}, "consequences": []}
+    assert probe_verdict.quest_echo_captured(before, after) is True
+
+
+def test_quest_echo_captured_false_when_nothing_recorded():
+    same = {"quests": {"q1": {"id": "q1", "evolves_to": ""}}, "consequences": []}
+    assert probe_verdict.quest_echo_captured(same, json.loads(json.dumps(same))) is False
+
+
+def test_state_progressed_routes_by_cue():
+    # authoring cue reads the authoring signal, not quest_moved (status/objective flip).
+    b_auth = {"quests": {"q1": {"id": "q1", "objectives": [], "giver_id": None, "location_id": None}}}
+    a_auth = {"quests": {"q1": {"id": "q1", "objectives": ["x"], "giver_id": None, "location_id": None}}}
+    assert probe_verdict.state_progressed("quest_authoring_incomplete", b_auth, a_auth) is True
+    # capture cue reads the echo signal.
+    b_echo = {"quests": {"q1": {"id": "q1", "evolves_to": ""}}, "consequences": []}
+    a_echo = {"quests": {"q1": {"id": "q1", "evolves_to": "echo"}}, "consequences": []}
+    assert probe_verdict.state_progressed("quest_no_echo", b_echo, a_echo) is True
+
+
+def test_build_report_authoring_acted(tmp_path):
+    """A full synthetic ACTED case for the authoring cue: it held, the DM re-authored via add_quest,
+    a spine-bearing quest now exists."""
+    _write_transcript(tmp_path / "t.jsonl", [
+        ("mcp__worldos-engine__add_quest", {"title": "A Word from the Docks", "objectives": ["meet the contact"]}),
+    ])
+    before = {"quests": {"q1": {"id": "q1", "objectives": [], "giver_id": None, "location_id": None}}}
+    after = {"quests": {
+        "q1": {"id": "q1", "objectives": [], "giver_id": None, "location_id": None},
+        "q2": {"id": "q2", "objectives": ["meet the contact"], "giver_id": "npc_1", "location_id": "loc_1"},
+    }}
+    report = probe_verdict.build_report("quest_authoring_incomplete", [True], tmp_path / "t.jsonl", before, after)
+    assert report["verdict"] == "ACTED"
+    assert report["dm_engagement_tools_called"] == {"add_quest": 1}
+
+
+def test_build_report_capture_ignored_when_only_narrated(tmp_path):
+    """The IGNORED case for the capture cue: quest_no_echo fired, the DM only narrated the fallout,
+    no consequence / evolves_to was recorded."""
+    _write_transcript(tmp_path / "t.jsonl", [("scene_context", {})],
+                       texts=["The bell hangs silent; the town will remember this."])
+    before = {"quests": {"q1": {"id": "q1", "evolves_to": ""}}, "consequences": []}
+    after = json.loads(json.dumps(before))
+    report = probe_verdict.build_report("quest_no_echo", [True, True], tmp_path / "t.jsonl", before, after)
+    assert report["verdict"] == "IGNORED"
+
+
+# ── The two #1405 fixtures: precheck + structural determinism (runnable as-is) ───────────────────
+
+def _load_named_fixture(name: str):
+    path = _QA_DIR / "probe_fixtures" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.parametrize("name,expected_cue", [
+    ("quest_created_bare", "quest_authoring_incomplete"),
+    ("quest_resolved_no_consequence", "quest_no_echo"),
+])
+def test_new_fixture_precheck_yields_expected_next_action(tmp_path, name, expected_cue):
+    os.environ["WORLDOS_STATE_DIR"] = str(tmp_path / name)
+    manifest = _load_named_fixture(name).build_and_precheck()
+    assert manifest["cue"] == expected_cue
+    assert manifest["next_action"] == expected_cue
+    # Solo-PC fixtures: the seeded cue is the SINGLE top obligation (no competing companion/party cue).
+    assert manifest["obligation_kinds"][0] == expected_cue
+    assert manifest["quest_id"]
+
+
+@pytest.mark.parametrize("name", ["quest_created_bare", "quest_resolved_no_consequence"])
+def test_new_fixture_determinism_same_structure_across_builds(tmp_path, name):
+    os.environ["WORLDOS_STATE_DIR"] = str(tmp_path / "a")
+    m1 = _load_named_fixture(name).build_and_precheck()
+    snap1 = _snapshot(m1, tmp_path / "a")
+    os.environ["WORLDOS_STATE_DIR"] = str(tmp_path / "b")
+    m2 = _load_named_fixture(name).build_and_precheck()
+    snap2 = _snapshot(m2, tmp_path / "b")
+    assert _normalize(snap1) == _normalize(snap2), f"{name} is not structurally deterministic"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:xdist"]))

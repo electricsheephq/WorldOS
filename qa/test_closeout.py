@@ -76,7 +76,7 @@ def _seed(db):
 def test_block_has_core_lines(tmp_path):
     db = tmp_path / "t.db"
     _seed(db)
-    block = closeout.build_closeout("duo-current", db_path=db)
+    block = closeout.build_closeout("duo-current", db_path=db, nominate=False)
     assert "RUN: duo-current | 2026-06-17 | engine-duo" in block
     assert "MODEL: DM=opus · actor=sonnet · scorer=claude" in block
     # opus DM -> NO non-opus flag
@@ -90,7 +90,7 @@ def test_block_has_core_lines(tmp_path):
 def test_delta_vs_correct_prior(tmp_path):
     db = tmp_path / "t.db"
     _seed(db)
-    block = closeout.build_closeout("duo-current", db_path=db)
+    block = closeout.build_closeout("duo-current", db_path=db, nominate=False)
     # Δ must be computed vs duo-base (the prior comparable), NOT duo-diff-ruler.
     assert "duo-base" in block
     assert "duo-diff-ruler" not in block
@@ -108,14 +108,14 @@ def test_ruler_fence_excludes_different_ruler(tmp_path):
     # the different-ruler run itself has no comparable prior in the seed (only run under its ruler).
     diff = closeout.find_run(rows, "duo-diff-ruler")
     assert closeout.last_comparable(rows, diff) is None
-    diff_block = closeout.build_closeout("duo-diff-ruler", db_path=db)
+    diff_block = closeout.build_closeout("duo-diff-ruler", db_path=db, nominate=False)
     assert "no comparable prior run" in diff_block
 
 
 def test_nonopus_dm_flagged(tmp_path):
     db = tmp_path / "t.db"
     _seed(db)
-    block = closeout.build_closeout("gui-sonnet", db_path=db)
+    block = closeout.build_closeout("gui-sonnet", db_path=db, nominate=False)
     assert "⚠ NON-OPUS DM" in block
     assert "DM=sonnet" in block
 
@@ -134,7 +134,7 @@ def test_missing_run_raises_and_cli_errors(tmp_path):
     db = tmp_path / "t.db"
     _seed(db)
     with pytest.raises(KeyError):
-        closeout.build_closeout("nope", db_path=db)
+        closeout.build_closeout("nope", db_path=db, nominate=False)
     # CLI returns non-zero and does not crash.
     rc = closeout.main(["--db", str(db), "nope"])
     assert rc == 1
@@ -157,7 +157,7 @@ def test_verdict_pass_when_both_bars_met(tmp_path):
         story_overall=4.5, mech_overall=4.6, methodology="duo 12-beat",
         scoring_config_version=RULER_A[0], lens_config_version=RULER_A[1], **{"pass": 1},
     )
-    block = closeout.build_closeout("duo-clean", db_path=db)
+    block = closeout.build_closeout("duo-clean", db_path=db, nominate=False)
     assert "VERDICT: pass vs bar" in block
 
 
@@ -168,7 +168,7 @@ def test_verdict_inconclusive_when_unmeasured(tmp_path):
         story_overall=4.5, methodology="duo 6-beat",
         scoring_config_version=RULER_A[0], lens_config_version=RULER_A[1],
     )
-    block = closeout.build_closeout("duo-nomech", db_path=db)
+    block = closeout.build_closeout("duo-nomech", db_path=db, nominate=False)
     assert "VERDICT: inconclusive" in block
     assert "mech ?" in block  # missing mech renders as ?
 
@@ -176,7 +176,7 @@ def test_verdict_inconclusive_when_unmeasured(tmp_path):
 def test_coverage_line_parses_tokens(tmp_path):
     db = tmp_path / "t.db"
     _seed(db)
-    block = closeout.build_closeout("duo-current", db_path=db)
+    block = closeout.build_closeout("duo-current", db_path=db, nominate=False)
     # explicit-token roll-up: recruit/travel/combat/quest-resolved ✓, betrayal ·, acts 3/3.
     cov = [ln for ln in block.splitlines() if ln.startswith("COVERAGE:")][0]
     assert "recruit ✓" in cov and "quest-resolved ✓" in cov
@@ -191,9 +191,30 @@ def test_committed_db_untouched_by_import(tmp_path):
     before = committed.stat().st_mtime_ns if committed.exists() else None
     db = tmp_path / "t.db"
     _seed(db)
-    closeout.build_closeout("duo-current", db_path=db)
+    closeout.build_closeout("duo-current", db_path=db, nominate=False)
     after = committed.stat().st_mtime_ns if committed.exists() else None
     assert before == after  # mtime unchanged (or both None)
+
+
+def test_this_suite_never_touches_the_real_nominations_queue():
+    """Guard for the whole file, not just one call: this suite is about closeout BLOCK rendering,
+    not the HV5 nomination hook (that hook has its own isolated coverage in test_nominate.py). Every
+    build_closeout(...) call above passes nominate=False for exactly this reason — a call that
+    dropped the flag would default to nominate=True and fire _run_nomination_hook against the LIVE
+    qa/nominations.jsonl / qa/artifacts_out defaults (currently harmless only because a clean
+    checkout has no qa/artifacts_out/, not because it's guarded). Assert the real queue file's
+    mtime is unchanged (or absent) across the whole run as a tripwire against a future call site
+    silently losing nominate=False."""
+    real_queue = QA_DIR / "nominations.jsonl"
+    before = real_queue.stat().st_mtime_ns if real_queue.exists() else None
+    db_path = Path("/tmp/_test_this_suite_never_touches_the_real_nominations_queue.db")
+    _seed(db_path)
+    try:
+        closeout.build_closeout("duo-current", db_path=db_path, nominate=False)
+    finally:
+        db_path.unlink(missing_ok=True)
+    after = real_queue.stat().st_mtime_ns if real_queue.exists() else None
+    assert before == after  # the real queue must be untouched by this suite
 
 
 if __name__ == "__main__":

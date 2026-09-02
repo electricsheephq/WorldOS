@@ -32,6 +32,12 @@ import generate_room  # noqa: E402
 # Byte-identical to the pre-2026-07-03 hardcoded literals in room_recipes.json
 # (layered_pipeline_2026_07_02.pass2_detail_populate.prompt / pass3_staging_last.prompt,
 # as they existed before this fix — copied verbatim for the regression assertion).
+#
+# 2026-07-11 update: refreshed to the CURRENT adopted crypt prompts. The crypt recipe
+# gained the "Do NOT add any characters, people, figures, animals, or creatures..."
+# empty-background-plate trailer (adopted via panel review, camp/crypt recipe evolution
+# in extensions/renderers/shared/room_recipes.json) — this is an intentional recipe
+# change, not a regression, so the golden constants are updated to match (issue #1475).
 LEGACY_CRYPT_PASS2_PROMPT = (
     "Edit this painterly isometric dungeon plate. PRESERVE the exact composition, camera, "
     "room layout, and the dark dramatic lighting with its warm fire pools and deep shadows "
@@ -43,7 +49,9 @@ LEGACY_CRYPT_PASS2_PROMPT = (
     "scattered coins, moss) keeping the open floor areas clear; deepen the black voids at the "
     "openings. Keep the hand-painted oil-paint brushwork feel throughout. Do NOT add any text, "
     "letters, numbers, runic writing that reads as text, labels, legends, map insets, UI "
-    "elements, frames, or borders — the plate must contain ONLY the diegetic painted scene."
+    "elements, frames, or borders — the plate must contain ONLY the diegetic painted scene. "
+    "Do NOT add any characters, people, figures, animals, or creatures of any kind — this is "
+    "an EMPTY background plate; actors are composited in separately by the engine."
 )
 
 LEGACY_CRYPT_PASS3_PROMPT = (
@@ -58,7 +66,9 @@ LEGACY_CRYPT_PASS3_PROMPT = (
     "on shadow-side stone. The scene must read as small pools of firelight in a vast dark "
     "crypt, keeping the hand-painted oil feel. Do NOT add any text, letters, numbers, runic "
     "writing that reads as text, labels, legends, map insets, UI elements, frames, or borders "
-    "— the plate must contain ONLY the diegetic painted scene."
+    "— the plate must contain ONLY the diegetic painted scene. Do NOT add any characters, "
+    "people, figures, animals, or creatures of any kind — this is an EMPTY background plate; "
+    "actors are composited in separately by the engine."
 )
 
 # Nouns that must NOT leak into a tavern's rendered pass2/pass3 prompts (crypt-specific, not

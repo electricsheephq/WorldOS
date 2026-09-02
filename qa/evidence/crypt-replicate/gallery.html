@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CRYPT-REPLICATE iter3 — gallery</title>
+<style>
+ body{background:#14121a;color:#e8e4ee;font:14px/1.5 system-ui,sans-serif;margin:0;padding:28px;max-width:1200px}
+ h1{font-size:22px} h2{margin-top:34px;border-bottom:1px solid #3a3446;padding-bottom:6px}
+ .row{display:flex;flex-wrap:wrap;gap:18px;margin:14px 0}
+ figure{margin:0;max-width:560px} img{width:100%;border-radius:8px;border:1px solid #2c2838}
+ figcaption{font-size:12px;color:#b3aac6;margin-top:6px}
+ .tag{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:600}
+ .best{background:#1f7a4d;color:#fff}.rej{background:#7a2a2a;color:#fff}.ref{background:#3a3446;color:#cbb}
+ table{border-collapse:collapse;margin:12px 0}td,th{border:1px solid #3a3446;padding:5px 12px;text-align:center}
+ code{background:#221e2c;padding:1px 5px;border-radius:4px}
+</style>
+<h1>CRYPT-REPLICATE — iter3 (true-greybox honest style replication)</h1>
+<p>Goal: replicate the validated true-greybox method on the crypt and try to <b>honestly</b> beat the 8.0 incumbent
+(<code>crypt_armb_iter3</code>) — matching its ornamentation without importing its content-drift (staircase / archway /
+2nd tomb / 2× tomb scale). Base + geometry from PR #1514. API-side only, no box, no training.</p>
+
+<table>
+ <tr><th>recipe</th><th>candidate</th><th>panel median</th><th>incumbent</th><th>control</th><th>Δ vs control</th><th>honesty bar (≥7.3)</th><th>adopt</th></tr>
+ <tr><td>(a) Gemini two-stage</td><td>iter3_a2</td><td><b>7.1</b></td><td>7.8</td><td>8.8</td><td>−1.7 ✓(≥−2.5)</td><td>7.1 &lt; 7.3 ✗</td><td class="rej">NO</td></tr>
+ <tr><td>(b) FLUX enrichment</td><td>iter3_flux_s40</td><td>6.6</td><td>7.8</td><td>7.5</td><td>−0.9 ✓</td><td>6.6 &lt; 7.3 ✗</td><td class="rej">NO</td></tr>
+</table>
+<p><b>Outcome (recipe c):</b> both stalled below 7.5. Best candidate <b>iter3_a2 @ 7.1</b> — a large honest gain over iter2
+(6.0, Δ−3.0) that now CLEARS the automated adoption floor, but MISSES the honesty bar by 0.2 and trails the incumbent by
+0.7. <b>Not adopted.</b> The incumbent's edge is bought with content-drift richness an honest greybox composition cannot include.</p>
+
+<h2>Best candidate — iter3_a2 <span class="tag best">BEST · 7.1 · not adopted</span></h2>
+<div class="row">
+ <figure><img src="web/best_iter3_a2.jpg"><figcaption>iter3_a2 — Gemini two-stage enrichment over the structure-locked iter2-f base. Dense carved knotwork pillars + runed/figural sarcophagus + chiaroscuro firelight, holding the exact 3-prop composition.</figcaption></figure>
+ <figure><img src="web/best_iter3_a2_overlay.jpg"><figcaption>Overlay vs #1514 greybox (magenta = authored edges). 3-prop composition holds; no staircase/archway/2nd-tomb/opening added. recall 0.832 (content-blind corroboration).</figcaption></figure>
+</div>
+
+<h2>Recipe (b) — FLUX enrichment <span class="tag rej">6.6 · scored lower</span></h2>
+<div class="row">
+ <figure><img src="web/recipeB_flux_s40.jpg"><figcaption>iter3_flux_s40 — FLUX + ARM-C interior LoRA. Visibly denser but the blind panel read it as "repetitive skeleton piles / flatter tiling". Busier ≠ better.</figcaption></figure>
+</div>
+
+<h2>References</h2>
+<div class="row">
+ <figure><img src="web/incumbent_8p0.jpg"><figcaption><span class="tag ref">INCUMBENT 8.0 (panels 7.8)</span> crypt_armb_iter3 — the ornamentation bar. Rich BUT embeds content-drift: staircase, back archway, 2nd tomb, full-height columns, 2× tomb scale.</figcaption></figure>
+ <figure><img src="web/iter2f_6p0_prior.jpg"><figcaption><span class="tag ref">iter2-f — prior 6.0</span> composition-faithful but flat; the Stage-1 base iter3 enriched.</figcaption></figure>
+ <figure><img src="web/base_registered_1514.jpg"><figcaption><span class="tag ref">BASE (registered, #1514)</span> the true greybox — registration truth lives here; the style pass is cosmetic.</figcaption></figure>
+</div>

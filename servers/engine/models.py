@@ -1048,6 +1048,29 @@ class Character(_StrictModel):
     # bestiary.creature_slug. "" == not a bestiary spawn (today's behavior); old snapshots
     # round-trip unchanged.
     creature_slug: str = ""
+    # W2 (#1319): where this character STANDS in the current location's rest-mode scene grid
+    # (an (x, y) = (col, row) cell), written by the `walk_to` verb outside combat. It is the
+    # authoritative, sole-writer occupancy source `rest_blocked_cells` reads so a rest walk
+    # routes around where people actually stand. None == today's behavior EXACTLY: no character
+    # has ever carried a stage cell, so an old snapshot round-trips (see the wrap serializer
+    # below, which OMITS the key when None — the same byte-identity discipline Location uses for
+    # `scene_grid`). Distinct from Combatant.x/y (that is COMBAT placement); this is rest mode.
+    stage_cell: Optional[tuple[int, int]] = None
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_none_stage_cell(self, handler):
+        """OMIT ``stage_cell`` from the dump when it is None so a character who has never
+        walked in rest mode serializes BYTE-IDENTICALLY to a pre-W2 snapshot (which never
+        carried the key). Narrowly scoped to ONE key (NOT a blanket ``exclude_none``) for the
+        SAME reason Location._ser_omit_none_scene_grid is: the store's dirty-skip byte-compares
+        the candidate dump to disk, so emitting ``"stage_cell": null`` for every un-walked
+        character (a key old snapshots lack) would defeat the no-op-save guard and silently
+        rewrite files on a pure load->save. A character WITH a stage_cell serializes it
+        normally; all other keys/order/Optional=None fields are preserved exactly."""
+        data = handler(self)
+        if self.stage_cell is None:
+            data.pop("stage_cell", None)
+        return data
 
     @model_validator(mode="after")
     def _clamp_vitals(self) -> "Character":
@@ -1511,6 +1534,36 @@ class Combat(_StrictModel):
     # costly); impassable cells are routed around entirely.
     grid_difficult: list[list[int]] = Field(default_factory=list)
     last_move_path: list[list[int]] = Field(default_factory=list)
+    # #1582: the most-recent REST-mode walk route (walk_to's envelope path, incl. the from-cell) —
+    # mirrors last_move_path's shape so the walkability gate can path-audit rest walks the same way
+    # it audits combat moves. Presentation/QA only; empty == no rest walk yet (old snapshots round-trip).
+    last_walk_path: list[list[int]] = Field(default_factory=list)
+    # #1645: consecutive next_turn advances observed with NO living hostile left in the order —
+    # the inverse of end_combat's live-hostile guard. Drives the DM-visible `pending_resolution`
+    # nudge in _combat_view (surfaced immediately once no hostile is up; escalated to URGENT once
+    # this streak crosses _COMBAT_RESOLUTION_NUDGE_TURNS). The engine NEVER auto-ends combat
+    # (questgen.py:7 invariant — the DM owns the end_combat predicate); this only makes an
+    # un-closed fight progressively LOUDER. ADDITIVE: default 0 == today; reset to 0 the moment a
+    # living hostile is seen, cleared wholesale when end_combat replaces c.combat with a fresh
+    # Combat(). Omitted from the dump when 0 (the serializer below) so a pre-#1645 snapshot
+    # round-trips BYTE-IDENTICALLY and the store's dirty-skip never bumps updated_at on a pure
+    # load->save.
+    no_hostile_turns: int = 0
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_default_no_hostile_turns(self, handler):
+        """OMIT ``no_hostile_turns`` from the dump when it is 0 so a combat carrying no pending-
+        resolution streak (the overwhelming majority — every out-of-combat campaign holds a fresh
+        Combat()) serializes BYTE-IDENTICALLY to a pre-#1645 snapshot that never carried the key.
+        Without this the store's F08-2 dirty-skip (store.py:145 byte-compares the dump to disk)
+        would see a new key on EVERY load->save and bump updated_at / steal the #640 live pointer
+        — the same narrowly-scoped guard as Consequence._ser_omit_empty_quest_id, for the same
+        reason. A fight actively carrying the streak (>0) is mid-mutation anyway, so emitting the
+        key then is free; all other keys/order are unchanged."""
+        data = handler(self)
+        if not self.no_hostile_turns:
+            data.pop("no_hostile_turns", None)
+        return data
 
     @property
     def current_combatant_id(self) -> Optional[str]:
@@ -1538,6 +1591,27 @@ class Consequence(_StrictModel):
     note: str = ""  # why / source (e.g. "the player let the cultist escape")
     fired: bool = False
     thread_id: str = ""  # non-empty => a recurring background "world beat" from a standing thread (world-sim); reschedules itself on tick
+    # #1405: the Quest this consequence is the recorded branch-outcome OF (add_consequence(quest_id=…)
+    # / a scheduled quest evolution). ADDITIVE + default "" == today. The authoring/capture cue's
+    # _quest_consequence_recorded checks this STRUCTURED link FIRST so a DM who captures a
+    # consequence in natural in-world prose (no literal quest title in the text) is correctly seen as
+    # captured — the lowercase-substring match on text/note is only a legacy/unlinked fallback.
+    quest_id: str = ""
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_empty_quest_id(self, handler):
+        """OMIT ``quest_id`` from the dump when it is "" so a consequence with no quest link
+        serializes BYTE-IDENTICALLY to a pre-#1405 snapshot (which never carried the key). Same
+        narrowly-scoped guard as Location._ser_omit_none_scene_grid, and for the same reason: the
+        store's F08-2 dirty-skip byte-compares the candidate dump to disk so a pure load->save with
+        no mutation is a no-op that must NOT bump updated_at / steal the #640 live pointer. An
+        unconditional dump would emit ``"quest_id": ""`` for EVERY (incl. unlinked) consequence — a
+        key an un-migrated snapshot lacks — defeating the dirty-skip on any cross-campaign inspect.
+        A quest-LINKED consequence serializes ``quest_id`` normally; all other keys/order unchanged."""
+        data = handler(self)
+        if not self.quest_id:
+            data.pop("quest_id", None)
+        return data
 
 
 class ApprovalEvent(_StrictModel):
@@ -2049,6 +2123,13 @@ class QuestHook(_StrictModel):
     spine: bool = False                   # a main-arc hook (vs a rib / side thread)
     status: Literal["open", "active", "resolved"] = "open"  # DM-set off its own narration
     note: str = ""                        # the DM-facing seed detail (the prose seed)
+    # HV4 (#1326) — reuse provenance. "" == a fresh-generated (native quest_variants) hook, today's
+    # behavior byte-for-byte; "library" == assembled from a promoted library/ pack entry. `tier`
+    # carries the promoted entry's tier (canonical|stable|fresh-gen) so the engagement scorer can
+    # tell an ENGAGED library hook from a decorative one. Additive: both default empty, and an old
+    # snapshot lacking the keys round-trips to these defaults.
+    source: str = ""                      # ""|"library" — provenance of this seed
+    tier: str = ""                        # the promoted tier when source=="library" (else "")
 
 
 class PreludeBeat(_StrictModel):

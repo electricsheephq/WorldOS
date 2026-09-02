@@ -1,0 +1,31 @@
+{
+  "room": "tavern",
+  "verdicts": {
+    "walk": "GREEN"
+  },
+  "manifest_entry": {
+    "plate": "plates/tavern_kit_v2_registered.png",
+    "cameraPin": {
+      "ortho": 10.5224,
+      "pitch": 30,
+      "yaw": 45
+    },
+    "boxes": "boxes/tavern_kit_v1_boxes.json",
+    "_provenance": "KIT-TAVERN v1 (2026-07-23, #83 replication proof): SAME certified chain as KIT-CRYPT v1 \u2014 geometry tavern_v2 -> kit scene (seg gate 100.00% FIRST TRY, 0/154) -> kit 3D depth -> flux base seed 12345 (recall 0.9737+, asset_G5UBNVwMchoG84wPSFiBEsAZ) -> Gemini 3.0 Pro edit c2 w/ FURNITURE-IDENTITY grounding (job_UTwT9WJkbvZpuveXDoMso8Eh) -> phase-corr ALIGNED dx=0 -> seg-mask void composite. Blind panel 7 vs control 8 (delta -1.0 in-band; c1 without furniture grounding was 6/-2.0 \u2014 the grounding clause is load-bearing). Collision truth UNCHANGED: tavern_v2 geometry + walkmask are byte-identical; the OCCLUDER SIDECAR IS swapped to kit-derived bounds (ExportBoxes; parapets 0.55u, true table footprints -- see SIDECAR note below). The sidecar feeds VISUAL occluder proxies only (CombatSurfaceClient.RebuildOccluders destroys each proxy's Collider); engine walkability/collision reads the server scene_grid walkmask, never boxes. SIDECAR 2026-07-23: kit-derived boxes (ExportBoxes per-mass true bounds; cutaway parapets 0.55u, tables 1.4u true footprints) replacing the authored tavern_v2 chunky volumes \u2014 felt-truth fix for the owner-caught silhouette-everywhere class. V2 2026-07-23: per-object gate (qa/object_align_check.py) caught the c2 edit DELETING table#51 at (10,-4) (0.69 cells; global phase-corr blind to it) -- surgical fix: gemini-pro reference-conditioned re-add (job_ia3dLBuaA4pLup5ynEzb7zB6, seed 12345) -> feathered diff-mask composite (7.3% of frame, rest byte-certified v1) -> global identity dx=0 + PER-OBJECT-ALIGNED 12/12 (table#51 0.13 cells)."
+  },
+  "artifacts": {
+    "plate_sha256": "e48dd8cbf7b3ef5e397ac005446d30a323a552f87187d39f73e2500101d3653c",
+    "boxes_sha256": "29f57a0af86a888907ec583237bcf97adb273717980c69f41f5c9715f8020b12",
+    "geometry_sha256": "9f532086996d215845db99025b0ed1cfca0b4e3e1746e6d05a25dcd54b987d1b"
+  },
+  "walk_report": "qa/evidence/walk-tavern-kit-20260902/tavern/walk_report.json",
+  "provenance": {
+    "certified_on": "2026-09-02",
+    "player_build_sha256_prefix": "07a997e9",
+    "unity_repo_head": "b016a7db",
+    "worldos_main": "0c9e305c",
+    "sandbox": "qa_sandbox windowed (registered_world_v1, 8866/8972)",
+    "walk_test": "exhaustive --visual 4",
+    "packaged_pins": "GREEN (qa/packaged_pins.py)"
+  }
+}

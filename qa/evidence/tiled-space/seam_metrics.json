@@ -1,0 +1,26 @@
+{
+  "armA": {
+    "seam_x": 1024,
+    "band": 24,
+    "grad_ratio": 1.297,
+    "coldiff_seam": 1.612,
+    "coldiff_ref": 1.259,
+    "seam_excess": 1.28
+  },
+  "armB": {
+    "seam_x": 944,
+    "band": 24,
+    "grad_ratio": 0.417,
+    "coldiff_seam": 1.184,
+    "coldiff_ref": 2.302,
+    "seam_excess": 0.514
+  },
+  "armB_naive": {
+    "seam_x": 1024,
+    "band": 24,
+    "grad_ratio": 0.453,
+    "coldiff_seam": 5.714,
+    "coldiff_ref": 2.147,
+    "seam_excess": 2.661
+  }
+}

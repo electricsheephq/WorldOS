@@ -1,0 +1,23 @@
+{
+  "room": "tavern_snug",
+  "verdicts": {
+    "walk": "GREEN",
+    "beauty_panel": "GREEN"
+  },
+  "manifest_entry": {
+    "plate": "plates/tavern_snug_v1_registered.png",
+    "cameraPin": {
+      "ortho": 9.2597,
+      "pitch": 30,
+      "yaw": 45
+    },
+    "boxes": "boxes/tavern_snug_v1_boxes.json",
+    "_provenance": "ROOM-READINESS VARIANT PROOF (2026-07-16, epic #1581/#1588): tavern_snug 12x10 \u2014 the SAME class vocabulary in a different plan (bar back-centre, EAST-wall hearth). Cycle-1 panel 6 vs control 9 delta -3.0 OUT OF BAND (honest negative, did not ship); cycle-2 with scorer levers (blue-violet chiaroscuro, atmospheric falloff, worked walls) + the shared single-storey anti-invention lock \u2014 panel result in qa/evidence/paint-room/tavern_snug_c2/panel.json. Geometry qa/room_geometries/tavern_snug_geometry.json; ortho = _fit_ortho_size(12,10). Static gate caught the draft hearth blocking the east door landing pre-CU."
+  },
+  "artifacts": {
+    "plate_sha256": "cd6235125a56c029987282849b227edd8f754bdd7bc3fac94f71293349c6e792",
+    "boxes_sha256": "2d0120fa2970547d6b21d84d8323d720a500ab09f5d36a130948e85802337f68",
+    "geometry_sha256": "4f6b0b05c8dfd583a1815ca9df341eb2307c9387dcb8df31df267e290d519a68"
+  },
+  "walk_report": "qa/evidence/walk-snug/tavern_snug/walk_report.json"
+}

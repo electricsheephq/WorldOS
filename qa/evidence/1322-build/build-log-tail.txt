@@ -1,0 +1,2 @@
+30666:[BuildMacOSPlayer] Starting build -> /home/unity/worldos-unity/BuildOutput/WorldOSPlayer.app (arch=x64ARM64)
+39218:[BuildMacOSPlayer] DONE result=Succeeded errors=0 warnings=56 size=158429215 time=00:01:09.4102100 report=/home/unity/worldos-unity/BuildOutput/build-report.txt

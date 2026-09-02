@@ -1,0 +1,19 @@
+{
+  "methodology": "3 independent blind sonnet scorers (fast-worker), PoE2 Deadfire bar, painterly 0-10 + seam VQA",
+  "mapping": {
+    "image_1": "baseline single-room camp @1024 (native density)",
+    "image_2": "Arm A camp tile SLICED from the 2048 wide plate (IDENTICAL depth control as image_1)",
+    "image_3": "Arm B naive butt-join (independent tiles, no conditioning)",
+    "image_4": "Arm B edge-continuation (img2img-seed on tile1 overlap strip + feather)"
+  },
+  "scores": {
+    "image_1": [6, 7, 7], "image_2": [2, 2, 3], "image_3": [4, 6, 6], "image_4": [4, 6, 6]
+  },
+  "medians": {"image_1": 7, "image_2": 2, "image_3": 6, "image_4": 6},
+  "seam_visible": {"image_3": [true, true, true], "image_4": [true, true, true]},
+  "consensus": {
+    "armA_quality_cost": "baseline 7 vs wide-context slice 2 = 5-point PoE2-gap collapse from IDENTICAL control; spreading one generation to 2048px halves dynamic range + richness.",
+    "armB_seam": "3/3 scorers see a VISIBLE seam on BOTH naive and edge-continued. The DOMINANT break they name is PROJECTION mismatch (isometric camp vs eye-level/vanishing-point forest) + a palette/value jump. The tonal feather (metric seam_excess 0.51) is NOT enough for humans — the ground plane bends across the join.",
+    "verdict": "Edge-continuation heals TONE (deterministic metric) but not SPACE (human panel). A shared-structure projection lock is required -> the hybrid."
+  }
+}

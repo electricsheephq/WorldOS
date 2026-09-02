@@ -1242,7 +1242,7 @@ repo_viewer_ports() {
     # Match EITHER an absolute argv path under repo root (the LAUNCHER, whose CWD is the .app's
     # temp dir, not the repo) OR CWD == repo root (the MINTED provider viewer, launched by
     # play*.sh with a RELATIVE `viewer/server.py`). Either way it is THIS checkout's viewer; this
-    # excludes other checkouts (e.g. /Users/lume/WorldOS) and unrelated services.
+    # excludes other checkouts (e.g. /Users/m1/WorldOS) and unrelated services.
     if printf '%s' "$cmd" | grep -qF "$rootp/viewer/server.py" \
        || printf '%s' "$cmd" | grep -qF "$root/viewer/server.py" \
        || [ "$cwd" = "$rootp" ] || [ "$cwd" = "$root" ]; then
@@ -1382,6 +1382,29 @@ log "=== DONE. dir=$RUNDIR ==="
 log "part A (#356 gate): $PART_A_RESULT   part B (persona loop): $PART_B_RESULT"
 log "spend: DM ~\$$FINAL_DM_SPEND + player ~\$$PART_B_PLAYER_COST = ~\$$TOTAL_SPEND (budget \$$BUDGET)"
 [ -f "$RUNDIR/run.json" ] && { echo "----- run.json -----"; cat "$RUNDIR/run.json"; }
+
+# #1414: auto-persist the scores_ledger row from score.json (surface=GUI-built-app) — FAIL LOUD
+# (never `|| echo WARN`; a failed write is a failed run per the Universal Run Contract,
+# docs/OPERATIONS.md "No row = no run"). Only fires when Part B actually produced a score (a
+# Part-A-only smoke run has no persona quality reading to persist — that is expected, not a
+# failure). satisfaction_source is preserved (scores_persist.py stamps it as this row's
+# scorer_model, the sweep-persona convention).
+if [ -f "$RUNDIR/score.json" ]; then
+  APP_NOTES_ARG=()
+  if [ "${PART_B_HARNESS_ERROR:-false}" = "true" ]; then
+    APP_NOTES_ARG=(--notes-extra "harness_error=true (non-quota player/process crash — read as INCONCLUSIVE, not a quality fail)")
+  fi
+  if ! python3 "$ROOT/qa/scores_persist.py" app-gate \
+      --run-id "$RUN" --build-sha "$BUILD_SHA" --dm-model "$TOP_DM_MODEL" \
+      --actor-model "$TOP_PLAYER_MODEL" --part "$PART" --provider "$PART_B_PROVIDER" \
+      --score-pass "$PART_B_SCORE_PASS" --score-json "$RUNDIR/score.json" \
+      --source-path "$RUNDIR/run.json" ${APP_NOTES_ARG[@]+"${APP_NOTES_ARG[@]}"}; then
+    log "FATAL: scores_db row write failed — a failed write is a failed run per the Universal Run Contract (docs/OPERATIONS.md). See the error above."
+    exit 1
+  fi
+else
+  log "no score.json in $RUNDIR — Part-A-only run or Part B produced no score; nothing to persist."
+fi
 
 EXIT_OK=1
 case "$PART" in

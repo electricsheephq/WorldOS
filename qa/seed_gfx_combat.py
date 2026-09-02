@@ -4,13 +4,66 @@
 The playable PoE2 3D-on-2D combat-demo seed. Pins the well-known campaign id the box
 renderer hardcodes (paint_combat_v1.cs / paint_backdrop_p0.cs CID="camp_gfxdemo01"),
 seats a fighter PC + a goblin on a 14x11 grid whose OBSTACLE cells match the crypt's
-painted-prop occluders (pillarL(2,3) / pillarR(11,3) / sarcophagus(7,1)), places
-hero@(6,6) / goblin@(9,5), and starts combat. After this, GET /combat-surface?campaign=
-camp_gfxdemo01 returns real engine cells (positionAuthority='grid') for the READ-ONLY
-renderer to consume + the M-B bridge routes movement around exactly the painted props.
+painted-prop footprints on the deployed `crypt_armb_iter3_v1.png` plate (pillarL(3,3)+(3,4) /
+pillarR(8,9)+(9,9) / sarcophagus cols 3-7 x rows 6-8 — see the constants below, owner
+playtest #5 re-measurement), places hero@(11,3) / goblin@(1,8),
+and starts combat. After this, GET /combat-surface?campaign=camp_gfxdemo01 returns real
+engine cells (positionAuthority='grid') for the READ-ONLY renderer to consume + the M-B
+bridge routes movement around exactly the painted props.
 
   # NOTE: uv --directory cd's into servers/engine first, so pass the script by ABSOLUTE path:
   WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python "$PWD/qa/seed_gfx_combat.py" <state_dir>
+
+#1396 content fix (2026-07-08): the ORIGINAL cells here — pillarL(2,3) / pillarR(11,3) /
+sarcophagus(7,1) — matched the OLDER `crypt_firelit_v2` greybox-conditioned plate
+(`paint_backdrop_p0.cs` OCC_ cells), but the then-deployed `crypt_dense_v1.png` went
+through a later Gemini polish+populate repaint pass (CANONICAL.md) that recomposed the
+room WITHOUT re-deriving prop cells from the greybox — so the engine's impassable set
+drifted from the paint (#1396: "actor on the sarcophagus"). The cells below were
+RE-CALIBRATED against the deployed plate: the `qa/export_scene_grid.py`-style contract
+camera (orthographic, size=13, `Euler(30,45,0)`, `cellToWorld`) was replayed against the
+real capture frames in `qa/evidence/1397/` + `qa/evidence/1408/` (their logical_cell ->
+screen_bbox/floor_y_px manifests reproduce EXACTLY, pixel-for-pixel, confirming the
+camera model), then the SAME projection was grid-overlaid on `qa/evidence/1392/*.jpg`
+(live captures of `crypt_dense_v1.png`) to read off where the pillars/sarcophagus
+actually sit in the paint. Engine untouched; this is a content-only re-authoring.
+
+PROBE-PLACEMENT re-calibration (2026-07-10, #1386): the PLATE SPRINT ADOPT-CRYPT lane
+promoted `crypt_armb_iter3_v1.png` as the new canonical crypt plate (PR #1489) — a
+flux-depth-controlnet regeneration that the content-leak check confirmed keeps the ROOM
+composition near-verbatim (NCC 0.93-0.96, same pillar/sarcophagus/staircase placement),
+but has NO committed `qa/room_manifests/*.cells.json` (the plate-drift gate, #1462,
+never ran against it — there's no manifest for this seed's hand-authored grid, only for
+the unrelated `seed_gfx_crypt_2room.py`/camp fixtures). Re-running the SAME #1396
+grid-overlay recipe against the deployed plate (pulled from the box,
+`Assets/painterly/backdrops/crypt_armb_iter3_v1.png`, itself 1344x768 == the contract
+resolution, so the overlay is pixel-exact with no rescale) found the pillars UNCHANGED
+(2,4)/(9,9) still register correctly, but the sarcophagus repaint is noticeably LARGER
+on the new plate — its silhouette (lid + reclining effigy + wood-panel base) now spans
+roughly cols 4-9 / rows 3-7, which swallows the old hero(6,6)/goblin(9,5) spawn cells
+entirely (the "actors standing on the tomb" bug this fixes, qa/evidence/plate-sprint/
+adopt-crypt/cohesion-frames/). Fixed by (1) widening SARCOPHAGUS_CELLS to its true
+re-measured footprint and (2) relocating HERO_CELL/GOBLIN_CELL to clear floor cells
+outside it (the tomb now occupies most of the room's center, so the old tight
+"flanking the tomb" spawn no longer fits) — same content-only, engine-untouched
+re-authoring as #1396, just a bigger prop this time.
+
+SUPERSEDED by the OWNER PLAYTEST #4 correction (2026-07-10, PR #1505): #1386 blocked the
+coffin's SILHOUETTE (cols3-9 x rows3-7, which under the iso projection is the open floor
+*behind* the coffin — where the lid+effigy rise up-screen), NOT its floor footprint. So the
+coffin's real floor cells stayed walkable and the owner walked onto the painted tomb.
+SARCOPHAGUS_CELLS was set to (cols2-7 x rows7-9) — but that ALSO drifted (down-left of the coffin,
+swallowing the open floor to the tomb's right).
+
+SUPERSEDED AGAIN by the OWNER PLAYTEST #5 COLLISION-COHERENCE re-measurement (2026-07-10): all three
+props were re-derived from scratch by projecting the grid onto the deployed plate and point-in-polygon'ing
+each prop's floor-contact polygon (details on the constants below). The pillars were widened from a single
+cell to their painted 2-cell bases (the owner still walked THROUGH them), and the sarcophagus block was
+moved onto the coffin body (cols3-7 x rows6-8), freeing the open lit floor RIGHT of the tomb the owner
+could not cross. Because the read-only renderer derives its invisible occluder proxies from these SAME
+occluder-prop footprints (viewer/server.py `_combat_occluders` -> CombatSurfaceClient.RebuildOccluders),
+this one content edit also re-seats the occluders onto the true silhouettes and clears the strays that
+sat on open floor (owner playtest #5 task C).
 
 Engine = SOLE WRITER: writes only via server.* engine calls + save_campaign. Additive
 (a new seed; touches no existing seed/contract).
@@ -22,15 +75,79 @@ import sys
 
 CID = "camp_gfxdemo01"
 GRID_W, GRID_H = 14, 11
-OBSTACLES = [[2, 3], [11, 3], [7, 1]]  # == paint_backdrop_p0.cs OCC_ cells == engine impassable
-HERO_CELL = [6, 6]
-GOBLIN_CELL = [9, 5]
+# OWNER PLAYTEST #5 COLLISION-COHERENCE RE-MEASUREMENT (2026-07-10): all three prop footprints on the
+# DEPLOYED crypt_armb_iter3_v1.png plate were still DRIFTED after #1386/#1505 — the owner walked THROUGH
+# both pillars and could not walk the open floor RIGHT of the tomb. Root cause: #1386's PROBE-PLACEMENT
+# and #1505's re-measure both landed the cells off the actual paint (the sarcophagus block sat down-RIGHT
+# of the coffin, blocking open floor to its right; each pillar was pinned to a SINGLE cell that missed its
+# painted base entirely). Re-derived here by projecting the 14x11 grid's grounded cell centers onto the
+# deployed 1344x768 plate with the verified `greybox_render_headless` world_to_screen basis (<1e-3 vs
+# Unity Quaternion.Euler(30,45,0)) and point-in-polygon'ing each prop's measured floor-contact polygon —
+# then eyeball-confirmed against the plate (qa/evidence/plate-sprint/adopt-crypt/). Each entry is a
+# footprint (list of [c, r] cells); OBSTACLES flattens them for the printed summary below.
+# Pillars widened from a single cell to their painted 2-cell floor base (the owner's walk-through fix);
+# pillar_r's base also runs onto the r=10 perimeter-wall row (already impassable), so only its two floor
+# cells are listed.
+# CRYPT-ALIGN-V2 (M-ALIGN, 2026-07-15): realigned to the PAINTED crypt_fresh_v1 plate (fit-camera
+# overlay forensics, ortho=10.5224). The painted LEFT pillar plinth sits at (4,2)/(4,3) — the authored
+# (3,3)/(3,4) is painted clear floor. pillar_r (8,9)/(9,9) is DELETED: it renders behind the
+# wall_height=5 cutaway's near south wall band (invisible in the greybox), and its authored cells are
+# painted clear floor.
+PILLAR_L_CELLS = [[4, 2], [4, 3]]
+# CRYPT-ALIGN-V2: flux depth-CN RELOCATED the sarcophagus during the style pass — the plate paints it as
+# a MONUMENTAL 6x2 tomb across cols 7-12 x rows 3-4 (base; the lid/effigy silhouette rises up-screen over
+# rows 2-3), NOT the authored 2x2 coffin at cols4-5 x rows7-8 (which the plate paints as OPEN FLOOR). The
+# collision is realigned to the paint. ONE forced trim: with the tavern doorway at (13,4), a prop on
+# (12,3)/(12,4) trips validate_scene_grid's door-zone rule, so the coffin is trimmed one cell at the east
+# end to cols 7-11 (a 5x2 tomb). The plate's 1-cell overhang at col 12 is an ACCEPTED, DOCUMENTED residual
+# (flags in the visual sweep at (12,4); NOT silently exempted). Reconciliation (v2 addendum):
+# qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md.
+SARCOPHAGUS_CELLS = [
+    [7, 3], [8, 3], [9, 3], [10, 3], [11, 3],
+    [7, 4], [8, 4], [9, 4], [10, 4], [11, 4],
+]
+OBSTACLES = PILLAR_L_CELLS + SARCOPHAGUS_CELLS
+# CRYPT-ALIGN-V2: the fresh plate paints wall-band ornament cells the engine seed blocks so collision
+# agrees with the fresh geometry. Each is a wall-hugging architectural element (tall niche / engaged
+# pilaster / flanking torch) or low floor clutter (rubble), imported verbatim from author_crypt_fresh
+# (qa/evidence/crypt-fresh/crypt_fresh_geometry.json). `(pid, kind, footprint, band, sil, occluder)`; the
+# tall back-band elements occlude (they rise against the rear wall, no actor stands behind row 1), the low
+# clutter does not (a full-height depth wall over ankle-high rubble would vanish actors behind it — the
+# tomb "tall" bug, owner playtest #5). The two door-flanking torches (5,1)/(7,1) and the tavern-door
+# pilaster (12,3) are wall-MOUNTED (against the solid perimeter the doorway is punched through), so they
+# are authored as non-walkable wall cells rather than free-standing props — impassable and painted, but
+# NOT furniture in the door landing (the door-zone gate correctly guards only free-standing props). The
+# skull_pile (2,9)/(3,9) + urn_spill (11,9) props are DELETED (CRYPT-ALIGN-V2): flux painted the
+# skulls/urn OUTSIDE the walls on the non-playable exterior apron; their authored cells are painted clear
+# floor and they render behind the south/east cutaway wall band.
+ORNAMENT_PROPS = [
+    ("effigy_niche_l", "altar", [[2, 1], [3, 1]], "tall", "carved effigy niche, robed figure", True),
+    ("niche_back_r", "altar", [[10, 1], [11, 1]], "tall", "recessed back-wall niche / tomb slab", True),
+    ("torch_near_l", "brazier", [[1, 4]], "tall", "iron wall torch, guttering flame", True),
+    ("torch_far_r", "brazier", [[12, 6]], "tall", "iron wall torch, guttering flame", True),
+    ("rubble_bl", "rubble", [[1, 1], [1, 2]], "low", "heaped corner rubble", False),
+    ("broken_slabs", "rubble", [[1, 6], [1, 7]], "low", "toppled broken floor slabs", False),
+]
+# Wall-mounted ornament cells that sit in a walkslice door-zone (door + Chebyshev-1): the two braziers
+# flanking the camp door (6,0) and the engaged pilaster beside the tavern door (13,4). Authored as
+# impassable WALL cells (not props) so they align the plate without tripping the free-standing-prop
+# door-zone gate — the doorway is punched through this same solid back/side wall.
+ORNAMENT_WALL_CELLS = [
+    [5, 1], [7, 1],  # torch_door_l / torch_door_r — flank the camp door (6,0)
+    [12, 3],         # pilaster_arch — engaged column beside the tavern door (13,4)
+]
+# CRYPT-ALIGN-V2: the tomb moved to the BACK band (rows 3-4), so the old hero cell (11,3) now sits ON it.
+# Hero -> the open south-right floor; goblin front-left. Both clear of the realigned tomb (cols 7-11 x
+# rows 3-4), pillar_l (4,2)/(4,3), and every ornament footprint.
+HERO_CELL = [11, 8]
+GOBLIN_CELL = [1, 8]
 
 
-def _author_crypt_grid(server, cid: str) -> None:
-    """Attach a 14x11 crypt scene_grid whose PROP footprints are EXACTLY the combat OBSTACLES, so the
-    greybox->img2img painted room and the combat pathing share one source (the props ARE the obstacles).
-    Replaces the auto-generated dungeon grid (14..17 wide -> mismatched the fixed 14x11 combat contract)."""
+def _build_crypt_grid(cid: str, location_id: str = ""):
+    """Pure grid builder (no server dependency) — a 14x11 crypt scene_grid whose PROP footprints
+    match the painted crypt_dense_v1.png plate (#1396), so the pathing and the paint agree. Kept
+    separate from `_author_crypt_grid` so it's directly unit-testable (validate_scene_grid +
+    impassable_cells) without spinning up a full campaign/server."""
     from scene_grid import (  # noqa: PLC0415
         SceneGrid, SceneGridSpec, SceneCell, SceneCellDefault, SceneProp, SceneLighting, _layout_hash,
     )
@@ -47,19 +164,31 @@ def _author_crypt_grid(server, cid: str) -> None:
 
     props: list = []
 
-    def _prop(pid: str, kind: str, cell: list, band: str, sil: str) -> None:
-        props.append(SceneProp(id=pid, kind=kind, cells=[(cell[0], cell[1])],
-                               anchor_cell=(cell[0], cell[1]), occluder=True,
+    def _prop(pid: str, kind: str, footprint: list, band: str, sil: str, occluder: bool = True) -> None:
+        anchor = footprint[0]
+        props.append(SceneProp(id=pid, kind=kind, cells=[(c0, r0) for (c0, r0) in footprint],
+                               anchor_cell=(anchor[0], anchor[1]), occluder=occluder,
                                height_band=band, silhouette=sil))
-        cells.append(SceneCell(c=cell[0], r=cell[1], type="prop", walkable=False, prop_ref=pid))
+        for (c0, r0) in footprint:
+            cells.append(SceneCell(c=c0, r=r0, type="prop", walkable=False, prop_ref=pid))
 
-    # the THREE obstacle props — footprints == OBSTACLES (kept in lock-step with set_grid below).
-    _prop("pillar_l", "stone_pillar", OBSTACLES[0], "tall", "ancient cracked stone pillar")
-    _prop("pillar_r", "stone_pillar", OBSTACLES[1], "tall", "ancient mossy stone pillar")
-    _prop("sarcophagus", "sarcophagus", OBSTACLES[2], "tall", "carved stone sarcophagus, lid ajar")
+    # the obstacle props — footprints == PILLAR_L_CELLS/SARCOPHAGUS_CELLS (kept in lock-step with set_grid
+    # below via OBSTACLES). CRYPT-ALIGN-V2: pillar_r DELETED (painted behind the cutaway wall band).
+    _prop("pillar_l", "stone_pillar", PILLAR_L_CELLS, "tall", "ancient cracked stone pillar")
+    # OWNER PLAYTEST #5 (occluder silhouette, task C): the tomb is a waist-high coffin, NOT a tall column
+    # — its occluder proxy is "mid", so actors standing BEHIND the painted box still read above it (a
+    # "tall" band raised a full-height depth wall over the low coffin and vanished them). CRYPT-ALIGN-V2:
+    # realigned to the painted 5x2 tomb across cols 7-11 x rows 3-4 (the back band).
+    _prop("sarcophagus", "sarcophagus", SARCOPHAGUS_CELLS, "mid", "carved stone sarcophagus, lid ajar")
+    # WALKSLICE-CRYPT-ALIGN (#1565): the fresh-plate wall-band ornaments (reconciliation section B). Free-
+    # standing ornaments become props; the door-flanking wall-mounted ones are impassable wall cells below.
+    for (pid, kind, footprint, band, sil, occ) in ORNAMENT_PROPS:
+        _prop(pid, kind, footprint, band, sil, occ)
+    for (c0, r0) in ORNAMENT_WALL_CELLS:
+        cells.append(SceneCell(c=c0, r=r0, type="wall", walkable=False))
 
     grid = SceneGrid(
-        scene_id=f"{cid}:crypt", location_id="", kind="dungeon",
+        scene_id=f"{cid}:crypt", location_id=location_id, kind="dungeon",
         biome="ancient stone crypt, flickering brazier light",
         grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
         cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
@@ -68,10 +197,15 @@ def _author_crypt_grid(server, cid: str) -> None:
                                mood="dim torchlit crypt, warm brazier glow, cold blue shadow fill"),
     )
     grid.art.layout_hash = _layout_hash(grid)
+    return grid
 
+
+def _author_crypt_grid(server, cid: str):
+    """Attach a 14x11 crypt scene_grid (see `_build_crypt_grid`) to the campaign's current location.
+    Replaces the auto-generated dungeon grid (14..17 wide -> mismatched the fixed 14x11 combat contract)."""
     c = server._require(cid)
     loc = c.locations.get(c.current_location_id)
-    grid.location_id = loc.id
+    grid = _build_crypt_grid(cid, loc.id)
     loc.scene_grid = grid
     server.save_campaign(c)
     return grid

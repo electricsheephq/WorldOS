@@ -1,0 +1,158 @@
+{
+ "version": 1,
+ "_comment": "WALKABLE-SLICE-V1 item 6 (W5e runtime plate registry; docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md). Keys are the ENGINE location.id the surface carries (viewer/server.py _session_location -> surface.location.id), the SAME keying the editor-time _location_plates.json already uses. `plate` is a path under StreamingAssets (BuildMacOSPlayer.EnsurePackaged copies this file + plates/*.png from the Unity project root). planeSize + cameraPin are OPTIONAL: absent => the client derives the plane from the plate aspect (oh=2*orthoSize, ow=oh*aspect) and leaves the scene camera as-is (crypt + camp share the ortho=13 / pitch=30 / yaw=45 rig). Adding a room later = one entry here + drop the PNG under plates/. On the box, CONFIRM these keys against the smoke campaign's real location.id (curl /combat-surface | jq .location.id in each room) and rename if they differ.",
+ "plates": {
+  "crypt": {
+   "plate": "plates/crypt_kit_v1_registered.png",
+   "cameraPin": {
+    "ortho": 11.7851,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/crypt_kit_v1_boxes.json",
+   "effects": [
+    {
+     "type": "fire_medium",
+     "cell": [
+      5,
+      1
+     ],
+     "scale": 0.8,
+     "y": 1.2
+    },
+    {
+     "type": "fire_medium",
+     "cell": [
+      14,
+      4
+     ],
+     "scale": 0.8,
+     "y": 1.2
+    },
+    {
+     "type": "fire_medium",
+     "cell": [
+      6,
+      5
+     ],
+     "scale": 0.8,
+     "y": 1.2
+    },
+    {
+     "type": "fire_medium",
+     "cell": [
+      10,
+      5
+     ],
+     "scale": 0.8,
+     "y": 1.2
+    }
+   ],
+   "_effects_comment": "Animated fire over the four painted brazier fires (geometry brazier cells; bowls sit ~1.2u up the stem). Tune scale/y at the sandbox eyeball if the flame floats or washes the paint.",
+   "_provenance": "KIT-CRYPT v1 (2026-07-23, #83/#84 nav-truth spike): 3D-FIRST CERTIFIED CHAIN \u2014 geometry crypt_v36 -> build_room_kit scene (footprint SEG GATE 100.00%, 0/192 disagreements, qa/evidence/kit-crypt/) -> kit 3D depth -> flux depth-CN base seed 12346 (recall 0.9752, asset_qM9R3tuRH4sceUrVjCoLdPRk) -> Gemini 3.0 Pro edit (model_google-gemini-pro-image-editing, critique-targeted detail prompt, job_Lmhssjh7iWnHsUKY1dhnHB4m) -> phase-corr ALIGNED dx=0,dy=0 vs base (qa/styled_align_check.py) -> geometric void composite (seg-frame mask). Blind panel 7 vs control 8 (delta -1.0, in-band; wf_89967920). Collision truth UNCHANGED: crypt_v36 geometry + walkmask are byte-identical; the OCCLUDER SIDECAR IS swapped to kit-derived bounds (see SIDECAR note below). The sidecar feeds VISUAL occluder proxies only (CombatSurfaceClient.RebuildOccluders destroys each proxy's Collider); engine walkability/collision reads the server scene_grid walkmask, never boxes. NOTE: model_google-gemini-pro-image-editing pending model-registry allowlist (owner sign-off). SIDECAR 2026-07-23: kit-derived boxes (ExportBoxes, 73 per-mass true bounds: parapets 0.55u, pillars/tomb/buttresses at real heights) replacing the authored crypt_v36 volumes -- silhouette bands now hug the paint."
+  },
+  "camp_clearing_night": {
+   "plate": "plates/camp_clearing_night_truegrey_v1.png",
+   "cameraPin": {
+    "ortho": 13.0
+   },
+   "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit \u2014 it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
+   "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
+   "effects": [
+    {
+     "type": "fire_medium",
+     "cell": [
+      5,
+      8
+     ],
+     "scale": 1.5,
+     "y": 0.0
+    }
+   ],
+   "_sync_comment": "MIRRORED as camp_clearing for the adventure fixture \u2014 see that entry; the sync lint in test_seed_adventure_demo pins them identical."
+  },
+  "tavern": {
+   "plate": "plates/tavern_kit_v2_registered.png",
+   "cameraPin": {
+    "ortho": 10.5224,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/tavern_kit_v1_boxes.json",
+   "_provenance": "KIT-TAVERN v1 (2026-07-23, #83 replication proof): SAME certified chain as KIT-CRYPT v1 \u2014 geometry tavern_v2 -> kit scene (seg gate 100.00% FIRST TRY, 0/154) -> kit 3D depth -> flux base seed 12345 (recall 0.9737+, asset_G5UBNVwMchoG84wPSFiBEsAZ) -> Gemini 3.0 Pro edit c2 w/ FURNITURE-IDENTITY grounding (job_UTwT9WJkbvZpuveXDoMso8Eh) -> phase-corr ALIGNED dx=0 -> seg-mask void composite. Blind panel 7 vs control 8 (delta -1.0 in-band; c1 without furniture grounding was 6/-2.0 \u2014 the grounding clause is load-bearing). Collision truth UNCHANGED: tavern_v2 geometry + walkmask are byte-identical; the OCCLUDER SIDECAR IS swapped to kit-derived bounds (ExportBoxes; parapets 0.55u, true table footprints -- see SIDECAR note below). The sidecar feeds VISUAL occluder proxies only (CombatSurfaceClient.RebuildOccluders destroys each proxy's Collider); engine walkability/collision reads the server scene_grid walkmask, never boxes. SIDECAR 2026-07-23: kit-derived boxes (ExportBoxes per-mass true bounds; cutaway parapets 0.55u, tables 1.4u true footprints) replacing the authored tavern_v2 chunky volumes \u2014 felt-truth fix for the owner-caught silhouette-everywhere class. V2 2026-07-23: per-object gate (qa/object_align_check.py) caught the c2 edit DELETING table#51 at (10,-4) (0.69 cells; global phase-corr blind to it) -- surgical fix: gemini-pro reference-conditioned re-add (job_ia3dLBuaA4pLup5ynEzb7zB6, seed 12345) -> feathered diff-mask composite (7.3% of frame, rest byte-certified v1) -> global identity dx=0 + PER-OBJECT-ALIGNED 12/12 (table#51 0.13 cells)."
+  },
+  "throne_hall": {
+   "plate": "plates/throne_hall_v1_registered.png",
+   "cameraPin": {
+    "ortho": 11.7851,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/throne_hall_v1_boxes.json",
+   "_provenance": "SHIP-THREE-PLATES (2026-07-15): NEW room class (dais/throne/banner molded kinds). Panel 7.0 (cycle-2 levers documented). Geometry qa/room_geometries/throne_hall_geometry.json. World wiring: crypt (15,5) door -> throne_hall in the ship seed."
+  },
+  "shop": {
+   "plate": "plates/shop_v1_registered.png",
+   "cameraPin": {
+    "ortho": 9.6806,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/shop_v1_boxes.json",
+   "_door_hotspots_comment": "#1585/#1647 PAINTED-DOOR HOTSPOTS (plate-pixel click targets in the 1344x768 registered plate; a click inside a hotspot routes exactly like clicking door_cell -> cross_door). Measured 2026-07-22 by overlaying the contract-camera cell projection (qa/walk_test.world_to_window_px at texW/texH) on shop_v1_registered.png and reading the PAINTED arch centroid off a 50px grid (artifacts/zoom_shop_door12_5.png). door_cell (12,5) projects to px (1037,230) but the painted dark archway opening centroid sits at ~(900,275) \u2014 the ~2-cell #1585 divergence. door_cell (6,0) is occluded by the potion shelf (no visible arch) -> intentionally omitted (TODO, see PR body).",
+   "door_hotspots": [
+    {
+     "door_cell": [
+      12,
+      5
+     ],
+     "px": [
+      900,
+      275
+     ],
+     "radius_px": 85
+    }
+   ],
+   "_provenance": "ROOM-READINESS SCALE PROOF (2026-07-16, epic #1581/#1588): the first room authored AFTER the pipeline existed, run hands-off end-to-end \u2014 author_shop() 13x10 (design-gated 2x locally) -> build_room_unified on the box (ortho 9.6806, 49 boxes incl. auto door frames) -> qa/paint_room.py shop (base seed 12347 recall 0.9555; Gemini structure-lock) -> blind panel 6 vs PoE2 control 8, delta -2.0 IN-BAND (tier=stable, cycle-2 levers in qa/evidence/paint-room/shop/panel.json). Geometry qa/room_geometries/shop_geometry.json; ortho = _fit_ortho_size(13,10). Walk gate: #1596 sandbox lane after the player rebuild packages this entry."
+  },
+  "tavern_snug": {
+   "plate": "plates/tavern_snug_v1_registered.png",
+   "cameraPin": {
+    "ortho": 9.2597,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/tavern_snug_v1_boxes.json",
+   "_provenance": "ROOM-READINESS VARIANT PROOF (2026-07-16, epic #1581/#1588): tavern_snug 12x10 \u2014 the SAME class vocabulary in a different plan (bar back-centre, EAST-wall hearth). Cycle-1 panel 6 vs control 9 delta -3.0 OUT OF BAND (honest negative, did not ship); cycle-2 with scorer levers (blue-violet chiaroscuro, atmospheric falloff, worked walls) + the shared single-storey anti-invention lock \u2014 panel result in qa/evidence/paint-room/tavern_snug_c2/panel.json. Geometry qa/room_geometries/tavern_snug_geometry.json; ortho = _fit_ortho_size(12,10). Static gate caught the draft hearth blocking the east door landing pre-CU."
+  },
+  "camp_clearing": {
+   "plate": "plates/camp_clearing_night_truegrey_v1.png",
+   "cameraPin": {
+    "ortho": 13.0
+   },
+   "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit \u2014 it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
+   "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
+   "effects": [
+    {
+     "type": "fire_medium",
+     "cell": [
+      5,
+      8
+     ],
+     "scale": 1.5,
+     "y": 0.0
+    }
+   ],
+   "_sync_comment": "MIRROR of camp_clearing_night (the adventure fixture keys the hub as camp_clearing; walkslice/camp_smoke key it as camp_clearing_night). test_seed_adventure_demo pins the two entries identical \u2014 edit BOTH or the sync lint fails."
+  },
+  "dwing_room_1": {
+   "plate": "plates/dwing_room_1_v1_registered.png",
+   "cameraPin": {
+    "ortho": 7.997,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/dwing_room_1_v1_boxes.json"
+  }
+ }
+}

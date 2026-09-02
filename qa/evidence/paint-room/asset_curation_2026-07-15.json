@@ -1,0 +1,14 @@
+{
+ "date": "2026-07-15",
+ "curator": "12h procedural-world run",
+ "note": "THE keepers from today's ~40-asset gallery churn; everything else from 2026-07-15 is diagnostic junk (slot-bug bisects, probes) safe to ignore. Tagged worldos-best in Scenario.",
+ "winners": {
+  "crypt_pipeline_restored_frame19": "asset_W7Zg7fapHFqnK3XhuST56NKg",
+  "tavern_pipeline_restored_frame20": "asset_uUvbVeZS534VM8pJtX824rwa",
+  "throne_registered_frame21": "asset_5FubGyFbc5WYBXXf1KWAvkN2",
+  "throne_gemini_preview_frame16_owner10": "asset_MenCj8yXKEPJzRnt5hBL1YpE",
+  "crypt_gemini_beauty_frame18": "asset_1PRQTqrZJvQfC9nGNSFPmrHY",
+  "crypt_v35_canonical_base": "asset_nLpbqc9sANTDCz2F2YpmWxqb",
+  "crypt_v35_styled": "asset_tjonYnE9TAnRP17bn4xctE44"
+ }
+}

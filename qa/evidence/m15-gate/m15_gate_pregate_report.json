@@ -1,0 +1,268 @@
+{
+  "schema": "worldos.visual_pregate.v1",
+  "verdict": "PASS",
+  "bbox_source": "manifest",
+  "frame": "/Users/lume/worldos-session-notes/renders/m15-gate/m15_gate_frame1.png",
+  "manifest": "/Users/lume/worldos-session-notes/renders/m15-gate/m15_gate_manifest.json",
+  "baseline": null,
+  "bboxes": [
+    {
+      "bbox": [
+        1062,
+        212,
+        1158,
+        378
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        1122,
+        182,
+        1218,
+        348
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        1002,
+        182,
+        1098,
+        348
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        747,
+        618,
+        873,
+        835
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        807,
+        588,
+        933,
+        805
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        687,
+        588,
+        813,
+        805
+      ],
+      "source": "manifest"
+    }
+  ],
+  "checks": [
+    {
+      "check": "frame-lit",
+      "status": "PASS",
+      "metric": "mean_luma",
+      "value": {
+        "mean_luma": 0.1338,
+        "single_color_frac": 0.0107
+      },
+      "threshold": {
+        "min_mean_luma": 0.06,
+        "max_mean_luma": 0.97,
+        "max_single_color_frac": 0.9
+      },
+      "detail": "frame lit: mean luma 0.134, dominant color 1.1%"
+    },
+    {
+      "check": "occupancy",
+      "status": "PASS",
+      "metric": "actor_bbox_count",
+      "value": {
+        "expected": 6,
+        "found": 6
+      },
+      "threshold": 6,
+      "detail": "found 6/6 expected actor bbox(es)"
+    },
+    {
+      "check": "floor-contact",
+      "status": "PASS",
+      "metric": "feet_vs_floor_band_px",
+      "value": [
+        {
+          "actor": "Cap_Party1",
+          "status": "PASS",
+          "mechanism": "computed-band",
+          "band_px": [
+            324.74,
+            384.41
+          ],
+          "delta_px": 0.0,
+          "detail": "Cap_Party1 grounded (computed-band): bbox bottom 378.0px within [324.7,384.4]px (+/-14.0px)"
+        },
+        {
+          "actor": "Cap_Party2",
+          "status": "PASS",
+          "mechanism": "computed-band",
+          "band_px": [
+            294.91,
+            354.58
+          ],
+          "delta_px": 0.0,
+          "detail": "Cap_Party2 grounded (computed-band): bbox bottom 348.0px within [294.9,354.6]px (+/-14.0px)"
+        },
+        {
+          "actor": "Cap_Party3",
+          "status": "PASS",
+          "mechanism": "computed-band",
+          "band_px": [
+            294.91,
+            354.58
+          ],
+          "delta_px": 0.0,
+          "detail": "Cap_Party3 grounded (computed-band): bbox bottom 348.0px within [294.9,354.6]px (+/-14.0px)"
+        },
+        {
+          "actor": "Cap_Foe1",
+          "status": "PASS",
+          "mechanism": "computed-band",
+          "band_px": [
+            772.26,
+            831.93
+          ],
+          "delta_px": 3.07,
+          "detail": "Cap_Foe1 grounded (computed-band): bbox bottom 835.0px within [772.3,831.9]px (+/-14.0px)"
+        },
+        {
+          "actor": "Cap_Foe2",
+          "status": "PASS",
+          "mechanism": "computed-band",
+          "band_px": [
+            742.42,
+            802.09
+          ],
+          "delta_px": 2.91,
+          "detail": "Cap_Foe2 grounded (computed-band): bbox bottom 805.0px within [742.4,802.1]px (+/-14.0px)"
+        },
+        {
+          "actor": "Cap_Foe3",
+          "status": "PASS",
+          "mechanism": "computed-band",
+          "band_px": [
+            742.42,
+            802.09
+          ],
+          "delta_px": 2.91,
+          "detail": "Cap_Foe3 grounded (computed-band): bbox bottom 805.0px within [742.4,802.1]px (+/-14.0px)"
+        }
+      ],
+      "threshold": 14.0,
+      "detail": "6 actor bbox(es) grounded"
+    },
+    {
+      "check": "screen-scale",
+      "status": "PASS",
+      "metric": "bbox_height_frac",
+      "value": [
+        {
+          "actor": "Cap_Party1",
+          "status": "PASS",
+          "height_px": 166,
+          "height_frac": 0.0576,
+          "detail": "Cap_Party1 height 166px (5.8%) within 3%-45%"
+        },
+        {
+          "actor": "Cap_Party2",
+          "status": "PASS",
+          "height_px": 166,
+          "height_frac": 0.0576,
+          "detail": "Cap_Party2 height 166px (5.8%) within 3%-45%"
+        },
+        {
+          "actor": "Cap_Party3",
+          "status": "PASS",
+          "height_px": 166,
+          "height_frac": 0.0576,
+          "detail": "Cap_Party3 height 166px (5.8%) within 3%-45%"
+        },
+        {
+          "actor": "Cap_Foe1",
+          "status": "PASS",
+          "height_px": 217,
+          "height_frac": 0.0753,
+          "detail": "Cap_Foe1 height 217px (7.5%) within 3%-45%"
+        },
+        {
+          "actor": "Cap_Foe2",
+          "status": "PASS",
+          "height_px": 217,
+          "height_frac": 0.0753,
+          "detail": "Cap_Foe2 height 217px (7.5%) within 3%-45%"
+        },
+        {
+          "actor": "Cap_Foe3",
+          "status": "PASS",
+          "height_px": 217,
+          "height_frac": 0.0753,
+          "detail": "Cap_Foe3 height 217px (7.5%) within 3%-45%"
+        }
+      ],
+      "threshold": {
+        "min": 0.03,
+        "max": 0.45
+      },
+      "detail": "6 actor bbox(es) within scale band"
+    },
+    {
+      "check": "pose-uprightness",
+      "status": "PASS",
+      "metric": "bbox_aspect_ratio",
+      "value": [
+        {
+          "actor": "Cap_Party1",
+          "status": "PASS",
+          "aspect_ratio": 1.729,
+          "detail": "Cap_Party1 upright: bbox aspect 1.73 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Cap_Party2",
+          "status": "PASS",
+          "aspect_ratio": 1.729,
+          "detail": "Cap_Party2 upright: bbox aspect 1.73 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Cap_Party3",
+          "status": "PASS",
+          "aspect_ratio": 1.729,
+          "detail": "Cap_Party3 upright: bbox aspect 1.73 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Cap_Foe1",
+          "status": "PASS",
+          "aspect_ratio": 1.722,
+          "detail": "Cap_Foe1 upright: bbox aspect 1.72 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Cap_Foe2",
+          "status": "PASS",
+          "aspect_ratio": 1.722,
+          "detail": "Cap_Foe2 upright: bbox aspect 1.72 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Cap_Foe3",
+          "status": "PASS",
+          "aspect_ratio": 1.722,
+          "detail": "Cap_Foe3 upright: bbox aspect 1.72 (h/w) >= 1.25"
+        }
+      ],
+      "threshold": 1.25,
+      "detail": "6 actor bbox(es) upright"
+    }
+  ],
+  "failures": [],
+  "summary": "VISUAL PRE-GATE PASS\n  [PASS] frame-lit      mean_luma={'mean_luma': 0.1338, 'single_color_frac': 0.0107} :: frame lit: mean luma 0.134, dominant color 1.1%\n  [PASS] occupancy      actor_bbox_count={'expected': 6, 'found': 6} :: found 6/6 expected actor bbox(es)\n  [PASS] floor-contact  feet_vs_floor_band_px=[{'actor': 'Cap_Party1', 'status': 'PASS', 'mechanism': 'computed-band', 'band_px': [324.74, 384.41], 'delta_px': 0.0, 'detail': 'Cap_Party1 grounded (computed-band): bbox bottom 378.0px within [324.7,384.4]px (+/-14.0px)'}, {'actor': 'Cap_Party2', 'status': 'PASS', 'mechanism': 'computed-band', 'band_px': [294.91, 354.58], 'delta_px': 0.0, 'detail': 'Cap_Party2 grounded (computed-band): bbox bottom 348.0px within [294.9,354.6]px (+/-14.0px)'}, {'actor': 'Cap_Party3', 'status': 'PASS', 'mechanism': 'computed-band', 'band_px': [294.91, 354.58], 'delta_px': 0.0, 'detail': 'Cap_Party3 grounded (computed-band): bbox bottom 348.0px within [294.9,354.6]px (+/-14.0px)'}, {'actor': 'Cap_Foe1', 'status': 'PASS', 'mechanism': 'computed-band', 'band_px': [772.26, 831.93], 'delta_px': 3.07, 'detail': 'Cap_Foe1 grounded (computed-band): bbox bottom 835.0px within [772.3,831.9]px (+/-14.0px)'}, {'actor': 'Cap_Foe2', 'status': 'PASS', 'mechanism': 'computed-band', 'band_px': [742.42, 802.09], 'delta_px': 2.91, 'detail': 'Cap_Foe2 grounded (computed-band): bbox bottom 805.0px within [742.4,802.1]px (+/-14.0px)'}, {'actor': 'Cap_Foe3', 'status': 'PASS', 'mechanism': 'computed-band', 'band_px': [742.42, 802.09], 'delta_px': 2.91, 'detail': 'Cap_Foe3 grounded (computed-band): bbox bottom 805.0px within [742.4,802.1]px (+/-14.0px)'}] :: 6 actor bbox(es) grounded\n  [PASS] screen-scale   bbox_height_frac=[{'actor': 'Cap_Party1', 'status': 'PASS', 'height_px': 166, 'height_frac': 0.0576, 'detail': 'Cap_Party1 height 166px (5.8%) within 3%-45%'}, {'actor': 'Cap_Party2', 'status': 'PASS', 'height_px': 166, 'height_frac': 0.0576, 'detail': 'Cap_Party2 height 166px (5.8%) within 3%-45%'}, {'actor': 'Cap_Party3', 'status': 'PASS', 'height_px': 166, 'height_frac': 0.0576, 'detail': 'Cap_Party3 height 166px (5.8%) within 3%-45%'}, {'actor': 'Cap_Foe1', 'status': 'PASS', 'height_px': 217, 'height_frac': 0.0753, 'detail': 'Cap_Foe1 height 217px (7.5%) within 3%-45%'}, {'actor': 'Cap_Foe2', 'status': 'PASS', 'height_px': 217, 'height_frac': 0.0753, 'detail': 'Cap_Foe2 height 217px (7.5%) within 3%-45%'}, {'actor': 'Cap_Foe3', 'status': 'PASS', 'height_px': 217, 'height_frac': 0.0753, 'detail': 'Cap_Foe3 height 217px (7.5%) within 3%-45%'}] :: 6 actor bbox(es) within scale band\n  [PASS] pose-uprightness bbox_aspect_ratio=[{'actor': 'Cap_Party1', 'status': 'PASS', 'aspect_ratio': 1.729, 'detail': 'Cap_Party1 upright: bbox aspect 1.73 (h/w) >= 1.25'}, {'actor': 'Cap_Party2', 'status': 'PASS', 'aspect_ratio': 1.729, 'detail': 'Cap_Party2 upright: bbox aspect 1.73 (h/w) >= 1.25'}, {'actor': 'Cap_Party3', 'status': 'PASS', 'aspect_ratio': 1.729, 'detail': 'Cap_Party3 upright: bbox aspect 1.73 (h/w) >= 1.25'}, {'actor': 'Cap_Foe1', 'status': 'PASS', 'aspect_ratio': 1.722, 'detail': 'Cap_Foe1 upright: bbox aspect 1.72 (h/w) >= 1.25'}, {'actor': 'Cap_Foe2', 'status': 'PASS', 'aspect_ratio': 1.722, 'detail': 'Cap_Foe2 upright: bbox aspect 1.72 (h/w) >= 1.25'}, {'actor': 'Cap_Foe3', 'status': 'PASS', 'aspect_ratio': 1.722, 'detail': 'Cap_Foe3 upright: bbox aspect 1.72 (h/w) >= 1.25'}] :: 6 actor bbox(es) upright"
+}

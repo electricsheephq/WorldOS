@@ -107,6 +107,9 @@ _MOVE_KINDS = {
     "say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify",
     "travel", "inspect", "examine", "move_to_zone", "move_to_cell", "end_turn",
     "cross_door",  # M-E: cross an authored doorway to the linked room-unit (engine-resolved)
+    "walk_to_cell",  # W2 #1319: rest-mode click-to-walk (engine walk_to; carried by x/y)
+    "parley_approach",  # W3 #1320: rest-mode click-to-talk (engine generate_parley_options approach)
+    "start_combat",  # WALKABLE-SLICE-V1 item 4: rest-mode "start a fight in place" (engine start_combat)
 }
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
@@ -114,7 +117,11 @@ _TARGET_ONLY_KINDS = {"travel", "inspect", "examine", "move_to_zone"}
 # Grid-combat player-turn kinds (move_to_cell / on-turn attack / end_turn) are resolved by the
 # ENGINE in-process (not the DM agent): carried by x/y and/or target_id, with the per-kind checks
 # below relaxing the "needs text or name" guard for them.
-_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "end_turn", "turn_token")
+# `character_id` (W2 #1319) rides the walk_to_cell rest-mode intent: WHICH party member walks to
+# the clicked cell (the engine's walk_to takes an explicit character_id). It is a plain id string
+# carried alongside x/y — added to the allowlist so the field survives sanitize (the anti-injection
+# allowlist only WIDENS; every existing field is untouched).
+_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "character_id", "end_turn", "turn_token")
 _MOVE_MAXLEN = 2000
 
 
@@ -178,6 +185,30 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
     if kind == "cross_door":
         if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
             return None, "'cross_door' needs integer 'x' and 'y' (the doorway cell)"
+        return move, ""
+    # `walk_to_cell` (W2 #1319) is the ENGINE-resolved rest-mode click-to-walk intent: it needs a
+    # numeric x AND y target cell (carried alongside, never text) plus the character_id of the party
+    # member who walks. Validated here so a malformed cell/actor rejects before the engine bridge.
+    if kind == "walk_to_cell":
+        if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
+            return None, "'walk_to_cell' needs integer 'x' and 'y' grid coordinates"
+        if not move.get("character_id"):
+            return None, "'walk_to_cell' needs a 'character_id' (who walks)"
+        return move, ""
+    # `parley_approach` (W3 #1320) is the ENGINE-resolved rest-mode click-to-TALK intent: it names
+    # the interlocutor NPC via `target_id` (the tracked NPC the player clicked). The engine's
+    # generate_parley_options(approach=True) walks the lead PC adjacent (via walk_to) then opens the
+    # parley — so the only required field is WHO to talk to. `character_id` (the mover) is optional:
+    # the engine defaults to the lead PC. Neither is text, so validate here before the engine bridge.
+    if kind == "parley_approach":
+        if not move.get("target_id"):
+            return None, "'parley_approach' needs a 'target_id' (the NPC to talk to)"
+        return move, ""
+    # `start_combat` (WALKABLE-SLICE-V1 item 4) is the ENGINE-resolved rest-mode "start a fight in place"
+    # intent: no client-named target — the resolver SELECTS the combatants (present party + present NPCs)
+    # from the engine snapshot and calls the engine's start_combat verb. The only carried field is the
+    # campaign (handled by do_POST). Nothing else required.
+    if kind == "start_combat":
         return move, ""
     # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
     # everything else needs a `text` or `name` so the DM has something to act on. An `attack`
@@ -1457,6 +1488,156 @@ def _resolve_cross_door(campaign_id: str, move: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
         return {"ok": False, "reason": f"cross failed: {exc}"}
     return {"ok": True, "crossed": result.get("crossed_door")}
+
+
+def _resolve_walk_to(campaign_id: str, move: dict) -> dict:
+    """Resolve a `walk_to_cell` intent (W2 #1319 rest-mode click-to-walk): walk the party member
+    ``character_id`` to rest-grid cell (x, y) via the engine's ``walk_to`` verb (which paths around
+    walls/props/standers, writes Character.stage_cell, and emits the ``rest_walk`` glide beat — all
+    under the engine lock, so the engine stays the SOLE WRITER). Gated on combat being RESOLVED (the
+    grid twin during a fight is move_to_cell). Returns the engine's CONFIRMED ``{ok, walked, path, to,
+    from}`` so the read-only renderer glides the actor along exactly the route the engine routed — the
+    viewer NEVER predicts a client-side path (a second-writer / VISION violation). Rejections (active
+    combat / no scene grid / off-grid / blocked / unreachable) leave NOTHING mutated and return
+    ``{ok:False, reason}``. Mirrors _resolve_cross_door's in-process bridge."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:  # noqa: BLE001 — surface any engine read error as a clean rejection
+        return {"ok": False, "reason": f"could not read rest state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "combat is active — use move_to_cell (walk_to is the rest-mode verb)"}
+    try:
+        result = engine.walk_to(campaign_id, str(move["character_id"]), int(move["x"]), int(move["y"]))
+    except (KeyError, ValueError, TypeError) as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"walk failed: {exc}"}
+    # walk_to signals a routing refusal (off-grid / blocked / unreachable) via walked:False + a
+    # move_blocked block — surface it as a clean {ok:False} so the client toasts the reason and does
+    # NOT glide. A successful walk carries the engine-confirmed envelope path (incl. the start cell).
+    if not result.get("walked"):
+        reason = (result.get("move_blocked") or {}).get("reason") or "walk rejected"
+        return {"ok": False, "reason": reason, "walked": False}
+    return {
+        "ok": True,
+        "walked": True,
+        "character_id": result.get("character_id"),
+        "from": result.get("from"),
+        "to": result.get("to"),
+        "path": result.get("path") or [],
+    }
+
+
+def _resolve_parley_approach(campaign_id: str, move: dict) -> dict:
+    """Resolve a `parley_approach` intent (W3 #1320 rest-mode click-to-TALK): the player clicked a
+    present NPC on the rest board — WALK the lead PC adjacent to that NPC, THEN open the parley AT
+    the actor. The whole approach is the engine's ``generate_parley_options(approach=True)`` (which
+    internally reuses ``walk_to`` — the SOLE writer of ``stage_cell`` — under the engine lock, then
+    projects the post-walk options), so the viewer stays a pure CONSUMER: it never routes a path or
+    positions a token itself; it just re-fetches ``/parley-surface?npc=<id>`` afterwards, which
+    reads the moved cells the engine wrote. Mirrors _resolve_walk_to's in-process bridge.
+
+    Returns ``{ok, npc_id, walked, to, path}`` — ``walked`` echoes whether the engine actually took
+    a walk beat (False when already adjacent, or when the approach degraded to a freeform parley:
+    no stage cell / no scene grid / combat / unreachable — the engine's own MED-addendum fallback).
+    ``ok`` stays True in every non-error case (the parley always opens, positioned or not); an
+    unknown NPC or a hard engine error is a clean ``{ok:False, reason}``. Gated on combat being
+    RESOLVED — an approach during a fight would only ever degrade to freeform, so reject early with
+    a clear reason rather than silently no-op."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:  # noqa: BLE001 — surface any engine read error as a clean rejection
+        return {"ok": False, "reason": f"could not read rest state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "combat is active — talk after the fight"}
+    npc_id = str(move["target_id"])
+    if npc_id not in snap.characters:
+        return {"ok": False, "reason": f"unknown NPC {npc_id!r}"}
+    # `character_id` (the mover) is optional — the engine defaults to the lead PC; pass it through
+    # only when the client named one so an actor with no PC still degrades cleanly.
+    actor_id = str(move.get("character_id") or "")
+    try:
+        # approach=True walks the actor adjacent (via walk_to, under the engine lock) then returns
+        # the post-walk parley snapshot. We consume only the approach echo — the browser re-fetches
+        # the full /parley-surface for the dialogue render (single source of truth).
+        result = engine.generate_parley_options(
+            campaign_id, actor_id=actor_id, npc_id=npc_id, approach=True,
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"approach failed: {exc}"}
+    # `approach` is present only when the engine actually walked (or found the party already
+    # adjacent); absent means it degraded to a freeform parley — the dialogue still opens, just not
+    # repositioned. Echo the walk result so the client can log/animate the glide.
+    approach = result.get("approach") if isinstance(result, dict) else None
+    walked = bool(approach.get("walked")) if isinstance(approach, dict) else False
+    return {
+        "ok": True,
+        "npc_id": npc_id,
+        "walked": walked,
+        "to": approach.get("to") if isinstance(approach, dict) else None,
+        "path": (approach.get("path") if isinstance(approach, dict) else None) or [],
+    }
+
+
+def _resolve_start_combat(campaign_id: str, move: dict) -> dict:
+    """Resolve a `start_combat` intent (WALKABLE-SLICE-V1 item 4 rest-mode "start a fight in place"):
+    open combat among everyone staged in the room — the present party + present NPCs/companions at the
+    party's current location — seeding initiative WHERE THEY RESTED (``seed_from_stage=True``). The
+    viewer stays a pure CONSUMER of the engine's SOLE-WRITER ``start_combat`` verb: it only SELECTS the
+    combatants from the engine snapshot and calls the verb; the engine rolls initiative + builds the
+    turn order under its lock. Gated on combat NOT already being active. Additive viewer intent — the
+    established rest-mode bridge lane (mirrors _resolve_cross_door / _resolve_walk_to /
+    _resolve_parley_approach); ``servers/engine`` is untouched.
+
+    Returns ``{ok:True, combatants:[...]}`` so the client re-fetches /combat-surface (now combat mode);
+    an already-active fight, too few combatants, or a hard engine error is a clean ``{ok:False, reason}``."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:  # noqa: BLE001 — surface any engine read error as a clean rejection
+        return {"ok": False, "reason": f"could not read rest state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "combat already active"}
+    loc_id = snap.current_location_id or ""
+    # Everyone staged in the current room: present party first (stable order), then present NPCs/
+    # companions anchored here — the deterministic "the whole room fights" combatant set. Location
+    # filter is skipped when the snapshot has no current location (older campaigns) so a fight still opens.
+    present: list[str] = []
+    seen: set[str] = set()
+    for cid in list(snap.party):
+        ch = snap.characters.get(cid)
+        if ch is not None and (not loc_id or ch.location_id == loc_id) and cid not in seen:
+            present.append(cid)
+            seen.add(cid)
+    for cid, ch in snap.characters.items():
+        if cid in seen or ch is None:
+            continue
+        if loc_id and ch.location_id != loc_id:
+            continue
+        # Include present monsters/foes too — "start a fight in place" needs the hostiles in the room, not
+        # just the party + companions (CharacterKind is player|companion|npc|monster; a monster is the foe).
+        if str(getattr(ch, "kind", "")).lower() in {"npc", "companion", "player", "monster"}:
+            present.append(cid)
+            seen.add(cid)
+    if len(present) < 2:
+        return {"ok": False, "reason": "need at least two combatants in the room to start a fight"}
+    try:
+        engine.start_combat(campaign_id, present, seed_from_stage=True)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"start_combat failed: {exc}"}
+    return {"ok": True, "combatants": present}
 
 
 def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> dict:
@@ -2927,6 +3108,7 @@ _COMBAT_EVENT_VERB = {
     "combat_start": "narrate",
     "combat_end": "narrate",
     "turn_advanced": "narrate",
+    "rest_walk": "walk",  # W2 #1319: out-of-combat walk_to → an animated glide beat
     # death_save is mapped contextually below (death vs save) off the result state.
 }
 
@@ -2940,6 +3122,7 @@ _VERB_ANIM_HINT = {
     "condition": "status_apply",
     "death": "death_fall",
     "move_to_zone": "zone_move",
+    "walk": "glide",  # W2 #1319: rest-mode walk glides the actor along the engine path
     "narrate": "none",
 }
 
@@ -2982,6 +3165,17 @@ def _combat_event_envelope_fields(payload: dict) -> dict | None:
             # A future/unknown engine combat event → a non-animated narrate beat
             # (additive/back-compat: the renderer never crashes on a new event).
             verb = "narrate"
+        elif event == "damage":
+            # #1347: a monster/NPC dies OUTRIGHT at 0 HP (combat.py's _apply_total_to_hp ->
+            # _die) with no death_save event at all — only this `damage` beat carries the
+            # engine's verdict, nested in its own `result` block (`{..., "dead": true}`, the
+            # same combat.status() shape death_save's `state` uses). Without this override the
+            # beat stayed verb="damage" forever and the renderer's death animation (topple+
+            # fade, #1345) never fired on a live kill. Read-only projection of engine truth —
+            # the engine already decided `dead`; we just pick the matching verb.
+            inner_state = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            if bool(inner_state.get("dead")):
+                verb = "death"
 
     # Build the engine-decided `result` the renderer renders verbatim. We carry the
     # outcome class + the numbers the engine already produced (roll / damage / hp /
@@ -3032,6 +3226,22 @@ def _combat_event_envelope_fields(payload: dict) -> dict | None:
             # The destination zone IS the target for a move beat (the contract's
             # `target_fk` carries the zone name for move_to_zone).
             target_fk = target_fk or to_zone
+
+    # W2 #1319: a rest_walk beat carries the engine-CONFIRMED path cells (incl. the start
+    # cell) so #1303's Animator glides the actor along exactly the route the engine routed —
+    # the renderer NEVER predicts a client-side path (a second-writer violation). We surface
+    # the engine's cells verbatim under result.path (a list of [x, y] pairs).
+    if event == "rest_walk":
+        raw_path = payload.get("path")
+        if isinstance(raw_path, list):
+            cells = [
+                [int(cell[0]), int(cell[1])]
+                for cell in raw_path
+                if isinstance(cell, (list, tuple)) and len(cell) == 2
+            ]
+            if cells:
+                result["path"] = cells
+                result.setdefault("outcome", "moved")
 
     if verb == "death" or bool(inner.get("dead")):
         # A death beat always carries its outcome so the renderer plays the death state.
@@ -3311,9 +3521,12 @@ def _combat_doors(snapshot: dict) -> list[dict]:
     ADDITIVE / presentation-only: READS engine-owned ``scene_grid.door_cells`` (the #1214 schema) +
     ``Location.connections`` (the engine is the sole writer); never mutates. ``[]`` when the location has
     no door cells or no connections (== today). Each entry: ``{cell:[c,r], to:<loc_id>, toName, multi}``.
-    For a single-connection room-unit (the common case) every door cell leads to the one neighbour; a
-    multi-connection room would need an authored door->destination map, so ``multi=true`` flags the
-    ambiguity and the FIRST connection is surfaced as a best-effort default."""
+    For a single-connection room-unit (the common case) every door cell leads to the one neighbour. For a
+    MULTI-connection room (SHIP-MORNING fix, #1508/#1531), each door cell's destination is resolved by
+    POSITION — ``door_cells[i]`` -> ``connections[i]`` — mirroring the engine's ``cross_door`` resolution
+    (``servers/engine/server.py``) so the UI label always names the room the engine will actually cross
+    into; an out-of-range index falls back to ``connections[0]`` (prior behavior, unchanged for any
+    single-door room). ``multi=true`` still flags a multi-connection room for the UI."""
     loc_id = _text(snapshot.get("current_location_id"))
     locs = snapshot.get("locations")
     loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
@@ -3326,12 +3539,12 @@ def _combat_doors(snapshot: dict) -> list[dict]:
     conns = [cid for cid in (loc.get("connections") or []) if isinstance(cid, str)]
     if not conns:
         return []
-    dest_id = conns[0]
-    dest = locs.get(dest_id) if isinstance(locs, dict) else None
-    dest_name = _text(dest.get("name")) if isinstance(dest, dict) else ""
     out: list[dict] = []
-    for cell in door_cells:
+    for i, cell in enumerate(door_cells):
         if isinstance(cell, (list, tuple)) and len(cell) == 2:
+            dest_id = conns[i] if i < len(conns) else conns[0]
+            dest = locs.get(dest_id) if isinstance(locs, dict) else None
+            dest_name = _text(dest.get("name")) if isinstance(dest, dict) else ""
             out.append({"cell": [int(cell[0]), int(cell[1])], "to": dest_id,
                         "toName": dest_name, "multi": len(conns) > 1})
     return out
@@ -3373,6 +3586,44 @@ def _combat_occluders(snapshot: dict) -> list[dict]:
     return out
 
 
+def _rest_impassable(snapshot: dict) -> list[list[int]]:
+    """W6.2 (#1461) REST-MODE collision: the geometry-derived blocked cells for the current room when
+    NO combat is active — the out-of-combat sibling of ``combat.grid_impassable``. This is the surface
+    field the CombatSurfaceClient's rest-mode walk pre-validation + the walkability overlay read, so an
+    actor can't walk over the painted logs (the owner's felt-bug: the surface reported ``[]`` at rest,
+    so the client had no collision truth at all).
+
+    Mirrors ``_director_advisory``'s engine-primary + graceful-degrade idiom: reconstruct the Campaign
+    from the engine-owned snapshot and call the engine's own ``rest_blocked_cells`` — the SAME set
+    ``walk_to`` validates against, so the client's collision picture can never drift from the mover
+    (a drift IS this class of bug). Read-only: nothing is mutated or persisted.
+
+    ADDITIVE / default-safe: returns ``[]`` (today's empty rest impassable) when the current location
+    has no ``scene_grid``, when the engine module isn't importable, or on any reconstruction failure —
+    so a pre-W6.2 snapshot (or a degraded QA-only context where ``walk_to`` also wouldn't run) projects
+    exactly as before. Shape is the sorted ``list[list[int]]`` ``grid_impassable`` uses."""
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations") if isinstance(snapshot.get("locations"), dict) else {}
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    if not isinstance(sg, dict):
+        return []  # no painted room -> rest walk unavailable, byte-identical to today's empty field
+    engine = _load_engine_server()
+    if engine is None:
+        return []
+    try:
+        import models as _models  # engine dir is on sys.path after _load_engine_server
+
+        campaign = _models.Campaign.model_validate(snapshot)
+        location = campaign.locations.get(loc_id) if loc_id else None
+        if location is None:
+            return []
+        _w, _h, blocked = engine.rest_blocked_cells(campaign, location)
+        return [[int(x), int(y)] for (x, y) in sorted(blocked)]
+    except Exception:
+        return []  # any reconstruction/derivation failure -> degrade to today's empty rest impassable
+
+
 def _is_dead_or_downed(ch: dict) -> bool:
     """True for a character who must not stand upright in a rest projection: `dead`, or at 0 HP
     (unconscious/dying, or stabilized-but-still-down — engine fields `stable`/`current_hp`, see
@@ -3395,8 +3646,10 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
 
     Rest tokens = the party (``snapshot.party``) on the ``party`` spawn cells, plus present NPCs
     (characters whose ``location_id`` == the current location and whose kind is npc/companion, and
-    who are NOT already party) on the ``npcs`` spawn cells. Cells fall back to ``zone_anchors``
-    values, then the party cells, when a bucket is short.
+    who are NOT already party) on the ``npcs`` spawn cells, plus resident LIVE monsters (#1639 —
+    kind ``monster`` at the current location with hp>0) on the ``foes`` spawn cells, so the walked
+    world shows its cast (the quest giver AND the boss), not just the party. Cells fall back to
+    ``zone_anchors`` values, then the party cells, when a bucket is short.
 
     NO DOUBLE-PAINT: during active combat the authoritative tokens live in the top-level
     ``tokens`` (the tactical board); ``stage.tokens`` is therefore EMPTY in combat mode so a
@@ -3445,6 +3698,11 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
 
     party_cells = [c for c in _cells(spawns.get("party")) if c not in blocked]
     npc_cells = [c for c in _cells(spawns.get("npcs")) if c not in blocked]
+    # #1639: live monsters resident at this location get placed too (the walked world must show its
+    # cast — the boss on his throne, not just the party). Foes fall back to the `foes` spawn bucket
+    # the generators author (scene_grid.py) when they carry no seeded stage_cell; drop any that sit
+    # on a blocking prop/wall, same discipline as the party/npc buckets.
+    foe_cells = [c for c in _cells(spawns.get("foes")) if c not in blocked]
     # Deterministic fallback pool: the zone anchors (id-sorted) then the party cells, so a bucket
     # that ran short still lands its actors on a walkable in-world spot rather than off-board. Drop
     # any anchor that lands on a blocking prop/wall — a fallback actor must not stand on a column.
@@ -3480,20 +3738,45 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
         and not _is_dead_or_downed(ch)
     )
 
+    # #1639 CAST PRESENCE: live monsters (kind=monster) resident at the current location, ALIVE
+    # (hp>0 — the SAME _is_dead_or_downed predicate the party/NPC branches use, so a cleared/dead
+    # foe never re-stands in the walked scene; combat handles the fallen). id-sorted for a
+    # deterministic order, and excludes anyone already in `party` (a charmed/allied monster the DM
+    # folded into the party keeps its party seat). Monsters surfaced ONLY in combat before this —
+    # so the walked world rendered empty of its cast (the Goblin Boss in the throne hall). ADDITIVE:
+    # a location with no resident live monster projects EXACTLY as before.
+    present_monsters = sorted(
+        cid
+        for cid, ch in chars.items()
+        if isinstance(cid, str) and isinstance(ch, dict)
+        and cid not in party_set
+        and _text(ch.get("kind")).lower() == "monster"
+        and _text(ch.get("location_id")) == loc_id and loc_id
+        and not _is_dead_or_downed(ch)
+    )
+
     tokens: list[dict] = []
 
-    def _emit(cid: str, cells: list[tuple[int, int]], slot: int, fallback_slot: int) -> None:
+    def _emit(cid: str, cells: list[tuple[int, int]], slot: int, fallback_slot: int, rest_role: str) -> None:
         ch = chars.get(cid)
         ch = ch if isinstance(ch, dict) else {}
         name = _text(ch.get("name"), cid)
         kind = _text(ch.get("kind"))
-        cell = None
-        if slot < len(cells):
-            cell = cells[slot]
-        elif anchor_cells:
-            cell = anchor_cells[fallback_slot % len(anchor_cells)]
-        elif party_cells:
-            cell = party_cells[fallback_slot % len(party_cells)]
+        # W2 (#1319): a character who has WALKED in rest mode carries an engine-authoritative
+        # Character.stage_cell (walk_to's sole-writer field) — render the token WHERE IT STANDS, not
+        # at its authored spawn cell, so a click-to-move glide lands the token at the confirmed
+        # destination on the next surface reload. ADDITIVE: stage_cell is None until a first walk, so
+        # an un-walked character falls straight through to today's spawn/anchor projection below
+        # (byte-identical). Still a pure PROJECTION of engine-owned state (positionAuthority stays
+        # "derived"); the viewer never writes it.
+        cell = _cell(ch.get("stage_cell"))
+        if cell is None:
+            if slot < len(cells):
+                cell = cells[slot]
+            elif anchor_cells:
+                cell = anchor_cells[fallback_slot % len(anchor_cells)]
+            elif party_cells:
+                cell = party_cells[fallback_slot % len(party_cells)]
         if cell is None:
             return
         tokens.append({
@@ -3509,14 +3792,29 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
             # state — same discipline as the combat tokens (#432). The engine stays sole writer.
             "positionAuthority": "derived",
             "pose": "idle",
+            # W3 (#1320): which lane a rest token belongs to — "party" (a walkable mover the
+            # click-to-walk board sends to walk_to) vs "npc" (a present, non-party interlocutor the
+            # board opens a click-to-TALK approach on). Both are team "ally" (npc/companion kind ->
+            # ally), so `team` alone can't tell a talk target from a walkable party member; this
+            # additive marker does. ADDITIVE: a consumer that ignores it reads the token exactly as
+            # before.
+            "rest_role": rest_role,
         })
 
     fb = 0
     for i, cid in enumerate(party_ids):
-        _emit(cid, party_cells, i, fb)
+        _emit(cid, party_cells, i, fb, "party")
         fb += 1
     for j, cid in enumerate(present_npcs):
-        _emit(cid, npc_cells, j, fb)
+        _emit(cid, npc_cells, j, fb, "npc")
+        fb += 1
+    # #1639: emit resident live monsters after the party + NPCs. rest_role "foe" (team "foe" via
+    # _combat_team) — distinct from "npc" so the client's click-to-TALK path (rest_role == "npc")
+    # never opens a parley on a monster; a foe token renders in the walked scene but is not a talk
+    # target. Placement: the engine-authoritative stage_cell when set (walk-in / seeded), else the
+    # `foes` spawn bucket, then the shared anchor/party fallback (all inside _emit).
+    for k, cid in enumerate(present_monsters):
+        _emit(cid, foe_cells, k, fb, "foe")
         fb += 1
 
     return {"mode": mode, "tokens": tokens}
@@ -3579,6 +3877,12 @@ def build_combat_surface(
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
+        # W4 (#1321) THE LIVING STAGE — day/night lighting token from the campaign clock, so the
+        # combat/rest board re-tints with the time of day (dawn/day/dusk/night) exactly as the
+        # World Map's ClockDial does. CLOCK-DRIVEN (reads the engine's time_of_day off the
+        # snapshot via _openworlds_time_phase — the same normalizer the atlas surface uses), so
+        # the lighting can never disagree with the campaign clock. Additive presentation-only key.
+        "timePhase": _openworlds_time_phase(snapshot),
         "location": location,
         "encounter": {
             "active": combat_active,
@@ -3591,7 +3895,19 @@ def build_combat_surface(
         # P1: the most-recent routed move path (incl. the from-cell) + the impassable cells, so the
         # read-only renderer can draw the detour around walls/props. Presentation-only; [] == none.
         "lastPath": (snapshot.get("combat") or {}).get("last_move_path") or [],
-        "impassable": (snapshot.get("combat") or {}).get("grid_impassable") or [],
+        # #1582: the most-recent REST-mode walk route (walk_to's envelope path) — additive sibling of
+        # lastPath so the walk gate can path-audit rest walks; clients that don't know it ignore it.
+        "lastWalkPath": (snapshot.get("combat") or {}).get("last_walk_path") or [],
+        # W6.2 (#1461) the walking-over-logs fix — a rest-mode branch on `impassable`. In COMBAT the
+        # field stays EXACTLY the engine's `combat.grid_impassable` (byte-identical to pre-W6.2, the
+        # never-clobber-explicit half of `_derive_grid_from_scene`); when combat is INACTIVE it
+        # surfaces the geometry-derived rest blocked set from `rest_blocked_cells()` (see
+        # `_rest_impassable`), so the client's rest walk has the same collision truth `walk_to` uses.
+        "impassable": (
+            ((snapshot.get("combat") or {}).get("grid_impassable") or [])
+            if combat_active
+            else _rest_impassable(snapshot)
+        ),
         # M-E room transition: the authored doorway cells + their destination room-unit, so the renderer
         # can mark the doorway and the UI can offer to cross. [] == no doors/connections (today's shape).
         "doors": _combat_doors(snapshot),
@@ -6436,6 +6752,50 @@ def _live_parley_event(snapshot: dict) -> dict | None:
     return None
 
 
+def _cell_pair(raw: object) -> tuple[int, int] | None:
+    """A single (x, y) integer cell from a [x, y]/(x, y) pair, or None. Shared by the parley
+    stage-metadata projection (mirrors the local `_cell` helper in the rest-token builder)."""
+    if isinstance(raw, (list, tuple)) and len(raw) == 2:
+        ci, ri = _num(raw[0]), _num(raw[1])
+        if ci is not None and ri is not None:
+            return (int(ci), int(ri))
+    return None
+
+
+def _stage_cell_for(snapshot: dict, ch: dict, npc_id: str) -> tuple[int, int] | None:
+    """Where a character STANDS in the current location's rest scene, read-only — the
+    authoritative ``Character.stage_cell`` (W2 #1319) if present, else the ``npc:<id>`` spawn
+    anchor W1 (#1318) writes into ``scene_grid.spawns`` (the same forward-compat occupancy source
+    `rest_blocked_cells` folds in). None when neither is known (un-walked, no anchor) — the caller
+    then omits stage keys, so a pre-W1/W2 snapshot projects byte-identically."""
+    sc = _cell_pair(ch.get("stage_cell"))
+    if sc is not None:
+        return sc
+    # W1 forward-compat: the per-NPC spawn anchor in the current location's scene grid.
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations") if isinstance(snapshot.get("locations"), dict) else {}
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    spawns = sg.get("spawns") if isinstance(sg, dict) else None
+    anchor = spawns.get(f"npc:{npc_id}") if isinstance(spawns, dict) and npc_id else None
+    if isinstance(anchor, list):
+        for c in anchor:
+            cell = _cell_pair(c)
+            if cell is not None:
+                return cell  # first anchor cell (a single-cell NPC footprint)
+    return None
+
+
+def _party_relative_facing(dx: int, dy: int) -> str:
+    """A compass-ish facing string ("e"/"w"/"n"/"s"/"ne"/… or "" when co-located) for a delta
+    from the SPEAKING NPC toward the party's lead PC — so the renderer can turn the NPC to face
+    whoever it's talking to. Grid is cols->x (east +), rows->y (south +): dy>0 is south. Purely
+    a projection of two stage cells; nothing is persisted."""
+    ns = "s" if dy > 0 else "n" if dy < 0 else ""
+    ew = "e" if dx > 0 else "w" if dx < 0 else ""
+    return ns + ew
+
+
 def _parley_npc_block(snapshot: dict, npc_id: str, live_event: dict | None) -> dict | None:
     """The conversation TARGET for a parley, projected read-only from the snapshot — or None.
 
@@ -6459,7 +6819,7 @@ def _parley_npc_block(snapshot: dict, npc_id: str, live_event: dict | None) -> d
     if not isinstance(ch, dict):
         return None  # unknown id -> freeform parley (graceful degrade, like a bad event_id)
     av = _num(ch.get("attitude_value"))
-    return {
+    block = {
         "id": _text(ch.get("id"), target_id),
         "name": _text(ch.get("name"), target_id),
         "attitude": _text(ch.get("attitude")),
@@ -6467,6 +6827,22 @@ def _parley_npc_block(snapshot: dict, npc_id: str, live_event: dict | None) -> d
         "met": bool(ch.get("met")),
         "disposition": _attitude_disposition(ch),
     }
+    # W3 (#1320): additive STAGE metadata so the renderer can stage the speaking NPC AT its cell
+    # (the disembodied-portrait dialogue becomes spatial). Projection-only: reads W2's
+    # `Character.stage_cell` (else W1's `npc:<id>` spawn anchor) — the engine stays sole writer,
+    # nothing is persisted. When the NPC has no known cell (un-walked, no anchor, or a pre-W1/W2
+    # snapshot) NO stage key is emitted, so the block is byte-identical to #751/#615's shape.
+    stage = _stage_cell_for(snapshot, ch, target_id)
+    if stage is not None:
+        block["stage_cell"] = [stage[0], stage[1]]
+        # Party-relative facing: turn the NPC toward the lead PC when BOTH stand on the grid.
+        _lead_id, lead = _lead_pc(snapshot)
+        lead_cell = _stage_cell_for(snapshot, lead, _lead_id) if isinstance(lead, dict) else None
+        if lead_cell is not None:
+            facing = _party_relative_facing(lead_cell[0] - stage[0], lead_cell[1] - stage[1])
+            if facing:  # co-located (same cell) -> no facing key
+                block["facing"] = facing
+    return block
 
 
 def build_parley_surface(
@@ -9468,6 +9844,26 @@ class _Handler(BaseHTTPRequestHandler):
         # travel_to under the engine lock), NOT appended for the DM. Gated on combat being resolved.
         if move.get("kind") == "cross_door":
             self._json(_resolve_cross_door(self.campaign_id, move))
+            return
+        # W2 REST-WALK LANE (#1319): a `walk_to_cell` is engine-resolved in-process (engine.walk_to
+        # paths + writes stage_cell + emits the rest_walk glide beat under the engine lock), NOT
+        # appended for the DM. Gated on combat being resolved (see _resolve_walk_to). Returns the
+        # engine-confirmed path so the browser glides only the routed cells.
+        if move.get("kind") == "walk_to_cell":
+            self._json(_resolve_walk_to(self.campaign_id, move))
+            return
+        # W3 CLICK-TO-TALK LANE (#1320): a `parley_approach` is engine-resolved in-process —
+        # generate_parley_options(approach=True) walks the lead PC adjacent (via walk_to, under the
+        # engine lock) then opens the parley AT the actor. NOT appended for the DM; gated on combat
+        # being resolved (see _resolve_parley_approach). The browser then re-fetches /parley-surface.
+        if move.get("kind") == "parley_approach":
+            self._json(_resolve_parley_approach(self.campaign_id, move))
+            return
+        # WALKABLE-SLICE-V1 item 4 START-A-FIGHT LANE: `start_combat` is engine-resolved in-process
+        # (engine.start_combat rolls initiative under the engine lock — the SOLE WRITER), NOT appended for
+        # the DM. The resolver selects the combatants (present party + present NPCs) from the snapshot.
+        if move.get("kind") == "start_combat":
+            self._json(_resolve_start_combat(self.campaign_id, move))
             return
         is_combat_cell = move.get("kind") in ("move_to_cell", "end_turn") or (
             move.get("kind") == "attack" and "target_id" in move

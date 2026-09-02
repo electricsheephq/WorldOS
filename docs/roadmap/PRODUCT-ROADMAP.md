@@ -1,5 +1,7 @@
 # WorldOS Product Roadmap — the ladder, the sprints, the versions
 
+> **ACTIVE SPRINT: charter #1386 (Act II close-out — Rendered Felt). Refresh this pointer at every charter transition.**
+
 > **The master navigation doc (v2 — the three Acts).** VISION.md says what the product IS and the
 > bar it must clear; this doc says the ORDER we build it in — every sprint from here to the
 > Walkable World and beyond, with a binding gate, an ordered issue list, and a version pin, so
@@ -53,7 +55,7 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 
 | Engine version | Sprint(s) | Product rung cut at this version |
 |---|---|---|
-| v1.0.5 | S1 | — (engine release: engagement + combat epic + art pipeline batch) |
+| v1.0.5 | S1 | **SHIPPED 2026-07-08** — S1 evidence gate3d: story 4.2 / mech 4.1 / behavioral GREEN |
 | v1.0.6 | S2 + S3 | — (felt demo loop + combat readability) |
 | v1.0.7 | S4 | — (The Table I) |
 | v1.0.8 | S5 + S6 | — (The Table II + alive/latency) |
@@ -220,7 +222,20 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > yet; move_to_coords exists combat-gated;
 > the viewer already paints walkability. The gaps are ungatings + one new render mode.
 
-- **W1 — "Scene at Rest"** *(parallel-safe NOW)*. Additive `stage` block (`mode: rest|combat` +
+> **Act II execution state (living; last trued 2026-07-08):**
+> **Sprint 1 (charter #1328, CLOSED)** — W1 #1330 ✅ · HV1 #1331 ✅ · HV2 #1329 ✅ · Tier-1.5 probe
+> harness #1336 ✅. QA-economics v2 doctrine merged (#1340, docs/OPERATIONS.md).
+> **Sprint 2 (charter #1337, CLOSED)** — W1–W4 (#1330/#1341/#1344/…) and HV1–HV5 (#1331/#1329/#1338/
+> #1342/…) are MERGED; W5 (#1322, the Unity player tier) remains open, not yet started.
+> **ACTIVE charter = #1386** ("Act II close-out — Rendered Felt"): ordered lane is #1284 actor
+> grounding v2 → the rendered rest-scene demo (canon fixture, grounded actors, W1 stage block,
+> FELT panel vs the PoE2 anchor) → W5a Unity player build (#1322) → HV follow-ups (#1378 cross_door
+> re-stage, HV extractor quality pass 2). Entry gate satisfied: v1.0.5 released, GEX44 box
+> reachable, render-delivery decision #1302 CLOSED. Closing #1386 pulls the next charter: S2
+> (#1309, entry gate satisfied) queues after.
+> **v1.0.5 RELEASED 2026-07-08** — S1 evidence gate: gate3d story 4.2 / mech 4.1 / behavioral GREEN.
+
+- **W1 — "Scene at Rest"** *(✅ SHIPPED — PR #1330, incl. the felt_rest_panel instrument)*. Additive `stage` block (`mode: rest|combat` +
   rest tokens) in `build_combat_surface` (viewer/server.py:3376; optionally aliased as
   /scene-surface) — party + present NPCs (`Character.location_id == current`) PROJECTED onto
   `scene_grid.spawns` (add `npc:<id>` spawn keys in the generators). Projection only — zero new
@@ -228,7 +243,8 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   FELT-style rest-scene panel — "does the tavern-with-innkeeper read as a game?" (disguised
   real-game controls, same calibration law). Known risk: `spawns` sits inside `_layout_hash`
   (scene_grid.py:158) → one-time Tier-2 art-cache invalidation, accepted.
-- **W2 — "Walk"** *(engine half parallel-safe NOW; glide depends on S2 #1303)*. New additive
+- **W2 — "Walk"** *(engine half ✅ SHIPPED — PR #1341; UI half split → #1350, unblocked by #1303's
+  glide PR #1345)*. New additive
   `walk_to` verb BESIDE move_to_coords (servers/engine/server.py:4583 — the combat gate stays
   untouched), reusing `combat_grid.shortest_path:221` via ONE shared blocked-set function (never
   fork pathing). Writes
@@ -237,7 +253,9 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   (screen-combat.jsx pattern exists); door-cell click → `cross_door` walk-through. **Rule:** the
   renderer glides only engine-confirmed paths — no client prediction. **EVAL:** scripted
   click-walk replay (path legality, glide renders, text-tier identity).
-- **W3 — "Talk"**. Parley surface (viewer/server.py:6315) gains additive stage metadata (NPC stage
+- **W3 — "Talk"** *(engine+surface half ✅ SHIPPED — PR #1344; real seams: viewer read-model
+  `build_parley_surface` ~viewer/server.py:6472 + engine `generate_parley_options(approach=)`;
+  UI/staging half remains)*. Parley surface gains additive stage metadata (NPC stage
   cell, attitude); click-NPC → approach-to-talk (walk_to adjacent, then parley); dialogue rendered
   at the actor (2D reuses screen-dialogue.jsx). **EVAL:** blind panel + a behavioral check that
   the DM receives IDENTICAL parley moves as the text tier.
@@ -252,6 +270,46 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   native-bridge.js handoff); input = existing POST /move kinds ONLY. **EVAL = the T3 gate:** a
   blind AI playtester completes a quest loop IN the rendered surface (extend the GUI harness).
 
+## 4d. THE A-SERIES — The Adventure Loop (the organizing spine from 2026-07-21; plan-approved)
+
+> The question this series answers: the subsystems all exist and gate individually — rooms walk,
+> the DM plays, panels score, the harvest promotes. The A-series composes them into ONE evaluated
+> PLAYABLE LOOP (a Diablo-1-grade quest) and turns its eval into the routing instrument for
+> everything else: **each cycle, the weakest dimension gets the next sprint.** S8 (Demo Assembly)
+> is absorbed by this series — its gate becomes A-G's gate.
+
+- **A0 — Compose** *(two units, parallel)*: `get_quests` full-read RPC (engine additive; get_state
+  lists active only) + `qa/seed_adventure_demo.py` — the one-call fixture: camp ↔ tavern_snug
+  (Keeper/giver) ↔ shop (merchant), camp ↔ crypt (goblins) ↔ throne_hall (Goblin Boss); add_quest
+  4-objective arc; reward staged; full static stack at seed. Every room class is already
+  walk-green certified — composition, zero new geometry.
+- **A-T — The text-arc eval** *(parallel with A-G)*: `qa/run_adventure.sh` (duo-derivative,
+  arc-directed persona, **20-beat budget** (raised from 15 on 2026-09-02 — a control run with the July DM model completed at beat 19 while 15 was knife-edge; the bar is unchanged: N≥3, completion ≥ 0.67, behavioral GREEN; DM and player model ids are pinned and recorded per row), completion short-circuit) + `qa/quest_progress.py`
+  (per-beat get_quests polling → quest_trace.json: reached_giver / quest_accepted /
+  entered_dungeon / boss_dead / reward_received / quest_completed) + `qa/adventure_eval.py`
+  (N runs via the run_parallel pattern → completion_rate · beats/wall-time · stuck (dead beats +
+  stage-gap outliers) · engagement · 3 lenses · behavioral gate → scores_db surface="adventure"
+  + a WEAKEST-LINK verdict line). Ruler: new ac_-family config list per HV1's
+  scoring_config_version rule.
+- **A-G — The walked eval** *(parallel with A-T; absorbs S8's gate)*: `qa/adventure_walk.py`
+  drives the SANDBOX player through the arc route on the :8972 channel (walk_test door-graph
+  machinery + journey_eval VQA per stage + ui_playtest-style stuck/dead-click accounting), feeding
+  the same aggregator (modality column). Prereq: ONE box build batching the #1616 T-pose
+  registry-sync + any #76-adopted plates. Gate (from S8, upgraded): the full quest loop completes
+  walked, in-app semantics, tri-state gates green, per-room backdrop scorecard PASS.
+- **A2 — The flywheel protocol**: each autonomous run = 1 full adventure eval (N≥3 arc + ≥1
+  walked) + 1 improvement cycle on the weakest dimension, then re-eval. The two-anchor panel
+  ruler RATCHETS: when a flagship room is hand-elevated past the calibration reference, the
+  reference upgrades and pulls the bulk tier on the next cycle. Variation breadth (bar variants,
+  dungeon variants) = re-running Loop 0 (the room pipeline) per seed — the `library/` is the
+  accumulation of gate-passed artifacts (HV3 promote is its sole writer).
+- **A3 — Proceduralization gate**: only when the A-eval holds green across N seeds do we
+  parameterize — adventure templates × universe skins (the DM pulls a world), background
+  generation on library cache-miss via the StreamingAssets HOT-LOAD mechanism (camOrtho-proven;
+  box builds are ship-time only) with the never-T-pose floor as the immediate stand-in.
+  Proceduralizing an ungated loop generates infinite mediocrity; gating first generates infinite
+  shippable.
+
 ## 4c. THE HV-SERIES — The Harvest Loop (Act II; the flywheel)
 
 > The mechanism: every scored QA run is ALSO a harvest candidate — no new run types. Content flows
@@ -259,19 +317,21 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > as a trend ("less AI dependence" becomes a number). All promotion is eval-gated; the content
 > analogue of the real-art-control law is **disguised hand-authored canon as panel controls**.
 
-- **HV1 — "Artifact Evals FIRST"** *(starts NOW)*. `qa/artifact_score.py` + per-class rubrics
+- **HV1 — "Artifact Evals FIRST"** *(✅ SHIPPED — PR #1331; instrument DISCRIMINATES: canon controls
+  2.9–4.2 vs thin extract 2.05)*. `qa/artifact_score.py` + per-class rubrics
   (quest / npc-or-villain / location / encounter; plates already have visual-critic). Controls =
   hand-authored canon (world.json quest_variants / npc_roster dossiers / wiki-canon areas) pushed
   through the SAME artifact schema. Storage: additive `artifacts` TABLE in qa/scores.db — new
   ruler family `ac_…` via a NEW file-list in scoring_config_version.py (NEVER append to
   SCORING_CONFIG_FILES — that silently re-versions `sc_`). Ships a thin snapshot reader so it runs
   on EXISTING finished campaigns immediately.
-- **HV2 — "Extract"** *(starts NOW; first commit = the schema handshake
+- **HV2 — "Extract"** *(✅ SHIPPED — PR #1329; 165 artifacts extracted from 4 campaigns; its merged
+  schema is canonical)*. *(original spec: first commit = the schema handshake
   `data/library/artifact_schema.json`)*. `qa/export_campaign_artifacts.py` (sibling of
   export_scene_grid.py; reuses distill.py's transcript reader for dialogue snippets + attitude
   arcs) → `qa/artifacts_out/<campaign>/{quests,npcs,locations,encounters}/*.json` with provenance
   {campaign_id, run_id, world, sha, scores}. Strictly read-only on play-state.
-- **HV3 — "Promote"** *(needs HV1+HV2)*. `tools/library/promote.py`: nominations
+- **HV3 — "Promote"** *(✅ SHIPPED — PR #1338; first live promotion batch in flight)*. `tools/library/promote.py`: nominations
   (qa/nominations.jsonl) → artifact panels → threshold gate (overall ≥4.0, no dim <3.0,
   control-valid → `stable`; `canonical` = human curation only) → **`library/`** (pack-shaped,
   #644-forward-compatible: pack.json {name, version, license, provenance} +
@@ -290,7 +350,9 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   registry aliases (zero renderer edits by contract). **EVAL:** A/B duo library-first vs pure-gen
   — lens parity-or-better + latency/token reduction + feature_engagement confirms library content
   is ENGAGED, not decorative.
-- **HV5 — "Flywheel ops"** *(hooks after HV3)*. qa/closeout.py auto-NOMINATES artifacts from every
+- **HV5 — "Flywheel ops"** *(slice 1 ✅ SHIPPED — PR #1342: closeout auto-nomination via
+  qa/nominate.py; nightly batch scoring, weekly curation, library_metrics + backdrop cadence
+  remain)*. qa/closeout.py auto-NOMINATES artifacts from every
   scored run (story threshold = STORY_BAR, qa/closeout.py, currently 4.3; quest completed; NPC
   turn floor N=3) — artifact scoring runs in a
   nightly batch, never inline (duo latency untouched). Weekly curation batch. **Backdrop cadence:
@@ -348,3 +410,61 @@ ghoul clips · **#1306** demo dungeon authoring (room-unit graph) · **#1307** `
 **Charters live:** **#1309** (S2 — The Felt Demo Loop, incl. the FELT control-anchored gate) ·
 **#1310** (S3 — Combat Readability, incl. the confusion-bug taxonomy). Later charters (S4+) are
 authored from §4 when their predecessor's gate passes — same template.
+
+## 9. ★ DEMO COMPLETION — THE GOVERNING MILESTONE (owner-set 2026-07-22)
+
+**The milestone:** the owner plays "The Crypt Below" (adventure_demo_v1) end-to-end in the WorldOS
+player, unassisted: camp hub → Keeper Maera (visible, quest accepted) → crypt (visible goblins,
+combat runs AND CLOSES with XP) → throne (visible boss, fight completes) → return → reward →
+quest_completed — with ZERO user-truth defects. Demo completion proves the system can build the rest.
+
+**Proven by four gates (checkable, never narrative):**
+- G1 — the certification gates that EXIST run green against the INSTALLED build, verified by
+  build identity: the app self-reports its build stamp via the /app-status contract (WorldOS-GUI-RUNBOOK §app-status; viewer/server.py), and the gate evidence records the
+  SAME stamp — a mismatch is a G1 FAIL (the certified-build ≠ installed-build class, #1651).
+  Today that means walk_static (CI) + the paint-coherence gate + the A-T/A-G evals run against the
+  installed pair; G1 UPGRADES to the full `player_cert` suite when §9.2 lands (a proof clause may
+  only reference gates that exist).
+- G2 — arc-duo eval: completion at bar with behavioral GREEN (surface=adventure, av_ ruler).
+- G3 — walked-arc eval GREEN over the FULL arc route INCLUDING the return-for-reward leg back to
+  the giver (navigation + cast presence + VQA stages at every leg).
+- G4 — owner playthrough observes ZERO user-truth defects of ANY severity (walk-through, invisible
+  actor, dead door, spawn-in-furniture, stuck UI panel) and files zero new P1s of any class (the
+  residual unknown-unknowns absorber).
+
+### 9.1 Demo-critical path (dependency-ordered; ⊘ = independent of the pipeline fork)
+1. ⊘ #1645 combat lifecycle (M) — DM closes fights (action economy, end_combat, XP, time-advance).
+2. ⊘ #1639 cast presence (M) — rest surface emits NPC + live-monster tokens; client renders them.
+3. ⊘ #1522 parley-panel lifecycle (S) — CloseParley() from the location-change path (sits on the
+   demo's FIRST beat: Maera parley → door-cross). UI/panel lifecycle is a NAMED demo property.
+4. ⊘ #1647 wave 1 (S-M) — coherence-aware spawns/arrivals (instrument merged; relocation in
+   flight); silhouette fix + door hotspots (#1649); #1584 spawn test wired into CI.
+5. ⊘ ONE box build carrying the client fixes → sandbox gates → owner install (install gate = §9.2).
+6. Camp HUB (fork-dependent): regen geometry is GREEN; ships as greybox-composite / #1642-lit /
+   3D-first per the spike outcome.
+7. ⊘ #1642 alive plates (M) — normal pass + light composite (batch with build 5 when ready).
+8. #83 THE 3D SPIKE — decides room construction FORWARD; not demo-blocking. SPIKE EXIT CRITERIA
+   (red-team): per-actor silhouette-per-submesh + spawn-centroid assertions over the NEW crypt
+   roster — the 3D re-author must not reintroduce either decayed class.
+
+### 9.2 THE HARNESS SYSTEM (the enforcement redesign, red-team-amended)
+- **`qa/player_cert`** — CHARTERED WORK (L), not an aspiration: fold walk_test + adventure_walk +
+  journey_eval + the user-truth stages + a combat-lifecycle probe into ONE tri-state command.
+  SPLIT (red-team F1): a CI-RUNNABLE static/headless half (every PR) and a BOX-HOSTED live half
+  with a NAMED trigger — scheduled box session + owning runbook step + a version-stamp the owner
+  app self-reports on launch, diffed against the latest cert run (drift is loud, not silent).
+  ROSTER-COMPLETE (F2): live properties iterate the FULL actor roster; any roster addition is a
+  trigger event re-running the applicable property set against the new member.
+  BUILD ORDER (red-team sequencing): the two shared assertion PRIMITIVES first — silhouette-per-
+  submesh and spawn-centroid — consumed by the #83 spike immediately, aggregated by player_cert.
+- **`qa/features.json` + lint** — the EXECUTABLE feature registry: every shipped capability row
+  binds to a gate assertion id; CI fails on unbound rows or orphan gates. Docs inform; only red
+  CI enforces (archaeology case 6: a written runbook rule recurred anyway).
+- **Known-hole SLA** — player-feelable holes cannot defer past the next box build; every deferral
+  names the gate that guards it meanwhile.
+- **Rebuild-not-patch** — rooms failing registration/coherence are REGENERATED through the current
+  chain, never hand-patched; the cert-required lint (#1644) keeps retired plates unshippable.
+
+### 9.3 Ruler discipline (restated)
+Two-anchor calibrated panels; av_ ruler for adventure aggregates; blind adjudication wherever an
+author would judge their own work; honest negatives are progress and get scorecard rows.

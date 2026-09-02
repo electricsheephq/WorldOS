@@ -1,0 +1,196 @@
+{
+ "generator": {
+  "seed": 4242,
+  "world_units_per_cell": 2.0,
+  "tile_count": 3
+ },
+ "bounds": {
+  "min": [
+   0,
+   0,
+   0
+  ],
+  "max": [
+   16,
+   4,
+   6
+  ]
+ },
+ "rooms": [
+  {
+   "id": "room_0",
+   "tags": [
+    "entrance"
+   ],
+   "is_main_path": true,
+   "bounds": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     6,
+     4,
+     6
+    ]
+   }
+  },
+  {
+   "id": "room_1",
+   "tags": [
+    "chamber"
+   ],
+   "is_main_path": true,
+   "bounds": {
+    "min": [
+     10,
+     0,
+     0
+    ],
+    "max": [
+     16,
+     4,
+     6
+    ]
+   }
+  },
+  {
+   "id": "corridor_2",
+   "tags": [
+    "corridor"
+   ],
+   "is_main_path": true,
+   "bounds": {
+    "min": [
+     6,
+     0,
+     2
+    ],
+    "max": [
+     10,
+     4,
+     4
+    ]
+   }
+  }
+ ],
+ "doorways": [
+  {
+   "id": "door_0",
+   "room_a": "room_0",
+   "room_b": "corridor_2",
+   "position": [
+    6,
+    0,
+    3
+   ],
+   "forward": [
+    1,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "door_1",
+   "room_a": "corridor_2",
+   "room_b": "room_1",
+   "position": [
+    10,
+    0,
+    3
+   ],
+   "forward": [
+    1,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "door_2",
+   "room_a": "room_0",
+   "room_b": "",
+   "position": [
+    3,
+    0,
+    0
+   ],
+   "forward": [
+    0,
+    0,
+    -1
+   ]
+  }
+ ],
+ "props": [
+  {
+   "id": "prop_crate",
+   "room": "room_0",
+   "shape_class": "box",
+   "kind_hint": "supply_crates",
+   "position": [
+    2,
+    0,
+    2
+   ],
+   "bounds": {
+    "min": [
+     1.5,
+     0,
+     1.5
+    ],
+    "max": [
+     2.5,
+     1,
+     2.5
+    ]
+   }
+  },
+  {
+   "id": "prop_pillar",
+   "room": "room_1",
+   "shape_class": "cylinder",
+   "kind_hint": "",
+   "position": [
+    12,
+    0,
+    3
+   ],
+   "bounds": {
+    "min": [
+     11.5,
+     0,
+     2.5
+    ],
+    "max": [
+     12.5,
+     3,
+     3.5
+    ]
+   }
+  },
+  {
+   "id": "prop_tree",
+   "room": "room_1",
+   "shape_class": "cone",
+   "kind_hint": "",
+   "position": [
+    14,
+    0,
+    2
+   ],
+   "bounds": {
+    "min": [
+     13.5,
+     0,
+     1.5
+    ],
+    "max": [
+     14.5,
+     4,
+     2.5
+    ]
+   }
+  }
+ ]
+}
