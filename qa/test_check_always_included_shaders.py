@@ -15,12 +15,14 @@ from check_always_included_shaders import (
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# A minimal build source that satisfies the gate: calls the ensure helper and names both shaders.
+# A minimal build source that satisfies the gate: calls the ensure helper and names every required shader
+# (derived from REQUIRED_SHADERS so adding one — #1777 added WorldOS/UnlitColor — cannot leave a stale fixture
+# passing while the real gate list moved on).
 GOOD_SOURCE = """
         string[] includedShaders = EnsureAlwaysIncludedShaders();
-    static readonly string[] RequiredAlwaysIncluded = { "WorldOS/OccluderDepth", "WorldOS/ActorSilhouette" };
+    static readonly string[] RequiredAlwaysIncluded = { %s };
     static string[] EnsureAlwaysIncludedShaders() { return RequiredAlwaysIncluded; }
-"""
+""" % ", ".join('"%s"' % n for n in REQUIRED_SHADERS)
 
 
 class EvaluateBuildSourceTests(unittest.TestCase):
@@ -46,7 +48,7 @@ class EvaluateBuildSourceTests(unittest.TestCase):
 
 class EvaluateBuildReportTests(unittest.TestCase):
     def test_report_listing_both_is_clean(self):
-        report = "result=Succeeded\nalwaysIncludedShaders=WorldOS/OccluderDepth,WorldOS/ActorSilhouette\n"
+        report = "result=Succeeded\nalwaysIncludedShaders=" + ",".join(REQUIRED_SHADERS) + "\n"
         self.assertEqual(evaluate_build_report(report), [])
 
     def test_report_missing_silhouette_fails(self):

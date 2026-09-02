@@ -145,6 +145,13 @@ public class CombatSurfaceClient : MonoBehaviour
     // "selected party token walks" (screen-combat.jsx). Both stay false/empty on a COMBAT surface, so
     // every combat-mode code path below is byte-identical.
     bool _restMode = false;
+    // #1752 client half: the stage's own mode. Combat surfaces now carry a POPULATED stage (#1778) whose
+    // tokens are the authoritative placement + HUD record, so combat renders from the stage too — the client
+    // no longer leans on the top-level board tokens alone (which carry no kind/rest_role, hence no PC marker).
+    bool _stageCombat = false;
+    // #1760: the party PC's token id (kind "player", else rest_role "party"), latched from whichever stage
+    // named it. Drives the distinct PC ring so the player can tell which figure is theirs.
+    string _pcId = "";
     string _restMoverId = "";
 
     // WALKABLE-SLICE-V1 (item 1): the surface's authored DOORWAY cells (viewer/server.py _combat_doors,
@@ -183,6 +190,17 @@ public class CombatSurfaceClient : MonoBehaviour
     // door in rest, not just in combat. Empty in combat (top-level `tokens` drive it there); the shared PC
     // ids mean a rest<->combat transition GLIDES the same actor instead of blinking a new one.
     readonly System.Collections.Generic.List<Tok> _stageCast = new System.Collections.Generic.List<Tok>();
+    // #1777: the HUD quad shader, resolved ONCE. Shader.Find("Unlit/Color") resolved in the Editor and
+    // returned null in the shipped player (a built-in no asset references is stripped), and the resulting
+    // `new Material(null)` threw straight out of the Fetch coroutine's MoveNext — killing the poll loop for
+    // the whole session. WorldOS/UnlitColor is a project shader the build GUARANTEES into Always-Included
+    // (BuildMacOSPlayer.RequiredAlwaysIncluded + qa/check_always_included_shaders.py); Sprites/Default is the
+    // stock always-included fallback; null means every HUD quad is SKIPPED, never constructed from null.
+    Shader _hudShader; bool _hudShaderResolved, _hudShaderWarned;
+    GameObject _turnMarker; Material _turnMarkerMat;   // #1752: the single active-turn marker, moved to _currentId
+    // #1752: per-actor public health BAND ("steady"/"wounded"/"bloodied"/"down") straight off the surface —
+    // the HP bar's fill colour, so a bloodied combatant reads bloodied on the board.
+    readonly System.Collections.Generic.Dictionary<string, string> _bandOf = new System.Collections.Generic.Dictionary<string, string>();
 
     // #anim-combat: the actor's ANIM_REF (moveset) fbx (registry anim_ref), so a walk/attack/hit clip that
     // lives in a SEPARATE moveset fbx rather than the model fbx is still found. Mirrors _fbxOf; both feed
@@ -506,7 +524,11 @@ public class CombatSurfaceClient : MonoBehaviour
     // the end of the reveal (fields nulled) so each transition builds a fresh cover.
     GameObject _plateCover; Material _plateCoverMat;
 
-    [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; }
+    // #1752/#1760 HUD fields ride the SAME token record the placement pipeline already consumes.
+    // `hpKnown`/`health` name-match the top-level combat tokens so JsonUtility fills them for free;
+    // `kind`/`restRole` only ever come from the manually-parsed `stage` block (the top-level combat
+    // tokens carry neither), and identify the party PC — the "which one is me" key of #1760.
+    [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; public bool hpKnown; public string health; public string kind; public string restRole; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
     [System.Serializable] public class Surf { public string turnToken; public bool can_act; public Grid grid; public Tok[] tokens; }
     [System.Serializable] public class MoveResp { public bool ok; public string reason; public Surf combat; }
@@ -655,7 +677,17 @@ public class CombatSurfaceClient : MonoBehaviour
                 }
                 yield return null;
             }
-            if (Ok(req)) { Debug.Log("[CSC] fetch ok (" + req.responseCode + ")"); _dbgSurf++; ApplyJson(req.downloadHandler.text); }
+            if (Ok(req))
+            {
+                Debug.Log("[CSC] fetch ok (" + req.responseCode + ")"); _dbgSurf++;
+                // #1777 THE LOAD-BEARING GUARD: an exception thrown anywhere under ApplyJson unwinds out of
+                // THIS coroutine's MoveNext and terminates it permanently — PollLoop is `yield return Fetch()`,
+                // so a dead Fetch is a dead client that never applies another surface for the rest of the
+                // session (measured: one null shader froze a whole boss fight). A single bad surface must cost
+                // at most that surface. Broad by design: there is no visual failure worth a frozen player.
+                try { ApplyJson(req.downloadHandler.text); }
+                catch (System.Exception e) { Debug.LogWarning("[CSC] apply failed: " + e.GetType().Name + ": " + e.Message + " | " + e.StackTrace); }
+            }
             else Debug.LogWarning("[CSC] fetch FAILED status=" + req.responseCode + " err=" + req.error);
         }
     }
@@ -685,6 +717,21 @@ public class CombatSurfaceClient : MonoBehaviour
         // WALKABLE-SLICE-V1 (item 6): swap the backdrop plate when the surface's location changed and the
         // manifest has an entry for it (a cross_door into a new room). No-op otherwise (byte-identical).
         MaybeSwapPlate();
+    }
+
+    // #1752 stage-token field readers. The runtime Json parser hands back boxed object/null, and the surface
+    // deliberately ships `hp: null` for a foe whose HP the party has not earned — so a missing/null/odd value
+    // must read as 0/false, never throw inside the poll's apply path.
+    static int TkInt(System.Collections.Generic.Dictionary<string, object> tk, string key)
+    {
+        if (tk == null || !tk.ContainsKey(key) || tk[key] == null) return 0;
+        try { return System.Convert.ToInt32(tk[key]); } catch { return 0; }
+    }
+    static bool TkBool(System.Collections.Generic.Dictionary<string, object> tk, string key)
+    {
+        if (tk == null || !tk.ContainsKey(key) || tk[key] == null) return false;
+        if (tk[key] is bool b) return b;
+        try { return System.Convert.ToBoolean(tk[key]); } catch { return false; }
     }
 
     // Populate _impassable + _lastPath from a raw /combat-surface OR /move response JSON (the latter nests
@@ -726,17 +773,26 @@ public class CombatSurfaceClient : MonoBehaviour
             // state the last poll established. A combat surface carries mode:"combat" -> _restMode false.
             if (root.ContainsKey("stage") && root["stage"] is System.Collections.Generic.Dictionary<string, object> stage)
             {
-                _restMode = (stage.ContainsKey("mode") ? stage["mode"] as string : "") == "rest";
+                string stageMode = stage.ContainsKey("mode") ? stage["mode"] as string : "";
+                _restMode = stageMode == "rest";
+                // #1752: a combat stage is now ALWAYS populated (#1778) and is the authoritative placement +
+                // HUD record — parse it exactly like the rest stage so combat re-places every token from every
+                // surface (the pre-#1778 client could sit on a stale rest projection through a whole fight).
+                _stageCombat = stageMode == "combat";
                 _restMoverId = "";
                 _npcAtCell.Clear();                                            // WALKABLE-SLICE-V1 (item 2): rebuilt from this stage
                 _stageCast.Clear();                                            // Option A: rebuilt from this stage
-                if (_restMode && stage.ContainsKey("tokens") && stage["tokens"] is System.Collections.Generic.List<object> stoks)
+                if ((_restMode || _stageCombat) && stage.ContainsKey("tokens") && stage["tokens"] is System.Collections.Generic.List<object> stoks)
                 {
                     foreach (var e in stoks)
                     {
                         var tk = e as System.Collections.Generic.Dictionary<string, object>; if (tk == null) continue;
                         string role = tk.ContainsKey("rest_role") ? tk["rest_role"] as string : "";
                         string id = tk.ContainsKey("id") ? tk["id"] as string : "";
+                        string kind = tk.ContainsKey("kind") ? tk["kind"] as string : "";
+                        // #1760: latch the party PC once — a combat stage still carries kind/rest_role, so the
+                        // marker survives the rest -> combat transition without a second source of truth.
+                        if (string.IsNullOrEmpty(_pcId) && !string.IsNullOrEmpty(id) && (kind == "player" || role == "party")) _pcId = id;
                         // Option A: render EVERY present stage token (party + npc) as a client actor, through the
                         // same spawn/pose/ground pipeline combat tokens use. Stage tokens carry name/team/kind
                         // (server _emit) so SpawnActor resolves the right model; rest cast are all team "ally".
@@ -746,10 +802,21 @@ public class CombatSurfaceClient : MonoBehaviour
                                 id = id,
                                 name = tk.ContainsKey("name") ? tk["name"] as string : id,
                                 team = tk.ContainsKey("team") ? tk["team"] as string : "ally",
+                                kind = kind, restRole = role,
                                 x = System.Convert.ToInt32(tk["x"]), y = System.Convert.ToInt32(tk["y"]),
-                                isCurrent = false, hp = 1, hpMax = 1,
+                                // A REST stage keeps the pre-#1752 placeholder vitals (hp 1/1, no turn) so the
+                                // rest path renders byte-identically; a COMBAT stage carries the engine's own
+                                // hp/max_hp/hp_known/health/is_turn (foe disclosure already applied server-side).
+                                isCurrent = _stageCombat && TkBool(tk, "is_turn"),
+                                hp = _stageCombat ? TkInt(tk, "hp") : 1,
+                                hpMax = _stageCombat ? TkInt(tk, "max_hp") : 1,
+                                hpKnown = _stageCombat && TkBool(tk, "hp_known"),
+                                health = _stageCombat ? (tk.ContainsKey("health") ? tk["health"] as string : "") : "",
                             });
                         }
+                        // The walk-mover + parley-target maps are REST affordances only — a combat stage feeds
+                        // placement + HUD and nothing else, so combat keeps the empty maps it has always had.
+                        if (!_restMode) continue;
                         // WALKABLE-SLICE-V1 (item 2): map every present NPC (rest_role:"npc") to its cell so a
                         // click there opens a parley_approach instead of a walk (browser: screen-combat.jsx:373).
                         if (role == "npc" && !string.IsNullOrEmpty(id) && tk.ContainsKey("x") && tk.ContainsKey("y"))
@@ -1068,8 +1135,14 @@ public class CombatSurfaceClient : MonoBehaviour
         // `stage` (parsed to _stageCast). Render whichever is active through the SAME spawn/reposition/
         // despawn+glide pipeline, so the party is visible and walkable in rest and a rest<->combat transition
         // (shared PC ids) glides the same actor instead of blinking a new one.
-        bool isCombat = s.tokens.Length > 0;
-        var cast = isCombat ? s.tokens : (_restMode ? _stageCast.ToArray() : System.Array.Empty<Tok>());
+        // #1752: in COMBAT the stage is the placement + HUD authority — #1778 populates it on every surface,
+        // reconciled against the authoritative combat board, and only it carries kind/rest_role (the #1760 PC
+        // key) and hp_known/health. The top-level board tokens stay the fallback for a surface whose stage this
+        // client could not parse, so a stale rest projection can never survive a fight. Rest is unchanged.
+        bool isCombat = _stageCombat || s.tokens.Length > 0;
+        var cast = (_stageCombat && _stageCast.Count > 0) ? _stageCast.ToArray()
+                 : (s.tokens.Length > 0 ? s.tokens
+                 : (_restMode ? _stageCast.ToArray() : System.Array.Empty<Tok>()));
         // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
         // #Phase3: also rebuild the foe-cell set so the overlay hover reads red on an attackable cell.
         _occupied.Clear(); _foeCells.Clear(); _foeIds.Clear();
@@ -1122,7 +1195,12 @@ public class CombatSurfaceClient : MonoBehaviour
         // collapse (prone, revivable — removal from the surface is the only terminal signal). HP bars
         // are (re)created for the living; the active-turn ring pulse is anchored on _currentId (Update drives
         // the per-frame billboard + pulse).
-        if (isCombat) ApplyCombat(s);
+        // #1760: tint every contact decal by role BEFORE the HUD pass — the party PC reads gold, foes red,
+        // the rest of the cast the stock parchment ring. This is the cheapest answer to "which one is me"
+        // (the ring already exists per token; only its RGB was hard-coded). UpdateTurnPulse drives alpha +
+        // scale only, so the pulse and this tint compose instead of fighting.
+        ApplyTokenRings(cast);
+        if (isCombat) ApplyCombat(cast);
         else { _currentId = ""; _currentName = ""; RestNamePlates(cast); }   // Option A: rest cast — name plates, no HP/turn
         // #Phase3: keep the overlay in sync with the new surface — rebuild the quad pool if the grid
         // extents changed (rest rooms are non-14x11), then repaint per-cell tints for the new occupancy.
@@ -1166,19 +1244,22 @@ public class CombatSurfaceClient : MonoBehaviour
     }
 
     // #anim-combat: the ported verb map, driven off the surface hp fields + isCurrent (engine truth only).
-    void ApplyCombat(Surf s)
+    void ApplyCombat(Tok[] toks)
     {
-        // active-turn combatant (attacker anchor + ring-pulse target).
+        // active-turn combatant (attacker anchor + ring-pulse + turn-marker target). #1752: `isCurrent` is the
+        // board token's field and the stage token's `is_turn` — one flag, whichever cast fed us.
         _currentId = "";
-        foreach (var t in s.tokens) if (t != null && t.isCurrent && !string.IsNullOrEmpty(t.id)) { _currentId = t.id; break; }
+        foreach (var t in toks) if (t != null && t.isCurrent && !string.IsNullOrEmpty(t.id)) { _currentId = t.id; break; }
         // #1463: the display name of the active combatant, for the onboarding hint's "whose turn" line.
         _currentName = ""; if (!string.IsNullOrEmpty(_currentId)) _nameOf.TryGetValue(_currentId, out _currentName);
         Transform attacker = string.IsNullOrEmpty(_currentId) ? null : FindActor(_currentId);
 
-        foreach (var t in s.tokens)
+        foreach (var t in toks)
         {
             if (t == null || string.IsNullOrEmpty(t.id)) continue;
-            if (t.hpMax <= 0)
+            // #1752: hp_known is the disclosure flag the surface ships; a token whose HP the party has not
+            // earned still gets its plate, never a bar built from placeholder numbers.
+            if (t.hpMax <= 0 || (t.hpKnown == false && !string.IsNullOrEmpty(t.health)))
             {
                 // #1482: foes hide their HP (viewer gates hp/hpMax on hp_known — a D&D DM-screen posture), so
                 // they never enter the HP-bar path and never got a name plate — the reason a first-timer took
@@ -1186,6 +1267,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 // hero plate on the same billboarded HP-bar root UpdateHpBars positions each frame, minus the
                 // HP quads). Onboard-only, so beauty captures stay byte-identical.
                 if (_onboard) EnsureNamePlate(t.id, FindActor(t.id));
+                _hpOf.Remove(t.id); _hpMaxOf.Remove(t.id);
                 continue;
             }
             int newHp = t.hp;
@@ -1220,11 +1302,14 @@ public class CombatSurfaceClient : MonoBehaviour
                 else RestoreDowned(t.id, FindActor(t.id));
             }
             else if (newHp > 0) EnsureHpBar(t.id, FindActor(t.id));
+            // #1752: the bar's fill colour is the surface's own public health BAND, so "bloodied" reads as
+            // bloodied on the board and not only in the DM's prose.
+            _bandOf[t.id] = string.IsNullOrEmpty(t.health) ? "steady" : t.health;
         }
         // prune hp/bar state for combatants no longer on the surface (moved off the board / removed).
         var goneHp = new System.Collections.Generic.List<string>();
-        foreach (var id in _hpOf.Keys) { bool here = false; foreach (var t in s.tokens) if (t != null && t.id == id) { here = true; break; } if (!here) goneHp.Add(id); }
-        foreach (var id in goneHp) { _hpOf.Remove(id); _hpMaxOf.Remove(id); RemoveHpBar(id); }
+        foreach (var id in _hpOf.Keys) { bool here = false; foreach (var t in toks) if (t != null && t.id == id) { here = true; break; } if (!here) goneHp.Add(id); }
+        foreach (var id in goneHp) { _hpOf.Remove(id); _hpMaxOf.Remove(id); _bandOf.Remove(id); RemoveHpBar(id); }
         // #1482-review: name-plate-only roots (hp-hidden foes) never enter _hpOf (they `continue` above),
         // so the prune above misses them — a foe that leaves the surface while still hp-hidden left its
         // plate floating forever over a stale actor (baked actors are never despawned; see ApplySurf's
@@ -1232,7 +1317,7 @@ public class CombatSurfaceClient : MonoBehaviour
         if (_namePlateOnly.Count > 0)
         {
             var goneNamePlates = new System.Collections.Generic.List<string>();
-            foreach (var id in _namePlateOnly) { bool here = false; foreach (var t in s.tokens) if (t != null && t.id == id) { here = true; break; } if (!here) goneNamePlates.Add(id); }
+            foreach (var id in _namePlateOnly) { bool here = false; foreach (var t in toks) if (t != null && t.id == id) { here = true; break; } if (!here) goneNamePlates.Add(id); }
             foreach (var id in goneNamePlates) RemoveHpBar(id);
         }
     }
@@ -2522,6 +2607,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // pulses. Both run every frame regardless of the click/poll gate.
         UpdateHpBars();
         UpdateTurnPulse();
+        UpdateTurnMarker();   // #1752: the gold diamond over the is_turn combatant
         // #1736: suppress any occluder proxy an actor is currently standing inside, before this frame renders.
         UpdateOccluderActorGating();
         if (_busy) return;
@@ -3292,7 +3378,14 @@ public class CombatSurfaceClient : MonoBehaviour
             if (resp != null && resp.ok) MarkActed();   // #1463: the first accepted move/attack retires the hint
             // #1441: parse lastPath/impassable from the RAW response (nested under `combat`) BEFORE
             // ApplySurf so the glide can follow the engine-confirmed route of the move just resolved.
-            if (resp != null && resp.ok && resp.combat != null) { Debug.Log("[CSC] move ok -> re-render"); ParseSurfaceExtras(req.downloadHandler.text); ApplySurf(resp.combat); }
+            if (resp != null && resp.ok && resp.combat != null)
+            {
+                Debug.Log("[CSC] move ok -> re-render");
+                // #1777: the move response re-enters the same apply path from a coroutine — an unguarded throw
+                // here kills THIS coroutine (and strands _busy), so it gets the identical guard Fetch has.
+                try { ParseSurfaceExtras(req.downloadHandler.text); ApplySurf(resp.combat); }
+                catch (System.Exception e) { Debug.LogWarning("[CSC] apply failed: " + e.GetType().Name + ": " + e.Message + " | " + e.StackTrace); }
+            }
             else Debug.LogWarning("[CSC] move rejected: " + (resp != null ? resp.reason : "null"));
             // #Phase4: surface any advisory note (movement_illegal / move_blocked) on BOTH accepted and
             // rejected responses — a short fading toast + amber pulse so a long/blocked move reads clearly.
@@ -3586,12 +3679,110 @@ public class CombatSurfaceClient : MonoBehaviour
         _hpBars[id] = root;
         _namePlateOnly.Add(id);
     }
+    // #1777 ROOT CAUSE: this used `new Material(Shader.Find("Unlit/Color"))`. "Unlit/Color" is a BUILT-IN that
+    // no scene asset references, so the player build strips it — Shader.Find resolved in the Editor and returned
+    // null in the shipped .app, and Material(null) threw an ArgumentNullException that unwound out of the Fetch
+    // coroutine's MoveNext and KILLED the poll loop for the whole session (the client froze on its last
+    // pre-combat frame). The bar now uses WorldOS/UnlitColor, a project shader the build guarantees into
+    // Always-Included Shaders (BuildMacOSPlayer.RequiredAlwaysIncluded, gated by
+    // qa/check_always_included_shaders.py), falls back to the stock always-included Sprites/Default, and if
+    // BOTH are somehow absent it SKIPS the quad — a missing bar, never a dead client.
+    Shader HudShader()
+    {
+        if (_hudShaderResolved) return _hudShader;
+        _hudShaderResolved = true;
+        var sh = Shader.Find("WorldOS/UnlitColor");
+        if (sh == null) sh = Shader.Find("Sprites/Default");   // `==` (not `??`) — UnityEngine.Object fake-null
+        _hudShader = sh;
+        if (_hudShader == null) Debug.LogWarning("[CSC] #1777 no HUD shader (WorldOS/UnlitColor + Sprites/Default both missing) — HP bars/markers disabled this session");
+        else Debug.Log("[CSC] HUD shader = " + _hudShader.name);
+        return _hudShader;
+    }
     void MakeBarQuad(GameObject root, string suffix, Color col, int queue)
     {
+        var sh = HudShader();
+        if (sh == null) { if (!_hudShaderWarned) { _hudShaderWarned = true; Debug.LogWarning("[CSC] #1777 HP bar skipped (no HUD shader)"); } return; }
         var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = root.name + suffix; Object.DestroyImmediate(q.GetComponent<Collider>());
         q.transform.SetParent(root.transform, false); q.transform.localScale = new Vector3(3.2f, 0.35f, 1f);
-        var m = new Material(Shader.Find("Unlit/Color")); m.color = col; m.renderQueue = queue;   // Unlit/Color exposes _Color (solid tinted bar)
+        var m = new Material(sh); m.color = col; m.renderQueue = queue;   // WorldOS/UnlitColor exposes _Color (solid tinted bar)
         var r = q.GetComponent<Renderer>(); r.sharedMaterial = m; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+    }
+
+    // #1752: the public health band -> the bar's fill colour. Unknown/absent reads as the old steady green
+    // rather than inventing a wound.
+    static Color BandColor(string band)
+    {
+        switch (band)
+        {
+            case "bloodied": return new Color(0.85f, 0.15f, 0.12f, 1f);
+            case "wounded":  return new Color(0.93f, 0.72f, 0.20f, 1f);
+            case "down":     return new Color(0.42f, 0.07f, 0.07f, 1f);
+            default:         return new Color(0.34f, 0.76f, 0.32f, 1f);   // steady
+        }
+    }
+
+    // #1760: mark the party PC's ground decals GOLD — the answer to "which one is me". Both decals are
+    // tinted: `_Ring` is the wide contact decal and `_Pip` the small feet dot, and the pip is the one that
+    // actually READS at play distance (the issue's "identical teal ellipse" is the cyan ally pip — measured on
+    // the cb1 frames, a ring-only tint was invisible). Alpha is left to UpdateTurnPulse / the death fade (they
+    // only touch `a`), so this composes with both. Pure presentation off surface fields; nothing is written.
+    void ApplyTokenRings(Tok[] cast)
+    {
+        if (cast == null) return;
+        foreach (var t in cast)
+        {
+            // PC ONLY — every other token keeps the exact decal colours SpawnActor gave it. A first pass also
+            // re-tinted foes (red ring); it changed nothing a player could see, but `player_cert`'s
+            // cast_renders_full_figure measures the row SPAN of yellow-green foe-body pixels in a projected
+            // box, and re-tinting one ring pixel at the box's bottom edge collapsed Goblin 1's span
+            // 0.6379 -> 0.2931 and turned that standing gate RED. The foe read (red pip + foe contact decal)
+            // already exists; the PC marker is the only thing #1760 is missing, so only the PC is touched.
+            if (t == null || string.IsNullOrEmpty(t.id)) continue;
+            if (!(t.id == _pcId || t.kind == "player" || t.restRole == "party")) continue;
+            TintDecal("Actor_" + t.id + "_Ring", new Color(1f, 0.86f, 0.30f));
+            TintDecal("Actor_" + t.id + "_Pip", new Color(1f, 0.82f, 0.16f));
+        }
+    }
+    // RGB-only tint of a named ground decal — alpha is owned by the pulse/fade and must survive.
+    void TintDecal(string name, Color rgb)
+    {
+        var go = GameObject.Find(name); if (go == null) return;
+        var r = go.GetComponent<Renderer>(); if (r == null || r.sharedMaterial == null) return;
+        var cur = r.sharedMaterial.color;
+        r.sharedMaterial.color = new Color(rgb.r, rgb.g, rgb.b, cur.a);
+    }
+
+    // #1752: ONE active-turn marker — a gold diamond riding above whoever the surface says is_turn. A single
+    // pooled object (moved, never re-created) so a turn change costs nothing and nothing can leak per token.
+    void UpdateTurnMarker()
+    {
+        Transform a = string.IsNullOrEmpty(_currentId) ? null : FindActor(_currentId);
+        if (a == null || _downed.Contains(_currentId))
+        {
+            if (_turnMarker != null) _turnMarker.SetActive(false);
+            return;
+        }
+        if (_turnMarker == null)
+        {
+            var sh = HudShader();
+            if (sh == null) return;                                  // #1777: no shader -> no marker, never a throw
+            _turnMarker = GameObject.CreatePrimitive(PrimitiveType.Quad); _turnMarker.name = "TurnMarker";
+            Object.DestroyImmediate(_turnMarker.GetComponent<Collider>());
+            _turnMarkerMat = new Material(sh) { renderQueue = 3120 };
+            var rr = _turnMarker.GetComponent<Renderer>(); rr.sharedMaterial = _turnMarkerMat;
+            rr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+        if (!_turnMarker.activeSelf) _turnMarker.SetActive(true);
+        float top; if (!_topOf.TryGetValue(_currentId, out top)) top = 5.0f;
+        float p = 0.5f + 0.5f * Mathf.Sin(Time.time * 4f);
+        // `top` is the HP-bar height; the bar half-height is 0.175, so +0.65 clears it and still reads as
+        // attached to THIS actor (at +1.15 the diamond floated free of the token — measured on cb1 iter 1).
+        _turnMarker.transform.position = a.position + new Vector3(0f, top + 0.65f + 0.10f * p, 0f);
+        var cam = Camera.main;
+        if (cam != null) _turnMarker.transform.rotation = cam.transform.rotation * Quaternion.Euler(0f, 0f, 45f);   // billboarded diamond
+        float sc = Mathf.Lerp(0.80f, 0.95f, p);
+        _turnMarker.transform.localScale = new Vector3(sc, sc, 1f);
+        if (_turnMarkerMat != null) _turnMarkerMat.color = new Color(1f, 0.86f, 0.32f, Mathf.Lerp(0.80f, 1f, p));
     }
     void RemoveHpBar(string id)
     {
@@ -3632,6 +3823,10 @@ public class CombatSurfaceClient : MonoBehaviour
                 var fg = root.transform.GetChild(1);
                 fg.localScale = new Vector3(full * frac, 0.35f, 1f);
                 fg.localPosition = new Vector3(-full * (1f - frac) / 2f, 0f, 0f);
+                // #1752: fill colour = the surface's public band (steady/wounded/bloodied/down).
+                string band; if (!_bandOf.TryGetValue(kv.Key, out band)) band = "steady";
+                var fgr = fg.GetComponent<Renderer>();
+                if (fgr != null && fgr.sharedMaterial != null) fgr.sharedMaterial.color = BandColor(band);
             }
         }
         if (gone != null) foreach (var id in gone) RemoveHpBar(id);
