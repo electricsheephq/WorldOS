@@ -99,9 +99,56 @@ ap_budget_available() {
   fi
 }
 ap_pid_live() {
+  local pid="$1" stat
+  case "$pid" in ""|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  stat="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+  case "$stat" in *Z*) return 1 ;; esac
+  [ -n "$stat" ]
+}
+ap_pid_lstart() {
   local pid="$1"
   case "$pid" in ""|*[!0-9]*) return 1 ;; esac
-  kill -0 "$pid" 2>/dev/null
+  ps -o lstart= -p "$pid" 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+ap_serve_owned() {
+  local pid expected actual
+  pid="$(ap_sget serve_pid)"; expected="$(ap_sget serve_lstart)"
+  [ -n "$expected" ] && ap_pid_live "$pid" || return 1
+  actual="$(ap_pid_lstart "$pid")"
+  [ -n "$actual" ] && [ "$actual" = "$expected" ]
+}
+ap_kill_tree() {
+  local signal="$1" pid="$2" child children
+  children="$(pgrep -P "$pid" 2>/dev/null || true)"
+  for child in $children; do ap_kill_tree "$signal" "$child"; done
+  kill -s "$signal" "$pid" 2>/dev/null || true
+}
+ap_tree_identities() {
+  local pid="$1" child children started
+  children="$(pgrep -P "$pid" 2>/dev/null || true)"
+  for child in $children; do ap_tree_identities "$child"; done
+  started="$(ap_pid_lstart "$pid" || true)"
+  [ -n "$started" ] && printf '%s|%s\n' "$pid" "$started"
+}
+ap_identity_live() {
+  local pid="$1" expected="$2" actual
+  ap_pid_live "$pid" || return 1
+  actual="$(ap_pid_lstart "$pid")"
+  [ -n "$actual" ] && [ "$actual" = "$expected" ]
+}
+ap_tree_live() {
+  local identities="$1" pid expected
+  while IFS='|' read -r pid expected; do
+    [ -n "$pid" ] && ap_identity_live "$pid" "$expected" && return 0
+  done <<< "$identities"
+  return 1
+}
+ap_signal_tree() {
+  local signal="$1" identities="$2" pid expected
+  while IFS='|' read -r pid expected; do
+    if [ -n "$pid" ] && ap_identity_live "$pid" "$expected"; then ap_kill_tree "$signal" "$pid"; fi
+  done <<< "$identities"
 }
 
 # ── beat wiring (only `start`/`say`/`serve` need it) ─────────────────────────────────────────────
@@ -142,18 +189,21 @@ ap_bind() {
 # printed to stderr and appended to <run-dir>/dryrun_cmds.log (what the unit test asserts on).
 ap_install_dry_run_turn() {
   adv_dm_turn() {
-    local sid="$1" first="$2" msg="$3" resume=() extra=()
+    local sid="$1" first="$2" msg="$3" resume=() extra=() safe_env=() env_arg
     [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
     worldos_dm_lean_args "$first" "$CAMPAIGN_ID" "$WORLDOS_LEAN_TAIL"
     if [ "${#WORLDOS_DM_LEAN_SESSION[@]}" -gt 0 ]; then resume=("${WORLDOS_DM_LEAN_SESSION[@]}"); extra=("${WORLDOS_DM_LEAN_EXTRA[@]}"); fi
     worldos_dm_effort_arg "$first"
     worldos_stream_flag_arg
     local cmd
+    for env_arg in "${DUO_ENV[@]}"; do
+      case "$env_arg" in CLAUDE_CODE_OAUTH_TOKEN=*) safe_env+=(CLAUDE_CODE_OAUTH_TOKEN=\<redacted\>) ;; *) safe_env+=("$env_arg") ;; esac
+    done
     # shlex.quote via python3, NOT printf %q: bash 3.2's %q emits raw bytes for non-ASCII and the
     # DM prompt is full of em-dashes — the escaped form must stay valid UTF-8 to be logged/read back.
     # NOTE the \n escaping: the DM prompt is multi-line, and the log is one command per line.
     cmd="$(python3 -c 'import shlex,sys; print(" ".join(shlex.quote(a) for a in sys.argv[1:]).replace(chr(10), chr(92)+"n"))' \
-      timeout "$(worldos_dm_timeout "$first")" "${DUO_ENV[@]}" claude -p "$msg" \
+      timeout "$(worldos_dm_timeout "$first")" "${safe_env[@]}" claude -p "$msg" \
       ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" \
       --strict-mcp-config --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} \
       --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
@@ -233,7 +283,8 @@ os.replace(p+".tmp", p)' "$SESSION" \
     run "$RUN" engine "$ENGINE" state_dir "$state" campaign_id "$cid" \
     quest_title "${WORLDOS_AGENT_PLAY_QUEST:-The Crypt Below}" dm_model "$model" budget "$budget" \
     beats "$beats" beats_used 0 chat_cursor "$chat_cursor" chat_path "$chat_path" \
-    move_cursor "$move_cursor" moves_path "$moves_path" serve_pid "" \
+    move_cursor "$move_cursor" moves_path "$moves_path" serve_pid "" clarifies_used 0 \
+    serve_lstart "" \
     dm_session_id "$(python3 -c 'import uuid;print(uuid.uuid4())')" \
     created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" stopped ""
   ap_bind
@@ -264,12 +315,21 @@ ap_say() {
   [ -n "$TEXT" ] || { echo "[agent-play] say needs the player text: qa/agent_play.sh say --run $RUN \"…\"" >&2; exit 2; }
   ap_budget_available || exit $?
   ap_bind
-  chatlog player "$TEXT"                     # the viewer's play screen shows the player line too
-  if ap_pid_live "$(ap_sget serve_pid)"; then
+  if ap_serve_owned; then
+    python3 - "$MOVES" "$TEXT" <<'PY'
+import fcntl, json, os, sys
+path, text = sys.argv[1:]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "a", encoding="utf-8") as handle:
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    handle.write(json.dumps({"role": "player", "kind": "say", "text": text}) + "\n")
+    handle.flush(); os.fsync(handle.fileno())
+PY
     echo "[agent-play] queued for serve"
     return 0
   fi
-  ap_do_beat "$TEXT"; local rc=$?
+  chatlog player "$TEXT"                     # the viewer's play screen shows the player line too
+  ap_do_beat "say" "$TEXT" ""; local rc=$?
   # Keep the `serve` cursor past everything we just wrote, so the two entry points can never
   # double-answer the same line.
   local lines=0; [ -f "$CHAT" ] && lines="$(wc -l < "$CHAT" | tr -d ' ')"
@@ -277,9 +337,9 @@ ap_say() {
   return $rc
 }
 
-# ONE player line -> ONE DM beat (the shared body of `say` and `serve`). $1 = the player's text.
+# ONE player intent -> ONE DM beat. $1=kind $2=display text $3=structured payload (optional).
 ap_do_beat() {
-  local ptext="$1" beat used total dsid prog prev_day prev_tod prev_loc runbook director event_adv
+  local kind="$1" ptext="$2" payload="$3" beat used total dsid prog prev_day prev_tod prev_loc runbook director event_adv action
   used="$(ap_sget beats_used 0)"; total="$(ap_sget beats 20)"
   beat=$((used + 1))
   ap_budget_available || return $?
@@ -291,9 +351,17 @@ ap_do_beat() {
   runbook="$(worldos_runbook_for_beat "$beat" "$total" "$prev_loc" "$STATE_DIR" || true)"
   director="$(worldos_director_advisory "$ROOT" "$STATE_DIR" || true)"
   event_adv="$(worldos_event_advisory "$ROOT" "$STATE_DIR" || true)"
-  ap_beat "$dsid" 0 "The player does:
+  if [ -n "$payload" ]; then
+    action="The player submits this structured move intent exactly as recorded:
+$payload
 
-[say] $ptext
+Honor its top-level kind; do not reinterpret an action as speech."
+  else
+    action="The player does:
+
+[$kind] $ptext"
+  fi
+  ap_beat "$dsid" 0 "$action
 
 Resolve it through the engine (roll/attack/travel as needed), then PLAY the next beat as a full lived scene — any NPC or companion in the scene SPEAKS at least one quoted line; weave the open moment back to the player. Mark quest objectives with complete_objective as they land, and run real combat in the crypt/throne hall.
 
@@ -311,6 +379,18 @@ $event_adv"
   return 0
 }
 
+ap_do_clarify() {
+  local payload="$1" dsid used
+  dsid="$(ap_sget dm_session_id)"; used="$(ap_sget beats_used 0)"
+  ap_beat "$dsid" 0 "The player asks this NON-TURN clarification:
+$payload
+
+Answer only what the character can perceive or know. Do not resolve an action, advance the scene, spend a turn, or advance time. Return concise in-fiction prose or quoted dialogue."
+  ap_record_dm "clarify" || return 1
+  printf '%s\n' "$AP_DM_REPLY"
+  echo "[agent-play] clarify answered | beats=$used/$(ap_sget beats 20)"
+}
+
 # serve — the foreground loop the owner instance's org.worldos.owner-dm LaunchAgent runs. Tails the
 # viewer's chat.jsonl for NEW player lines and answers each with exactly ONE DM beat through the same
 # ap_do_beat path `say` uses. The consumed-line cursor is persisted in the session file, so a restart
@@ -318,7 +398,7 @@ $event_adv"
 AP_SERVE_STOP=0
 ap_serve_cleanup() {
   rm -f "$HEARTBEAT" "$STARTING"
-  [ "$(ap_sget serve_pid)" = "$$" ] && ap_sset serve_pid "" >/dev/null || true
+  [ "$(ap_sget serve_pid)" = "$$" ] && ap_sset serve_pid "" serve_lstart "" >/dev/null || true
 }
 ap_move_text() {
   python3 -c 'import json,sys
@@ -327,10 +407,44 @@ except Exception: raise SystemExit(1)
 if m.get("role") != "player": raise SystemExit(1)
 kind=str(m.get("kind") or "move")
 if isinstance(m.get("x"), int) and isinstance(m.get("y"), int):
-    print(f"[move] walks to ({m[chr(120)]},{m[chr(121)]})")
+    print(f"[{kind}] walks to ({m[chr(120)]},{m[chr(121)]})")
+elif kind == "set_seed_param":
+    force=" force=true" if m.get("force") is True else ""
+    param=json.dumps(m.get("param")); value=json.dumps(m.get("value"))
+    print(f"[{kind}] param={param} value={value}{force}")
 else:
     detail=next((str(m[k]) for k in ("text","name","target","target_id","skill","weapon") if m.get(k) not in (None,"")), "acts")
     print(f"[{kind}] {detail}")'
+}
+ap_move_kind() {
+  python3 -c 'import json,sys
+try: m=json.loads(sys.stdin.read())
+except Exception: raise SystemExit(1)
+if m.get("role") != "player": raise SystemExit(1)
+print(str(m.get("kind") or "move"))'
+}
+ap_consume_move() {
+  local next="$1" row="$2" text="$3" kind="$4"
+  python3 - "$SESSION" "$CHAT" "$MOVES" "$next" "$row" "$text" "$kind" <<'PY'
+import hashlib, json, os, sys
+session_path, chat_path, moves_path, cursor, raw, text, kind = sys.argv[1:]
+move_id = hashlib.sha256(f"{moves_path}:{cursor}:{raw}".encode()).hexdigest()
+seen = False
+try:
+    with open(chat_path, encoding="utf-8") as handle:
+        seen = any((json.loads(line).get("move_id") == move_id) for line in handle if line.strip())
+except (FileNotFoundError, ValueError):
+    pass
+if not seen:
+    with open(chat_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"role":"player", "text":text, "move_id":move_id, "move_kind":kind}) + "\n")
+        handle.flush(); os.fsync(handle.fileno())
+data = json.load(open(session_path)); data["move_cursor"] = cursor
+tmp = session_path + ".tmp"
+with open(tmp, "w") as handle:
+    json.dump(data, handle, indent=2); handle.flush(); os.fsync(handle.fileno())
+os.replace(tmp, session_path)
+PY
 }
 ap_serve() {
   mkdir -p "$RUN_DIR"; rm -f "$HEARTBEAT"; : > "$STARTING"
@@ -340,11 +454,12 @@ ap_serve() {
     ap_start
   fi
   ap_bind
-  local max="${MAX_BEATS_IN:-0}" served=0 cursor lines move_cursor move_lines row role text label source rc=0
+  local max="${MAX_BEATS_IN:-0}" served=0 cursor lines move_cursor move_lines row role text kind move_id label source rc=0 lstart clarifies
   label="$max"; [ "$max" -gt 0 ] || label="unlimited"
   trap 'AP_SERVE_STOP=1' TERM INT
   trap 'ap_serve_cleanup' EXIT
-  ap_sset stopped "" serve_pid "$$" >/dev/null  # a fresh serve un-stops the run and owns its PID
+  lstart="$(ap_pid_lstart "$$")"; [ -n "$lstart" ] || { echo "[agent-play] cannot identify serve process" >&2; return 1; }
+  ap_sset stopped "" serve_pid "$$" serve_lstart "$lstart" >/dev/null
   rm -f "$STARTING"
   echo "[agent-play] serving run=$RUN chat=$CHAT moves=$MOVES campaign=$CAMPAIGN_ID dm=$WORLDOS_DM_MODEL max_beats=$label"
   while [ "$AP_SERVE_STOP" = "0" ]; do
@@ -362,13 +477,19 @@ ap_serve() {
 try: print((json.loads(sys.stdin.read()) or {}).get("role") or "")
 except Exception: print("")')"
       if [ "$role" != "player" ]; then ap_sset chat_cursor "$((cursor + 1))" >/dev/null; continue; fi
+      move_id="$(printf '%s' "$row" | python3 -c 'import json,sys
+try: print((json.loads(sys.stdin.read()) or {}).get("move_id") or "")
+except Exception: print("")')"
+      if [ -n "$move_id" ]; then ap_sset chat_cursor "$((cursor + 1))" >/dev/null; continue; fi
+      kind="say"
       text="$(printf '%s' "$row" | python3 -c 'import json,sys
 try: print((json.loads(sys.stdin.read()) or {}).get("text") or "")
 except Exception: print("")')"
     elif [ "${move_lines:-0}" -gt "$move_cursor" ]; then
       source="move"; row="$(sed -n "$((move_cursor + 1))p" "$MOVES")"
       text="$(printf '%s' "$row" | ap_move_text 2>/dev/null || true)"
-      if [ -z "$text" ]; then ap_sset move_cursor "$((move_cursor + 1))" >/dev/null; continue; fi
+      kind="$(printf '%s' "$row" | ap_move_kind 2>/dev/null || true)"
+      if [ -z "$text" ] || [ -z "$kind" ]; then ap_sset move_cursor "$((move_cursor + 1))" >/dev/null; continue; fi
     else
       if [ "$max" -gt 0 ] && [ "$served" -ge "$max" ]; then break; fi
       # --dry-run DRAINS and exits (a test must not idle forever); the real loop idle-polls at 2s.
@@ -376,19 +497,25 @@ except Exception: print("")')"
       sleep 2 || true
       continue
     fi
-    if ! ap_budget_available; then
+    clarifies="$(ap_sget clarifies_used 0)"; clarifies="${clarifies:-0}"
+    if [ "$kind" = "clarify" ] && [ "$clarifies" -ge 3 ]; then
+      ap_consume_move "$((move_cursor + 1))" "$row" "$text" "$kind"
+      chatlog dm "[system] you've asked 3 questions this turn — act now; the DM will fill in anything else" '{"system":true}'
+      continue
+    elif [ "$kind" != "clarify" ] && ! ap_budget_available; then
       chatlog dm "[system] $(ap_budget_message)" '{"system":true}'
       rc=2
       break
     fi
     echo "[agent-play] player $source: ${text:0:100}"
-    ap_do_beat "$text" || true
-    served=$((served + 1))
-    # Advance by exactly ONE row: our own dm reply lands at the END of the file and is skipped by the
-    # role check when we reach it. Jumping to the file length here would swallow any player line that
-    # queued up BEHIND the one we just answered.
     if [ "$source" = "chat" ]; then ap_sset chat_cursor "$((cursor + 1))" >/dev/null
-    else ap_sset move_cursor "$((move_cursor + 1))" >/dev/null; fi
+    else ap_consume_move "$((move_cursor + 1))" "$row" "$text" "$kind"; fi
+    if [ "$kind" = "clarify" ]; then ap_sset clarifies_used "$((clarifies + 1))" >/dev/null
+    else ap_sset clarifies_used 0 >/dev/null; fi
+    if [ "${WORLDOS_AGENT_PLAY_TEST_CRASH_AFTER_CONSUME:-0}" = "1" ]; then kill -KILL "$$"; fi
+    if [ "$kind" = "clarify" ]; then ap_do_clarify "$row" || true
+    elif [ "$source" = "chat" ]; then ap_do_beat "$kind" "$text" "" || true; served=$((served + 1))
+    else ap_do_beat "$kind" "$text" "$row" || true; served=$((served + 1)); fi
     if [ "$max" -gt 0 ] && [ "$served" -ge "$max" ]; then break; fi
   done
   ap_serve_cleanup
@@ -429,21 +556,26 @@ ap_stop() {
   ap_require_session
   # shellcheck source=lib_beat_driver.sh
   . "$ROOT/qa/lib_beat_driver.sh"
-  local stopped pid i closeout
+  local stopped pid i closeout tree
   STATE_DIR="$(ap_sget state_dir)"
   worldos_stream_tailer_kill_pidfile "$STATE_DIR" 2>/dev/null || true
   stopped="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   ap_sset stopped "$stopped" >/dev/null
   pid="$(ap_sget serve_pid)"
-  if ap_pid_live "$pid"; then
-    kill -TERM "$pid"
+  if ap_serve_owned; then
+    tree="$(ap_tree_identities "$pid")"
+    ap_signal_tree TERM "$tree"
     i=0
-    while ap_pid_live "$pid" && ! ps -o stat= -p "$pid" 2>/dev/null | grep -q Z; do
-      [ "$i" -lt 50 ] || { echo "[agent-play] serve pid $pid did not exit after SIGTERM" >&2; return 1; }
+    while ap_tree_live "$tree"; do
+      if [ "$i" -ge 40 ]; then ap_signal_tree KILL "$tree"; fi
+      [ "$i" -lt 50 ] || { echo "[agent-play] owned serve pid $pid did not exit" >&2; return 1; }
       sleep 0.1; i=$((i + 1))
     done
+  elif [ -n "$pid" ]; then
+    echo "[agent-play] stale/unowned serve pid $pid not signaled" >&2
   fi
-  ap_sset serve_pid "" >/dev/null
+  rm -f "$HEARTBEAT" "$STARTING"
+  ap_sset serve_pid "" serve_lstart "" >/dev/null
   closeout="$RUN_DIR/closeout.json"
   python3 - "$SESSION" "$RUN_DIR/$RUN.quest_trace.json" "$RUN_DIR/$RUN.dm.*.jsonl" "$closeout" <<'PY'
 import glob, json, os, sys

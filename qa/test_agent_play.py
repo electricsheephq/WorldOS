@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,22 @@ def _patch_session(sandbox, **updates) -> dict:
     return session
 
 
+def _pid_lstart(pid: int) -> str:
+    return subprocess.run(
+        ["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def _pid_live(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True,
+                          text=True, check=False).stdout.strip()
+    return bool(stat) and "Z" not in stat
+
+
 # ── start: session file + chat.jsonl format + the exact dry-run command ────────────────────────
 def test_start_writes_session_and_a_dm_chat_row(sandbox):
     proc = _start(sandbox)
@@ -92,7 +109,8 @@ def test_start_writes_session_and_a_dm_chat_row(sandbox):
     assert set(rows[0]) <= {"role", "text", "engine_logged", "fallback_recovered"}
 
 
-def test_start_dry_run_prints_the_exact_claude_command(sandbox):
+def test_start_dry_run_prints_the_exact_claude_command_without_auth_secret(sandbox, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "unit-test-secret-must-not-be-logged")
     proc = _start(sandbox)
     assert proc.returncode == 0, proc.stderr
     cmds = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()
@@ -104,6 +122,7 @@ def test_start_dry_run_prints_the_exact_claude_command(sandbox):
                    "CLAUDE_CONFIG_DIR=", "--session-id"):
         assert needle.replace(" ", " ") in cmd.replace("\\", ""), f"{needle!r} missing from: {cmd}"
     assert "--max-budget-usd" in cmd
+    assert "unit-test-secret-must-not-be-logged" not in cmd
 
 
 def test_start_seeds_the_quest_trace(sandbox):
@@ -159,11 +178,13 @@ def test_say_queues_without_running_a_beat_when_serve_pid_is_live(sandbox):
     assert _start(sandbox).returncode == 0
     fake_serve = subprocess.Popen(["sleep", "30"])
     try:
-        _patch_session(sandbox, serve_pid=str(fake_serve.pid))
+        _patch_session(sandbox, serve_pid=str(fake_serve.pid), serve_lstart=_pid_lstart(fake_serve.pid))
         proc = _run(sandbox["tmp"], "say", "--run", sandbox["run"], "--dry-run", "I listen.")
         assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
         assert "queued for serve" in proc.stdout
-        assert [r["role"] for r in _chat_rows(sandbox["state"])] == ["dm", "player"]
+        assert [r["role"] for r in _chat_rows(sandbox["state"])] == ["dm"]
+        queued = [json.loads(line) for line in (sandbox["state"] / "player_moves.jsonl").read_text().splitlines()]
+        assert queued == [{"role": "player", "kind": "say", "text": "I listen."}]
         assert json.loads(_session_path(sandbox).read_text())["beats_used"] == "0"
         assert len((sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log")
                    .read_text().splitlines()) == 1
@@ -197,6 +218,8 @@ def test_serve_answers_each_new_player_line_exactly_once(sandbox):
     assert "beats served: 2" in proc.stdout
     cmds = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()
     assert len(cmds) == 3, cmds   # the cold open + one beat per player line
+    assert "[say] I raise my shield." in cmds[1]
+    assert "[say] I call out to the dark." in cmds[2]
 
     roles = [r["role"] for r in _chat_rows(sandbox["state"])]
     assert roles == ["dm", "player", "player", "dm", "dm"], roles
@@ -217,14 +240,120 @@ def test_serve_consumes_viewer_move_intent_exactly_once(sandbox, monkeypatch):
 
     proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
     assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
-    assert "[move] walks to (3,4)" in (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text()
+    assert "walk_to_cell" in (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text()
     assert json.loads(_session_path(sandbox).read_text())["move_cursor"] == "1"
+    move_rows = [row for row in _chat_rows(sandbox["state"]) if row.get("move_id")]
+    assert len(move_rows) == 1 and move_rows[0]["text"] == "[walk_to_cell] walks to (3,4)"
     assert len((sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log")
                .read_text().splitlines()) == 2
 
     again = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
     assert again.returncode == 0, again.stderr
     assert "beats served: 0" in again.stdout
+    assert len([row for row in _chat_rows(sandbox["state"]) if row.get("move_id")]) == 1
+
+
+def test_move_is_durably_consumed_before_a_crash_and_not_replayed(sandbox, monkeypatch):
+    assert _start(sandbox).returncode == 0
+    moves = sandbox["state"] / "player_moves.jsonl"
+    moves.write_text(json.dumps({"role": "player", "kind": "do", "text": "raise the portcullis"}) + "\n")
+    monkeypatch.setenv("WORLDOS_AGENT_PLAY_TEST_CRASH_AFTER_CONSUME", "1")
+    crashed = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert crashed.returncode == -9, f"{crashed.stderr}\n{crashed.stdout}"
+    session = json.loads(_session_path(sandbox).read_text())
+    assert session["move_cursor"] == "1"
+    player_rows = [row for row in _chat_rows(sandbox["state"]) if row["role"] == "player"]
+    assert len(player_rows) == 1 and player_rows[0].get("move_id")
+
+    monkeypatch.delenv("WORLDOS_AGENT_PLAY_TEST_CRASH_AFTER_CONSUME")
+    replay = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert replay.returncode == 0, replay.stderr
+    assert "beats served: 0" in replay.stdout
+    assert len((sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()) == 1
+    assert len([row for row in _chat_rows(sandbox["state"]) if row.get("move_id")]) == 1
+
+
+def test_structured_move_kind_reaches_dm_without_say_wrapper(sandbox):
+    assert _start(sandbox).returncode == 0
+    moves = sandbox["state"] / "player_moves.jsonl"
+    moves.write_text(json.dumps({"role": "player", "kind": "attack", "target_id": "goblin-1", "weapon": "sword"}) + "\n")
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    prompt = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()[-1]
+    assert "attack" in prompt and "goblin-1" in prompt and "sword" in prompt
+    assert "[say] [attack]" not in prompt
+
+
+def test_set_seed_param_payload_is_preserved_for_dm(sandbox):
+    assert _start(sandbox).returncode == 0
+    moves = sandbox["state"] / "player_moves.jsonl"
+    moves.write_text(json.dumps({"role": "player", "kind": "set_seed_param", "param": "difficulty",
+                                 "value": "hard", "force": True}) + "\n")
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    prompt = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()[-1]
+    for value in ("set_seed_param", "difficulty", "hard", "force"):
+        assert value in prompt
+    assert "[set_seed_param] acts" not in prompt
+
+
+def test_live_say_and_viewer_moves_share_one_arrival_order(sandbox):
+    assert _start(sandbox).returncode == 0
+    moves = sandbox["state"] / "player_moves.jsonl"
+    moves.write_text(json.dumps({"role": "player", "kind": "do", "text": "first move"}) + "\n")
+    fake_serve = subprocess.Popen(["sleep", "30"])
+    try:
+        _patch_session(sandbox, serve_pid=str(fake_serve.pid), serve_lstart=_pid_lstart(fake_serve.pid))
+        queued = _run(sandbox["tmp"], "say", "--run", sandbox["run"], "--dry-run", "second say")
+        assert queued.returncode == 0 and "queued for serve" in queued.stdout
+    finally:
+        fake_serve.terminate()
+        fake_serve.wait(timeout=5)
+    _patch_session(sandbox, serve_pid="", serve_lstart="")
+
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "2", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    prompts = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()[1:]
+    assert len(prompts) == 2 and "first move" in prompts[0] and "second say" in prompts[1]
+
+
+def test_clarify_answers_without_spending_a_beat_or_ticking_time(sandbox):
+    assert _start(sandbox).returncode == 0
+    snapshot = sandbox["state"] / "campaigns" / sandbox["cid"] / "snapshot.json"
+    before = snapshot.read_bytes()
+    moves = sandbox["state"] / "player_moves.jsonl"
+    moves.write_text(json.dumps({"role": "player", "kind": "clarify", "text": "How far is the door?"}) + "\n")
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(_session_path(sandbox).read_text())["beats_used"] == "0"
+    assert snapshot.read_bytes() == before
+    assert "beats served: 0" in proc.stdout
+    assert "How far is the door?" in (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text()
+
+
+def test_serve_caps_consecutive_clarifications_and_resets_after_an_action(sandbox):
+    assert _start(sandbox).returncode == 0
+    moves = sandbox["state"] / "player_moves.jsonl"
+    intents = [
+        {"role": "player", "kind": "clarify", "text": f"Question {index}?"}
+        for index in range(1, 5)
+    ] + [
+        {"role": "player", "kind": "do", "text": "open the door"},
+        {"role": "player", "kind": "clarify", "text": "What is beyond it?"},
+    ]
+    moves.write_text("".join(json.dumps(intent) + "\n" for intent in intents))
+
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"],
+                "--max-beats", "2", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    cmds = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()
+    assert len(cmds) == 6, cmds  # open + 3 clarifies + one action + reset clarify
+    assert not any("Question 4?" in cmd for cmd in cmds)
+    assert "What is beyond it?" in cmds[-1]
+    assert any(row.get("system") and "questions this turn" in row["text"]
+               for row in _chat_rows(sandbox["state"]))
+    session = json.loads(_session_path(sandbox).read_text())
+    assert session["beats_used"] == "1" and session["clarifies_used"] == "1"
 
 
 def test_serve_surfaces_budget_exhaustion_as_dm_system_row(sandbox):
@@ -259,7 +388,7 @@ def test_status_and_stop(sandbox):
 def test_stop_terminates_recorded_serve_and_writes_bounded_closeout(sandbox):
     assert _start(sandbox).returncode == 0
     fake_serve = subprocess.Popen(["sleep", "30"])
-    _patch_session(sandbox, serve_pid=str(fake_serve.pid))
+    _patch_session(sandbox, serve_pid=str(fake_serve.pid), serve_lstart=_pid_lstart(fake_serve.pid))
     try:
         proc = _run(sandbox["tmp"], "stop", "--run", sandbox["run"])
         assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
@@ -278,3 +407,53 @@ def test_stop_terminates_recorded_serve_and_writes_bounded_closeout(sandbox):
         if fake_serve.poll() is None:
             fake_serve.terminate()
             fake_serve.wait(timeout=5)
+
+
+def test_stop_terminates_a_term_resistant_dm_orphan_and_clears_heartbeat(sandbox):
+    assert _start(sandbox).returncode == 0
+    child_file = sandbox["tmp"] / "dm-child.pid"
+    fake_serve = subprocess.Popen([
+        "bash", "-c",
+        f"bash -c 'trap \"\" TERM; echo $$ > {child_file}; while :; do sleep 1; done' & "
+        "trap 'exit 0' TERM; wait",
+    ])
+    try:
+        deadline = time.monotonic() + 2
+        while not child_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert child_file.exists(), "fake DM child never started"
+        child_pid = int(child_file.read_text().strip())
+        _patch_session(sandbox, serve_pid=str(fake_serve.pid), serve_lstart=_pid_lstart(fake_serve.pid))
+        heartbeat = sandbox["tmp"] / "runs" / sandbox["run"] / "serve.heartbeat"
+        heartbeat.touch()
+        proc = _run(sandbox["tmp"], "stop", "--run", sandbox["run"], timeout=10)
+        assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
+        fake_serve.wait(timeout=2)
+        deadline = time.monotonic() + 2
+        while _pid_live(child_pid) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not _pid_live(child_pid), f"DM child {child_pid} survived stop"
+        assert not heartbeat.exists(), "forced stop left a stale serving marker"
+    finally:
+        if fake_serve.poll() is None:
+            fake_serve.kill()
+            fake_serve.wait(timeout=5)
+
+
+def test_recycled_pid_identity_neither_defers_say_nor_gets_signaled_by_stop(sandbox):
+    assert _start(sandbox).returncode == 0
+    unrelated = subprocess.Popen(["sleep", "30"])
+    try:
+        _patch_session(sandbox, serve_pid=str(unrelated.pid), serve_lstart="definitely-not-this-process")
+        say = _run(sandbox["tmp"], "say", "--run", sandbox["run"], "--dry-run", "I act now.")
+        assert say.returncode == 0, say.stderr
+        assert "queued for serve" not in say.stdout
+        assert json.loads(_session_path(sandbox).read_text())["beats_used"] == "1"
+
+        _patch_session(sandbox, serve_pid=str(unrelated.pid), serve_lstart="definitely-not-this-process")
+        stop = _run(sandbox["tmp"], "stop", "--run", sandbox["run"])
+        assert stop.returncode == 0, stop.stderr
+        assert unrelated.poll() is None, "stop signaled an unrelated recycled PID"
+    finally:
+        unrelated.terminate()
+        unrelated.wait(timeout=5)
