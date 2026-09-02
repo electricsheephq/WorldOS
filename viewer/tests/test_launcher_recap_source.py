@@ -121,5 +121,44 @@ class LauncherRecapSourceTests(unittest.TestCase):
         self.assertEqual(row["recapLabel"], "New campaign")
 
 
+class LeanPlaySessionRotationTests(unittest.TestCase):
+    """#1773 review (P1): under lean play the ACTIVE session can hold only its start marker.
+
+    Every beat opens a fresh session id (store.read_all_logs documents this), so the newest log is
+    often just "Session N began: …" while the real last beat sits in the previous file. Recapping
+    only the active session printed the marker at the player.
+    """
+
+    def setUp(self):
+        self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def _summary(self) -> dict:
+        cdir = self._tmp / "campaigns" / "adventure_demo_v1"
+        (cdir / "sessions").mkdir(parents=True, exist_ok=True)
+        snap = _snapshot(session_id="session-new")
+        snap["session_ids"] = ["session-old", "session-new"]
+        (cdir / "snapshot.json").write_text(json.dumps(snap), encoding="utf-8")
+        (cdir / "sessions" / "session-old.jsonl").write_text(
+            json.dumps({"t": 1788350100.0, "kind": "narration", "text": LAST_BEAT}) + "\n",
+            encoding="utf-8",
+        )
+        (cdir / "sessions" / "session-new.jsonl").write_text(
+            json.dumps({"t": 1788350300.0, "kind": "system",
+                        "text": "Session 2 began: The Crypt Below"}) + "\n",
+            encoding="utf-8",
+        )
+        return server.build_openworlds_campaign_summary(
+            "play", "run-1", "adventure_demo_v1", snap,
+            campaign_dir=cdir, state_root=self._tmp, last_played=time.time(),
+            current=True, can_resume=True, now=time.time(),
+        )
+
+    def test_recap_reaches_back_past_an_empty_rotated_session(self):
+        row = self._summary()
+        self.assertIn("slate-carrier", row["recap"])
+        self.assertNotIn("Session 2 began", row["recap"])
+        self.assertEqual(row["recapSource"], "session")
+
+
 if __name__ == "__main__":
     unittest.main()
