@@ -1,3 +1,8 @@
+# WorldOS — what this repo is (read before the GitNexus block)
+WorldOS is a living-world D&D 5e engine: a deterministic Python engine is the SOLE WRITER of world state; the player's own AI agent is the DM; renderers (the Unity player, the web viewer, the text tier) are pure consumers. Destination: a fully rendered CRPG at Pillars of Eternity II quality, built AND playtested by agents.
+Five rules every agent follows: (1) the engine is the sole writer — no renderer or harness mutates state; (2) decision-by-eval — no claim without its instrument (gate exit codes are the verdict, the author never judges their own run, blind adjudication for panels and playtests); (3) geometry is ground truth — collision/occlusion come from the grid + boxes sidecar, paint is cosmetic, every room ships walk-certified with a sha-pinned cert; (4) the agent plays first — every build gets an agent playthrough (sandbox player + /click /shot /debug + the viewer) before any owner ask; the owner is the escalation at the 80/20 wall; (5) pixels before credit — nothing rendered is done until a frame of the RUNNING build was looked at.
+Bootstrap order: docs/OPERATIONS.md → docs/roadmap/NOW.md → docs/ACTIVE-GOAL.md → docs/roadmap/PRODUCT-ROADMAP.md → the `active-sprint` charter issue → docs/RUNBOOK-INDEX.md. Ports: owner engine 8776 / QA 8981; sandbox 8866 / 8972; NEVER 8766 (not WorldOS). Renderer: local Unity 6000.5.6f1 at /Users/m1/worldos-unity (the GEX44 box is retired).
+
 # WorldOS Agent Instructions
 
 ## Codex Desktop Local-Resource Policy
