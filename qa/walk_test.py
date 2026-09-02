@@ -717,6 +717,14 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
     return res
 
 
+def _repo_relative(path) -> str:
+    """`path` as a repo-relative string when it lives under REPO, else unchanged."""
+    try:
+        return str(Path(path).resolve().relative_to(REPO))
+    except (ValueError, OSError):
+        return str(path)
+
+
 def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
              settle: float, move_timeout: float, visual: int = 0) -> dict:
     """Drive the live player through `room` and return a walk_report dict. Never raises on a cell
@@ -855,7 +863,9 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     # 6) OCCLUSION evidence — a /shot near an occluder for the human contact sheet (non-gating here).
     shot = _capture_shot(qa, out, f"{room}_final")
     if shot:
-        report["shots"].append(shot)
+        # RELATIVE to the repo when it lands inside it: an absolute worktree path in a COMMITTED
+        # report resolves on exactly one machine, so a cold agent or release gate cannot follow it.
+        report["shots"].append(_repo_relative(shot))
 
     # 7) RETURN HOME (sidecar adoption): leave the party where the gate found it — the campaign under
     # test is not a scratchpad. Best-effort: only when still in the starting room.

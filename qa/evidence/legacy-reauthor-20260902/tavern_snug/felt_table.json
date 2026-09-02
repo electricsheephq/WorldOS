@@ -40,7 +40,7 @@
    ],
    "debug": "cell(1,4) rest=True foe=(-1,-1)'' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_1_4.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_1_4.png"
   },
   {
    "cell": [
@@ -80,7 +80,7 @@
    ],
    "debug": "cell(9,8) rest=True foe=(-1,-1)'' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_9_8.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_9_8.png"
   },
   {
    "cell": [
@@ -172,7 +172,7 @@
    ],
    "debug": "cell(7,6) rest=True foe=(-1,-1)'' imp=n occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_7_6.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_7_6.png"
   },
   {
    "cell": [
@@ -186,7 +186,7 @@
    ],
    "debug": "cell(8,6) rest=True foe=(-1,-1)'' imp=n occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_8_6.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/tavern_snug/felt_8_6.png"
   },
   {
    "cell": [

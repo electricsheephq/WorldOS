@@ -1900,7 +1900,7 @@
   "harness_errors": [],
   "door_pose_fail": [],
   "shots": [
-    "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/camp_clearing/shot_camp_clearing_final.png"
+    "qa/evidence/legacy-reauthor-20260902/camp_clearing/camp_clearing/shot_camp_clearing_final.png"
   ],
   "verdict": "GREEN",
   "occupied_skipped": []

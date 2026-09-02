@@ -1619,7 +1619,7 @@
   "harness_errors": [],
   "door_pose_fail": [],
   "shots": [
-    "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/shop/shot_shop_final.png"
+    "qa/evidence/legacy-reauthor-20260902/shop/shop/shot_shop_final.png"
   ],
   "verdict": "GREEN",
   "occupied_skipped": [
