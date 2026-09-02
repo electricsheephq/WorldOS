@@ -192,6 +192,7 @@ class _FakeWorld:
         self.loc = "camp_clearing"
         self.player = (3, 3)
         self.drop = set(drop)
+        self.talk_ok = True
 
     def _doors(self):
         return [{"cell": _DOORS[(self.loc, to)], "to": to}
@@ -213,7 +214,11 @@ class _FakeWorld:
                     return {"ok": True}
             self.player = (c, r)
             return {"ok": True}
-        return {"ok": True}   # /talk etc.
+        if url.endswith("/talk"):
+            # mirrors CombatSurfaceClient's QA listener: an ACCEPTED verb answers ok:true (the fake
+            # world grants the talk); a path it does not serve answers 200 + {"ok": false}.
+            return {"ok": self.talk_ok}
+        return {"ok": True}
 
 
 def _wire(monkeypatch, fw):
@@ -456,13 +461,49 @@ def test_reward_leg_records_whether_the_giver_talk_landed(monkeypatch, tmp_path)
     talked and the arc refused to pay'."""
     fw = _FakeWorld()
     _wire(monkeypatch, fw)
-    def _no_talk(url, body=None, timeout=5.0):
-        if url.endswith("/talk"):
-            raise ConnectionError("404 /talk")
-        return fw.post(url, body, timeout)
-    monkeypatch.setattr(W, "_post", _no_talk)
+    fw.talk_ok = False    # the real listener: HTTP 200 + {"ok": false} for a path it does not serve
     report = A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.5,
                         quest_reader=lambda: _ACTIVE_QUEST)
     giver = report["stages"][-1]
     assert giver["talked"] is None and giver["reward_leg"]["talk_landed"] is None
     assert giver["reward_leg"]["verdict"] == "RED"     # the quest state is still the honest reading
+
+
+# ── review round 2: no false GREEN through the trace, the talk echo, or an empty route ──────────────
+def test_a_failed_quest_trace_stamp_is_not_a_paid_reward():
+    """When the live get_quests read is down the stamps are the ONLY evidence — and quest_progress
+    stamps `quest_completed` for ANY non-active status, recording which in `signal`. A failed arc
+    must still read RED, never GREEN off a bare arc-end stamp."""
+    failed_stamp = {"stamps": [{"stage": "quest_completed", "signal": "status:failed"}]}
+    assert A.classify_reward_leg(failed_stamp)["verdict"] == "RED"
+    # the trace's own quest_status is honoured too (a stamp with no signal recorded)
+    assert A.classify_reward_leg(
+        {"stamps": [{"stage": "quest_completed"}], "quest_status": "failed"})["verdict"] == "RED"
+    # a genuinely completed arc still reads GREEN through the same trace-only path
+    assert A.classify_reward_leg(
+        {"stamps": [{"stage": "quest_completed", "signal": "status:completed"}]})["verdict"] == "GREEN"
+    # ...as does an independently earned reward beside a failed status
+    assert A.classify_reward_leg(
+        {"stamps": [{"stage": "reward_received"}], "quest_status": "failed"})["verdict"] == "GREEN"
+
+
+def test_talk_landed_needs_an_accepted_verb_not_just_a_200(monkeypatch, tmp_path):
+    """The player's QA listener answers EVERY path with HTTP 200 and `{"ok": false}` for one it does
+    not serve, so a 200 alone must not record a landed talk."""
+    fw = _FakeWorld()
+    fw.loc = "tavern_snug"        # stand in the giver's room so the approach has an actor to reach
+    fw.talk_ok = False
+    _wire(monkeypatch, fw)
+    ap = A._approach_actor("http://q", "http://e", "Keeper Maera", 0.0, 0.2)
+    assert ap["talked"] is None and "did not accept" in ap["talk_error"]
+    fw.talk_ok = True
+    assert A._approach_actor("http://q", "http://e", "Keeper Maera", 0.0, 0.2)["talked"] is True
+
+
+def test_an_empty_route_is_never_a_vacuous_green(tmp_path):
+    """`--route '[]'` used to run zero stages and print GREEN/exit 0 — automation could read that as
+    a finished arc. An empty override is rejected, and a stage-less report is ERROR (no evidence)."""
+    import pytest
+    with pytest.raises(ValueError, match="empty"):
+        A.parse_route_spec("[]")
+    assert A.classify_walk_verdict({"stages": [], "harness_errors": []}) == ("ERROR", 2)

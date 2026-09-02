@@ -145,6 +145,8 @@ def parse_route_spec(spec=None) -> tuple:
         else:
             e = list(e)
             out.append((e[0], e[1], e[2] if len(e) > 2 else "walk", e[3] if len(e) > 3 else None))
+    if not out:
+        raise ValueError("route override is empty — a walk with no stages proves nothing")
     return tuple(out)
 
 
@@ -256,6 +258,8 @@ def classify_walk_verdict(report: dict) -> tuple:
     """Overall (verdict, exit_code): any RED stage → RED/1 (a real walk failure wins even beside harness
     noise); else any ERROR stage or top-level harness_errors → ERROR/2; else GREEN/0."""
     stages = report.get("stages", [])
+    if not stages:
+        return "ERROR", 2   # no stages walked = no evidence; never a vacuous GREEN
     if any(s.get("verdict") == "RED" for s in stages):
         return "RED", 1
     if any(s.get("verdict") == "ERROR" for s in stages) or report.get("harness_errors"):
@@ -268,6 +272,13 @@ QuestReader = Callable[[], dict]   # () -> {"quests": [...]} (get_quests shape) 
 REWARD_SIGNALS = ("reward_received", "quest_completed")
 
 
+def _ended_unpaid(status) -> bool:
+    """True when a quest status ENDED the arc WITHOUT paying it out — anything terminal that is not
+    `completed` (failed / abandoned / cancelled). Empty or `active` is not an ending."""
+    v = str(status or "").strip().lower()
+    return bool(v) and v not in ("active", "completed")
+
+
 def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     """Tri-state for the reward leg from a get_quests payload and/or quest_trace stamps: a
     reward_received / quest_completed signal → GREEN; a quest still readable but WITHOUT one → RED
@@ -275,11 +286,22 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     ERROR — never a silent GREEN on missing evidence, per the walk_test tri-state discipline.
     A quest that ended FAILED/abandoned is NOT a paid reward: only an independent reward_received
     signal reads GREEN there (see the status branch below)."""
-    stamps = [str(s.get("stage")) for s in (data.get("stamps") or []) if isinstance(s, dict)]
-    signals = [s for s in stamps if s in REWARD_SIGNALS]
+    stamps = [s for s in (data.get("stamps") or []) if isinstance(s, dict)]
+    signals = []
+    for s in stamps:
+        name = str(s.get("stage"))
+        if name not in REWARD_SIGNALS:
+            continue
+        sig = str(s.get("signal") or "")
+        # quest_progress stamps quest_completed for ANY non-active status and records WHICH in the
+        # signal ("status:failed"). A failed arc is not a paid reward — skip the stamp.
+        if name == "quest_completed" and sig.startswith("status:") and _ended_unpaid(sig[len("status:"):]):
+            continue
+        signals.append(name)
     quests = data.get("quests") or []
     quest = _select_quest(quests, quest_title) if quests else None
-    status, outstanding = None, []
+    # the trace's own quest_status is the fallback truth when the live get_quests read is down
+    status, outstanding = data.get("quest_status"), []
     if quest is not None:
         status = str(quest.get("status") or "active")
         done = {str(o).strip().lower() for o in quest.get("completed_objectives") or []}
@@ -287,18 +309,18 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
             signals.append("reward_received")
         if status == "completed":
             signals.append("quest_completed")
-        elif status != "active":
-            # FAILED / abandoned ENDS the arc without paying it out (the scorecard has runs that fail
-            # after the PC goes down). Drop the arc-end stamp so only an INDEPENDENT reward_received
-            # signal can still read GREEN — a dead party must never satisfy the reward leg.
-            signals = [s for s in signals if s != "quest_completed"]
         outstanding = [str(o) for o in quest.get("objectives") or []
                        if str(o).strip().lower() not in done]
+    # FAILED / abandoned ENDS the arc without paying it out (the scorecard has runs that fail after
+    # the PC goes down). Drop every arc-end signal — live status or trace status — so ONLY an
+    # independent reward_received can still read GREEN: a dead party never satisfies the reward leg.
+    if _ended_unpaid(status):
+        signals = [s for s in signals if s != "quest_completed"]
     res = {"verdict": "GREEN", "signals": sorted(set(signals)), "quest_status": status,
            "outstanding_objectives": outstanding}
     if signals:
         return res
-    if quest is None and not stamps:
+    if quest is None and not stamps and status is None:
         return {**res, "verdict": "ERROR",
                 "reason": "no readable quest state (get_quests empty / quest_trace absent)"}
     return {**res, "verdict": "RED", "signals": [],
@@ -457,9 +479,14 @@ def _approach_actor(qa: str, engine: str, actor: str, settle: float, timeout: fl
     if not ok:
         out["dead_clicks"] += 1
     # /talk-equivalent — best-effort; a channel without it just leaves talked=None (proximity recorded).
+    # The player's QA listener answers EVERY path with HTTP 200 and a bare `{"ok": false}` for one it
+    # does not serve (it serves /click,/shot,/health,/debug — no /talk), so a 200 is NOT proof the
+    # verb landed: only an explicit ok:true is. Anything else records proximity only.
     try:
-        W._post(f"{qa}/talk", {"target": actor})
-        out["talked"] = True
+        resp = W._post(f"{qa}/talk", {"target": actor}) or {}
+        out["talked"] = True if resp.get("ok") is True else None
+        if out["talked"] is None:
+            out["talk_error"] = f"channel did not accept /talk: {str(resp)[:100]}"
     except Exception as e:  # noqa: BLE001 — best-effort proximity verb; record why it failed.
         out["talked"] = None
         out["talk_error"] = str(e)[:120]
@@ -590,7 +617,11 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN) -> QuestRead
         try:
             trace = Path(state_dir) / "quest_trace.json"
             if trace.is_file():
-                out["stamps"] = json.loads(trace.read_text(encoding="utf-8")).get("stamps") or []
+                tr = json.loads(trace.read_text(encoding="utf-8"))
+                # carry quest_status too: when the live get_quests read below fails, the stamps are
+                # the ONLY evidence and a bare quest_completed stamp must not read as a paid reward.
+                out["stamps"] = tr.get("stamps") or []
+                out["quest_status"] = tr.get("quest_status")
         except Exception as e:  # noqa: BLE001
             errors.append(f"quest_trace:{e}")
         try:
@@ -642,7 +673,8 @@ def main(argv=None) -> int:
 
     verdict, exit_code = classify_walk_verdict(report)
     tot = report["totals"]
-    print(f"\n=== ADVENTURE_WALK — {verdict} ===")
+    short = "" if report["route_complete"] else " · ROUTE-INCOMPLETE (never returned to the giver)"
+    print(f"\n=== ADVENTURE_WALK — {verdict}{short} ===")
     print(f"stages {tot['arrived']}/{tot['stages']} arrived · dead_clicks {tot['dead_clicks']} · "
           f"stuck {tot['stuck_stages']} · route_complete {report['route_complete']} · {tot['duration_s']}s")
     for s in report["stages"]:
