@@ -1,0 +1,270 @@
+{
+ "room": "camp_clearing",
+ "all_pass": true,
+ "rows": [
+  {
+   "cell": [
+    4,
+    9
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(4,9) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_4_9.png"
+  },
+  {
+   "cell": [
+    5,
+    9
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(5,9) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    6,
+    9
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(6,9) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    2,
+    3
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(2,3) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    1,
+    3
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(1,3) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    11,
+    5
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(11,5) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_11_5.png"
+  },
+  {
+   "cell": [
+    10,
+    6
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(10,6) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    12,
+    6
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(12,6) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    12,
+    7
+   ],
+   "expect": "refuse",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(12,7) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    2,
+    8
+   ],
+   "expect": "accept",
+   "landed": [
+    2,
+    8
+   ],
+   "debug": "cell(2,8) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_2_8.png"
+  },
+  {
+   "cell": [
+    3,
+    9
+   ],
+   "expect": "accept",
+   "landed": [
+    3,
+    9
+   ],
+   "debug": "cell(3,9) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    6,
+    10
+   ],
+   "expect": "accept",
+   "landed": [
+    6,
+    10
+   ],
+   "debug": "cell(6,10) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    10,
+    10
+   ],
+   "expect": "accept",
+   "landed": [
+    10,
+    10
+   ],
+   "debug": "cell(10,10) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    8,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    8,
+    3
+   ],
+   "debug": "cell(8,3) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    6,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    6,
+    3
+   ],
+   "debug": "cell(6,3) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    7,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    7,
+    3
+   ],
+   "debug": "cell(7,3) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    13,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    13,
+    3
+   ],
+   "debug": "cell(13,3) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    14,
+    1
+   ],
+   "expect": "accept",
+   "landed": [
+    14,
+    1
+   ],
+   "debug": "cell(14,1) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_14_1.png"
+  },
+  {
+   "cell": [
+    8,
+    9
+   ],
+   "expect": "accept",
+   "landed": [
+    8,
+    9
+   ],
+   "debug": "cell(8,9) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    5,
+    10
+   ],
+   "expect": "accept",
+   "landed": [
+    5,
+    10
+   ],
+   "debug": "cell(5,10) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
+   "pass": true
+  }
+ ]
+}

@@ -1,0 +1,295 @@
+{
+ "room": "shop",
+ "all_pass": true,
+ "rows": [
+  {
+   "cell": [
+    5,
+    4
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(5,4) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    9,
+    4
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(9,4) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    5,
+    7
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(5,7) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/felt_5_7.png"
+  },
+  {
+   "cell": [
+    1,
+    8
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(1,8) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    8,
+    8
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(8,8) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    6,
+    1
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(6,1) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    2,
+    4
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(2,4) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    10,
+    8
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(10,8) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    11,
+    6
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(11,6) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    9,
+    2
+   ],
+   "expect": "refuse",
+   "landed": [
+    4,
+    3
+   ],
+   "debug": "cell(9,2) rest=True foe=(-1,-1)'' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    5,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    5,
+    3
+   ],
+   "debug": "cell(5,3) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/felt_5_3.png"
+  },
+  {
+   "cell": [
+    6,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    6,
+    3
+   ],
+   "debug": "cell(6,3) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    8,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    8,
+    3
+   ],
+   "debug": "cell(8,3) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    9,
+    3
+   ],
+   "expect": "accept",
+   "landed": [
+    9,
+    3
+   ],
+   "debug": "cell(9,3) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    5,
+    5
+   ],
+   "expect": "accept",
+   "landed": [
+    5,
+    5
+   ],
+   "debug": "cell(5,5) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    6,
+    5
+   ],
+   "expect": "accept",
+   "landed": [
+    6,
+    5
+   ],
+   "debug": "cell(6,5) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    7,
+    6
+   ],
+   "expect": "accept",
+   "landed": [
+    7,
+    6
+   ],
+   "debug": "cell(7,6) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    8,
+    7
+   ],
+   "expect": "accept",
+   "landed": [
+    8,
+    7
+   ],
+   "debug": "cell(8,7) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    2,
+    6
+   ],
+   "expect": "accept",
+   "landed": [
+    2,
+    6
+   ],
+   "debug": "cell(2,6) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    3,
+    7
+   ],
+   "expect": "accept",
+   "landed": [
+    3,
+    7
+   ],
+   "debug": "cell(3,7) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    10,
+    5
+   ],
+   "expect": "accept",
+   "landed": [
+    10,
+    5
+   ],
+   "debug": "cell(10,5) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    11,
+    5
+   ],
+   "expect": "accept",
+   "landed": [
+    11,
+    5
+   ],
+   "debug": "cell(11,5) rest=True foe=(-1,-1)'' imp=n occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/felt_11_5.png"
+  }
+ ]
+}
