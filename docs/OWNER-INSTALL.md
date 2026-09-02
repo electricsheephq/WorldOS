@@ -2,7 +2,7 @@
 
 This kit installs the ad-hoc-signed, unnotarized demo player at `~/Applications/WorldOSPlayer.app`. It serves `adventure_demo_v1` from the one pinned checkout `/Users/m1/worldos-owner`, with engine port 8776 and player QA port 8981. It never uses 8766, 8971, 8866, or 8972.
 
-Three LaunchAgents, not two. `org.worldos.owner-session` is the viewer/engine, `org.worldos.owner-player` is the Unity player, and `org.worldos.owner-dm` runs `qa/agent_play.sh serve --run owner --engine http://127.0.0.1:8776 --state <state> --campaign adventure_demo_v1` — the DM beat loop. The viewer resolves only grid, doorway, parley-approach and combat intents in process; `say`, `do`, `check` and `save` are appended to `WORLDOS_PLAYER_MOVES` for a DM to answer, so without the third agent the owner's dialogue queues forever and the quest cannot progress. `install` and `refresh` refuse while that script has no `serve` mode.
+Three LaunchAgents, not two. `org.worldos.owner-session` is the viewer/engine, `org.worldos.owner-player` is the Unity player, and `org.worldos.owner-dm` runs `qa/agent_play.sh serve --run owner --engine http://127.0.0.1:8776 --state <state> --campaign adventure_demo_v1` — the DM beat loop. The viewer resolves only grid, doorway, parley-approach and combat intents in process; `say`, `do`, `check` and `save` are appended to `WORLDOS_PLAYER_MOVES` for a DM to answer, so without the third agent the owner's dialogue queues forever and the quest cannot progress. `install` and `refresh` refuse while that script has no `serve` mode. The loop itself landed in #1750.
 
 Two seams that must not drift:
 

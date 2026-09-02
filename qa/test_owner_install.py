@@ -1,4 +1,4 @@
-import json, plistlib, subprocess, sys
+import json, plistlib, re, subprocess, sys
 from pathlib import Path
 import pytest
 
@@ -42,11 +42,28 @@ def test_a_dm_consumer_agent_is_rendered(tmp_path):
 
 
 def test_the_viewer_writes_the_exact_chat_file_the_dm_tails(tmp_path):
-    # agent_play.sh serve derives chat_path as "<state_dir>/chat.jsonl". A viewer writing
-    # chat.json would leave the DM tailing a file nobody writes: every owner line unanswered.
+    """Wire contract at the viewer<->DM seam, read off the REAL qa/agent_play.sh.
+
+    Unit-testing each side against the other's assumption is exactly how this drifts: a
+    viewer writing chat.json leaves `serve` tailing a file nobody writes, and every owner
+    line goes unanswered while both halves look correct in isolation.
+    """
+    script = (QA / "agent_play.sh").read_text()
+    derived = re.search(r'chat_path "\$state/([\w.]+)"', script)
+    assert derived, "agent_play.sh no longer derives chat_path from the state dir"
     session, _p, dm = OIP.render_plists(Path("/Users/m1/worldos-owner"), tmp_path / "a.app", tmp_path / "state", Path("/opt/homebrew/bin/uv"))
     state_dir = Path(dm["ProgramArguments"][dm["ProgramArguments"].index("--state") + 1])
-    assert session["EnvironmentVariables"]["WORLDOS_VIEWER_CHAT"] == str(state_dir / "chat.jsonl")
+    assert session["EnvironmentVariables"]["WORLDOS_VIEWER_CHAT"] == str(state_dir / derived.group(1))
+    # `serve` reads its run dir from WORLDOS_AGENT_PLAY_ROOT, defaulting inside the checkout.
+    assert "WORLDOS_AGENT_PLAY_ROOT" in script
+
+
+def test_the_dm_agent_invokes_flags_the_real_script_accepts():
+    script = (QA / "agent_play.sh").read_text()
+    _s, _p, dm = OIP.render_plists(Path("/Users/m1/worldos-owner"), Path("/a.app"), Path("/st"), Path("/opt/homebrew/bin/uv"))
+    assert "serve)" in script, "agent_play.sh no longer dispatches a `serve` subcommand"
+    for flag in [a for a in dm["ProgramArguments"] if a.startswith("--")]:
+        assert f"{flag})" in script, f"agent_play.sh does not accept {flag}"
 
 
 @pytest.mark.parametrize("engine,qa", [(8766, 8981), (8776, 8971)])
