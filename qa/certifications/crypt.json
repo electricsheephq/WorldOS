@@ -1,0 +1,72 @@
+{
+  "room": "crypt",
+  "verdicts": {
+    "walk": "GREEN",
+    "player_cert_live": "GREEN"
+  },
+  "manifest_entry": {
+    "plate": "plates/crypt_kit_v1_registered.png",
+    "cameraPin": {
+      "ortho": 11.7851,
+      "pitch": 30,
+      "yaw": 45
+    },
+    "boxes": "boxes/crypt_kit_v1_boxes.json",
+    "effects": [
+      {
+        "type": "fire_medium",
+        "cell": [
+          5,
+          1
+        ],
+        "scale": 0.8,
+        "y": 1.2
+      },
+      {
+        "type": "fire_medium",
+        "cell": [
+          14,
+          4
+        ],
+        "scale": 0.8,
+        "y": 1.2
+      },
+      {
+        "type": "fire_medium",
+        "cell": [
+          6,
+          5
+        ],
+        "scale": 0.8,
+        "y": 1.2
+      },
+      {
+        "type": "fire_medium",
+        "cell": [
+          10,
+          5
+        ],
+        "scale": 0.8,
+        "y": 1.2
+      }
+    ],
+    "_effects_comment": "Animated fire over the four painted brazier fires (geometry brazier cells; bowls sit ~1.2u up the stem). Tune scale/y at the sandbox eyeball if the flame floats or washes the paint.",
+    "_provenance": "KIT-CRYPT v1 (2026-07-23, #83/#84 nav-truth spike): 3D-FIRST CERTIFIED CHAIN \u2014 geometry crypt_v36 -> build_room_kit scene (footprint SEG GATE 100.00%, 0/192 disagreements, qa/evidence/kit-crypt/) -> kit 3D depth -> flux depth-CN base seed 12346 (recall 0.9752, asset_qM9R3tuRH4sceUrVjCoLdPRk) -> Gemini 3.0 Pro edit (model_google-gemini-pro-image-editing, critique-targeted detail prompt, job_Lmhssjh7iWnHsUKY1dhnHB4m) -> phase-corr ALIGNED dx=0,dy=0 vs base (qa/styled_align_check.py) -> geometric void composite (seg-frame mask). Blind panel 7 vs control 8 (delta -1.0, in-band; wf_89967920). Collision truth UNCHANGED: crypt_v36 geometry + walkmask are byte-identical; the OCCLUDER SIDECAR IS swapped to kit-derived bounds (see SIDECAR note below). The sidecar feeds VISUAL occluder proxies only (CombatSurfaceClient.RebuildOccluders destroys each proxy's Collider); engine walkability/collision reads the server scene_grid walkmask, never boxes. NOTE: model_google-gemini-pro-image-editing pending model-registry allowlist (owner sign-off). SIDECAR 2026-07-23: kit-derived boxes (ExportBoxes, 73 per-mass true bounds: parapets 0.55u, pillars/tomb/buttresses at real heights) replacing the authored crypt_v36 volumes -- silhouette bands now hug the paint."
+  },
+  "artifacts": {
+    "plate_sha256": "f88d357bad499a91edebda5e2558da8433db0df14ca40acb9b0b6cfe16448785",
+    "boxes_sha256": "1acf730b703a3afe2dad639b9ec1797dc223102b41d8d33b8a42304939cdf1b9",
+    "geometry_sha256": "d119d0514bf18ec18f40730921f22b3902ec1f92d3362bec7b48831176b6b6c1"
+  },
+  "walk_report": "qa/evidence/walk-crypt-kit-20260902/crypt/walk_report.json",
+  "provenance": {
+    "certified_on": "2026-09-02",
+    "player_build_sha256_prefix": "07a997e9",
+    "unity_repo_head": "b016a7db",
+    "worldos_main": "0c9e305c",
+    "sandbox": "qa_sandbox windowed (registered_world_v1, 8866/8972)",
+    "walk_test": "exhaustive --visual 4",
+    "packaged_pins": "GREEN (qa/packaged_pins.py)",
+    "player_cert": "qa/evidence/player_cert-20260902/ (spawn_coherence_open, silhouette_behind_occluder, silhouette_absent_when_visible GREEN; cast_renders_full_figure ERROR = no foe in fixture, harness)"
+  }
+}
