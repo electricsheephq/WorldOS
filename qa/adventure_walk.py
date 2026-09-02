@@ -156,9 +156,16 @@ def build_route(start: str = "camp_clearing", plan: tuple = DEFAULT_ROUTE) -> li
     route: list = []
     prev = start
     for sid, room, kind, actor in plan:
+        hops = room_path(prev, room)
+        if not hops:
+            # FAIL CLOSED: an empty hop chain means the door graph does not link `room` from `prev`.
+            # Building the stage anyway would let the drive record an arrival it never walked to
+            # (and a --route override could then set route_complete from the wrong room).
+            raise ValueError(f"route stage {sid!r}: {room!r} is not reachable from {prev!r} over the "
+                             f"seeded door graph — a --route override may only name linked rooms")
         route.append(Stage(id=sid, room=room, kind=kind,
                            expected_desc=ROOM_CLASS.get(room, room.replace("_", " ")),
-                           actor=actor, hops=room_path(prev, room)))
+                           actor=actor, hops=hops))
         prev = room
     return route
 
@@ -265,7 +272,9 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     """Tri-state for the reward leg from a get_quests payload and/or quest_trace stamps: a
     reward_received / quest_completed signal → GREEN; a quest still readable but WITHOUT one → RED
     plus the outstanding objectives (the arc never paid out); no readable quest state at all →
-    ERROR — never a silent GREEN on missing evidence, per the walk_test tri-state discipline."""
+    ERROR — never a silent GREEN on missing evidence, per the walk_test tri-state discipline.
+    A quest that ended FAILED/abandoned is NOT a paid reward: only an independent reward_received
+    signal reads GREEN there (see the status branch below)."""
     stamps = [str(s.get("stage")) for s in (data.get("stamps") or []) if isinstance(s, dict)]
     signals = [s for s in stamps if s in REWARD_SIGNALS]
     quests = data.get("quests") or []
@@ -276,8 +285,13 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
         done = {str(o).strip().lower() for o in quest.get("completed_objectives") or []}
         if any("return" in o or "reward" in o for o in done):
             signals.append("reward_received")
-        if status != "active":
+        if status == "completed":
             signals.append("quest_completed")
+        elif status != "active":
+            # FAILED / abandoned ENDS the arc without paying it out (the scorecard has runs that fail
+            # after the PC goes down). Drop the arc-end stamp so only an INDEPENDENT reward_received
+            # signal can still read GREEN — a dead party must never satisfy the reward leg.
+            signals = [s for s in signals if s != "quest_completed"]
         outstanding = [str(o) for o in quest.get("objectives") or []
                        if str(o).strip().lower() not in done]
     res = {"verdict": "GREEN", "signals": sorted(set(signals)), "quest_status": status,
@@ -287,9 +301,9 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     if quest is None and not stamps:
         return {**res, "verdict": "ERROR",
                 "reason": "no readable quest state (get_quests empty / quest_trace absent)"}
-    return {**res, "verdict": "RED",
-            "reason": f"quest still {status or 'active'} after the giver talk; outstanding: "
-                      f"{outstanding or ['(none listed)']}"}
+    return {**res, "verdict": "RED", "signals": [],
+            "reason": f"quest is {status or 'active'} with no reward signal after the giver talk; "
+                      f"outstanding: {outstanding or ['(none listed)']}"}
 
 
 def read_reward_leg(reader: Optional[QuestReader], quest_title: str = "") -> dict:
@@ -465,7 +479,11 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
 
     # 1) cross the door chain (skip the first hop — it's the room we START in). A drive-error/no-door
     # on any hop stops the chain; `stuck` records that the stage never reached its room within budget.
-    arrival = stage.hops[0] if stage.hops else stage.room
+    # A hop-less stage is UNROUTABLE (build_route rejects these; belt-and-braces for a hand-built
+    # Stage): never let it read as an arrival — record HARNESS and leave `arrived` False.
+    arrival = stage.hops[0] if stage.hops else None
+    if not stage.hops:
+        rec["harness_errors"].append(f"unroutable stage: no door path to {stage.room}")
     for target in stage.hops[1:]:
         cross = _cross_to(qa, engine, target, settle, timeout)
         rec["attempts"] += cross["attempts"]
@@ -511,6 +529,10 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
         # harness — it must classify ERROR, never a false walk RED.
         if stage.kind == "return_to_giver":
             leg = read_reward_leg(quest_reader)
+            # `talked` is the best-effort giver verb: None means the QA channel has no /talk, so the
+            # parley was never driven by THIS harness — the leg still reports the true quest state,
+            # but a reader must not misread its RED as "we talked and the arc refused to pay".
+            leg["talk_landed"] = rec["talked"]
             rec["reward_leg"] = leg
             if leg["verdict"] == "RED":
                 rec["action_failed"] = f"reward_leg: {leg.get('reason')}"
@@ -572,9 +594,9 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN) -> QuestRead
         except Exception as e:  # noqa: BLE001
             errors.append(f"quest_trace:{e}")
         try:
-            import quest_progress  # noqa: PLC0415 — lazy: importing the engine is a LIVE-path cost
-            out["quests"] = quest_progress._import_server(
-                str(state_dir)).get_quests(campaign_id).get("quests") or []
+            # lazy: importing the engine is a LIVE-path cost the pure tests must never pay
+            from quest_progress import _import_server  # noqa: PLC0415
+            out["quests"] = _import_server(str(state_dir)).get_quests(campaign_id).get("quests") or []
         except Exception as e:  # noqa: BLE001
             errors.append(f"get_quests:{e}")
         if not out:

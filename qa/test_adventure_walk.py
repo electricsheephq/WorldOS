@@ -401,3 +401,68 @@ def test_route_complete_needs_an_arrived_giver_stage():
         {"kind": "return_to_giver", "arrived": False, "reward_leg": {"verdict": "GREEN"}}]}) is False
     assert A.is_route_complete({"stages": [
         {"kind": "return_to_giver", "arrived": True, "reward_leg": {"verdict": "GREEN"}}]}) is True
+
+
+# ── review round 1: the fail-closed / never-false-GREEN regressions ─────────────────────────────────
+def test_route_override_naming_an_unlinked_room_fails_closed():
+    """A --route override may only name rooms the seeded door graph links. An unreachable room used
+    to yield hops=[], which walk_stage read as an arrival it never walked to (and could then set
+    route_complete from the wrong room) — build_route must reject it instead."""
+    import pytest
+    with pytest.raises(ValueError, match="not reachable"):
+        A.build_route("camp_clearing", A.parse_route_spec('[["ghost", "atlantis", "walk"]]'))
+    # a room that EXISTS but is not linked from the previous stage's room is rejected too
+    with pytest.raises(ValueError, match="not reachable"):
+        A.build_route("nowhere", A.parse_route_spec('[["a", "crypt", "walk"]]'))
+
+
+def test_a_hopless_stage_never_reads_as_arrived(monkeypatch, tmp_path):
+    """Belt-and-braces for a hand-built Stage: no hop chain → HARNESS + not arrived (ERROR), never a
+    silent arrival."""
+    fw = _FakeWorld()
+    _wire(monkeypatch, fw)
+    stage = A.Stage(id="orphan", room="atlantis", kind="walk", expected_desc="nowhere", hops=[])
+    rec = A.walk_stage("http://q", "http://e", stage, tmp_path, _clean, settle=0.0, timeout=0.2)
+    assert rec["arrived"] is False and rec["arrival_room"] is None
+    assert rec["harness_errors"] and rec["verdict"] == "ERROR"
+
+
+def test_a_failed_quest_is_never_a_green_reward_leg():
+    """A quest that ended FAILED (the party went down) did NOT pay out — it must not read GREEN just
+    because its status left `active`, and it must not set route_complete."""
+    failed = {"quests": [{**_ACTIVE_QUEST["quests"][0], "status": "failed"}]}
+    res = A.classify_reward_leg(failed)
+    assert res["verdict"] == "RED" and res["signals"] == [] and res["quest_status"] == "failed"
+    # even an arc-end quest_completed STAMP cannot rescue a failed quest
+    res2 = A.classify_reward_leg({**failed, "stamps": [{"stage": "quest_completed"}]})
+    assert res2["verdict"] == "RED"
+    assert A.is_route_complete({"stages": [
+        {"kind": "return_to_giver", "arrived": True, "reward_leg": res}]}) is False
+    # ...but an independently EARNED reward still reads GREEN even on a failed quest
+    paid_but_failed = {"quests": [{**_ACTIVE_QUEST["quests"][0], "status": "failed",
+                                   "completed_objectives": list(_ACTIVE_QUEST["quests"][0]["objectives"])}]}
+    assert A.classify_reward_leg(paid_but_failed)["verdict"] == "GREEN"
+
+
+def test_completed_status_alone_is_a_green_reward_leg():
+    completed = {"quests": [{**_ACTIVE_QUEST["quests"][0], "status": "completed"}]}
+    res = A.classify_reward_leg(completed)
+    assert res["verdict"] == "GREEN" and res["signals"] == ["quest_completed"]
+
+
+def test_reward_leg_records_whether_the_giver_talk_landed(monkeypatch, tmp_path):
+    """The QA channel's /talk is best-effort (the seeded player serves only /click,/shot,/health,
+    /debug — #1709). The leg must record whether the verb landed so a RED is not misread as 'we
+    talked and the arc refused to pay'."""
+    fw = _FakeWorld()
+    _wire(monkeypatch, fw)
+    def _no_talk(url, body=None, timeout=5.0):
+        if url.endswith("/talk"):
+            raise ConnectionError("404 /talk")
+        return fw.post(url, body, timeout)
+    monkeypatch.setattr(W, "_post", _no_talk)
+    report = A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.5,
+                        quest_reader=lambda: _ACTIVE_QUEST)
+    giver = report["stages"][-1]
+    assert giver["talked"] is None and giver["reward_leg"]["talk_landed"] is None
+    assert giver["reward_leg"]["verdict"] == "RED"     # the quest state is still the honest reading
