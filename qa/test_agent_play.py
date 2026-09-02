@@ -61,6 +61,18 @@ def _start(sandbox) -> subprocess.CompletedProcess:
                 "--beats", "4", "--dry-run")
 
 
+def _session_path(sandbox) -> Path:
+    return sandbox["tmp"] / "runs" / sandbox["run"] / "session.json"
+
+
+def _patch_session(sandbox, **updates) -> dict:
+    path = _session_path(sandbox)
+    session = json.loads(path.read_text())
+    session.update(updates)
+    path.write_text(json.dumps(session, indent=2) + "\n")
+    return session
+
+
 # ── start: session file + chat.jsonl format + the exact dry-run command ────────────────────────
 def test_start_writes_session_and_a_dm_chat_row(sandbox):
     proc = _start(sandbox)
@@ -103,6 +115,22 @@ def test_start_seeds_the_quest_trace(sandbox):
     assert "quest=active" in proc.stdout
 
 
+def test_start_positions_serve_cursor_after_preexisting_chat(sandbox):
+    chat = sandbox["state"] / "chat.jsonl"
+    chat.parent.mkdir(parents=True, exist_ok=True)
+    chat.write_text("".join(
+        json.dumps({"role": "player" if i % 2 else "dm", "text": f"old-{i}"}) + "\n"
+        for i in range(6)
+    ))
+    assert _start(sandbox).returncode == 0
+
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
+    assert "beats served: 0" in proc.stdout
+    assert len((sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log")
+               .read_text().splitlines()) == 1
+
+
 # ── say: the player row lands, one beat is spent, one DM row is appended ───────────────────────
 def test_say_appends_player_then_dm_and_spends_one_beat(sandbox):
     assert _start(sandbox).returncode == 0
@@ -125,6 +153,33 @@ def test_say_without_a_session_fails_loudly(sandbox):
     proc = _run(sandbox["tmp"], "say", "--run", "nosuch", "--dry-run", "hello")
     assert proc.returncode == 2
     assert "no session" in proc.stderr
+
+
+def test_say_queues_without_running_a_beat_when_serve_pid_is_live(sandbox):
+    assert _start(sandbox).returncode == 0
+    fake_serve = subprocess.Popen(["sleep", "30"])
+    try:
+        _patch_session(sandbox, serve_pid=str(fake_serve.pid))
+        proc = _run(sandbox["tmp"], "say", "--run", sandbox["run"], "--dry-run", "I listen.")
+        assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
+        assert "queued for serve" in proc.stdout
+        assert [r["role"] for r in _chat_rows(sandbox["state"])] == ["dm", "player"]
+        assert json.loads(_session_path(sandbox).read_text())["beats_used"] == "0"
+        assert len((sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log")
+                   .read_text().splitlines()) == 1
+    finally:
+        fake_serve.terminate()
+        fake_serve.wait(timeout=5)
+
+
+def test_say_refuses_player_line_when_beat_budget_is_exhausted(sandbox):
+    assert _start(sandbox).returncode == 0
+    _patch_session(sandbox, beats_used="4", beats="4")
+    before = _chat_rows(sandbox["state"])
+    proc = _run(sandbox["tmp"], "say", "--run", sandbox["run"], "--dry-run", "One more action.")
+    assert proc.returncode == 2
+    assert "beat budget exhausted (4/4) — extend with --beats or start a new run" in proc.stderr
+    assert _chat_rows(sandbox["state"]) == before
 
 
 # ── serve: one beat per NEW player line, and the cursor never re-answers one ───────────────────
@@ -154,6 +209,39 @@ def test_serve_answers_each_new_player_line_exactly_once(sandbox):
                .read_text().splitlines()) == 3
 
 
+def test_serve_consumes_viewer_move_intent_exactly_once(sandbox, monkeypatch):
+    moves = sandbox["state"] / "owner-player-moves.json"
+    monkeypatch.setenv("WORLDOS_PLAYER_MOVES", str(moves))
+    assert _start(sandbox).returncode == 0
+    moves.write_text(json.dumps({"role": "player", "kind": "walk_to_cell", "x": 3, "y": 4}) + "\n")
+
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
+    assert "[move] walks to (3,4)" in (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text()
+    assert json.loads(_session_path(sandbox).read_text())["move_cursor"] == "1"
+    assert len((sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log")
+               .read_text().splitlines()) == 2
+
+    again = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--max-beats", "1", "--dry-run")
+    assert again.returncode == 0, again.stderr
+    assert "beats served: 0" in again.stdout
+
+
+def test_serve_surfaces_budget_exhaustion_as_dm_system_row(sandbox):
+    assert _start(sandbox).returncode == 0
+    _patch_session(sandbox, beats_used="4", beats="4")
+    chat = sandbox["state"] / "chat.jsonl"
+    with chat.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"role": "player", "text": "One more action."}) + "\n")
+
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"], "--dry-run")
+    assert proc.returncode == 2
+    assert "beat budget exhausted (4/4) — extend with --beats or start a new run" in proc.stderr
+    row = _chat_rows(sandbox["state"])[-1]
+    assert row["role"] == "dm" and row.get("system") is True
+    assert "beat budget exhausted (4/4)" in row["text"]
+
+
 # ── status / stop ──────────────────────────────────────────────────────────────────────────────
 def test_status_and_stop(sandbox):
     assert _start(sandbox).returncode == 0
@@ -166,3 +254,27 @@ def test_status_and_stop(sandbox):
     assert stop.returncode == 0, stop.stderr
     session = json.loads((sandbox["tmp"] / "runs" / sandbox["run"] / "session.json").read_text())
     assert session["stopped"], session
+
+
+def test_stop_terminates_recorded_serve_and_writes_bounded_closeout(sandbox):
+    assert _start(sandbox).returncode == 0
+    fake_serve = subprocess.Popen(["sleep", "30"])
+    _patch_session(sandbox, serve_pid=str(fake_serve.pid))
+    try:
+        proc = _run(sandbox["tmp"], "stop", "--run", sandbox["run"])
+        assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
+        fake_serve.wait(timeout=2)
+        session = json.loads(_session_path(sandbox).read_text())
+        closeout_path = Path(session["closeout_path"])
+        closeout = json.loads(closeout_path.read_text())
+        assert set(closeout) == {"beats", "chat_path", "quest_status", "spend_usd", "stamps", "stopped_at"}
+        assert closeout["beats"] == {"used": 0, "limit": 4}
+        assert closeout["chat_path"] == str(sandbox["state"] / "chat.jsonl")
+        assert isinstance(closeout["stamps"], list) and closeout["quest_status"] == "active"
+        assert closeout["spend_usd"] == 0.0
+        assert "KeepAlive=false" in RUNNER.read_text()
+        assert "closeout" in (REPO / "docs" / "RUNBOOK-INDEX.md").read_text().splitlines()[22]
+    finally:
+        if fake_serve.poll() is None:
+            fake_serve.terminate()
+            fake_serve.wait(timeout=5)
