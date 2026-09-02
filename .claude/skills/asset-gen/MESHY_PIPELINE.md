@@ -63,4 +63,5 @@ meshy_gen.py --prompt "..." --out /tmp/x --dry-run
   auto-map to Unity's Humanoid avatar, so Humanoid import **silently drops the clips**. Generic
   preserves them (verified: Idle clip 4.00 s, 26-joint skeleton).
 - The **Unity-plugin "Bridge to Unity" is GUI-only / not agent-automatable** — bypass it; drive the
-  REST API and import the FBX yourself (CoplayDev unity-mcp on the GEX44 box).
+  REST API and import the FBX yourself in `/Users/m1/worldos-unity` via the local Stdio MCP bridge
+  (`extensions/renderers/unity/tools/mcp_stdio_exec.py`).

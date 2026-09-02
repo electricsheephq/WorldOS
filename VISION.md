@@ -154,9 +154,10 @@ Tier-0/1 result as a release verdict):
   Catches the structural / seat-path / rest / travel / combat-resolution regression classes for free.
 - **Tier 1 — `qa/fast_probe.sh`** (~$1–3, ~20min): DM-craft / UX / satisfaction iteration — one
   rotated persona + a ≥6-beat duo (below 6 disarms the FATAL behavioral floors). Iteration signal only.
-- **Tier 2 — the 5-persona VM sweep + Mac native part-A → RRI** (~$40, ~90min): milestone verdict
-  only, after 0+1 pass; ≤3 sweeps per milestone. Heavy sweeps run on the support VM (the 16GB Mac
-  OOMs). Log every scored run to the ledger (`qa/scores_db.py`).
+- **Tier 2 — the 5-persona sweep + Mac native part-A → RRI** (~$40, ~90min): milestone verdict
+  only, after 0+1 pass; ≤3 sweeps per milestone. Heavy QA runs locally on this 14-core / 64 GB Mac;
+  `support-vm-1` is a customer box and is not the default sweep host. Log every scored run to the
+  ledger (`qa/scores_db.py`).
 
 **Release ladder:** Engine Excellent → **Player-Ready Beta** (a real built `.app`; a no-prior-
 knowledge dogfood arc with no "broken" moment; honest felt session — **scoped to the shipped 2D

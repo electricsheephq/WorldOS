@@ -1,5 +1,7 @@
 # DunGen export contract (epic #1508 stage-1 spike)
 
+> **GEX44 retired 2026-08-06 — see `docs/roadmap/NOW.md`; the dated box validation below is historical.**
+
 **Date:** 2026-07-11 · **Status:** SPIKE. DunGen (Unity Asset Store #15682, owner-purchased 2026-07-11)
 proves out as an authoring-time STRUCTURE generator whose layout exports into the WorldOS pipeline.
 

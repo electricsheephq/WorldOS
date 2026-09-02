@@ -11,6 +11,12 @@
 #     - a MULTI-ROOM campaign deployed (e.g. seed_gfx_church_crypt.py) so the plate spans >1 room-unit.
 #
 set -euo pipefail
+
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 BOX_ASSETS="/home/unity/worldos-unity/Assets/painterly/backdrops"
 FLAG="$BOX_ASSETS/_frame_active_room.txt"
 CAP="/home/unity/worldos-unity/Captures-Durable/m1_combat_v1.png"

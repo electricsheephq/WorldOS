@@ -13,12 +13,21 @@
 # GEX44 ControlMaster + the box reverse tunnel (box:8765 -> Mac viewer:8770) so the renderer reads
 # /combat-surface; see project_worldos_box_recovery_controlmaster for re-establishing them.
 set -euo pipefail
+
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 SEED="${1:?usage: gen_dungeon.sh <seed_script.py> <campaign_id> [strength] [state_dir] [--dry-run]}"
 CID="${2:?campaign_id}"
 STRENGTH="${3:-0.55}"
 STATE_DIR="${4:-/tmp/gfx_dungeon}"
 DRY=""; for a in "$@"; do [ "$a" = "--dry-run" ] && DRY=1; done
-CM="/tmp/gex44-cm.sock"; BOX="root@46.4.26.123"
+CM="/tmp/gex44-cm.sock"
+# The retired address 46.4.26.123 was RELEASED and may already be reassigned to a third party.
+# The override re-enables the box-era code path only; it must name its own destination.
+BOX="${WORLDOS_RETIRED_HOST:?WORLDOS_ALLOW_RETIRED_HOST=1 also requires WORLDOS_RETIRED_HOST=user@host (46.4.26.123 was released and may be reassigned) — see docs/GEX44-RETIRED.md}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 GREYBOX="$REPO/extensions/renderers/unity/scripts/build_room_greybox.cs"
 rm -rf "$STATE_DIR"; mkdir -p "$STATE_DIR"

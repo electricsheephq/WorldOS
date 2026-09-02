@@ -78,4 +78,5 @@ two-window seam as a top-3 complaint, or macOS lifecycle friction observed in th
 - S8 "Demo Assembly" delivery = the Unity standalone + app handoff.
 - W5 "The Unity Player tier" formalizes the build/packaging + the T3 gate (a blind AI playtester
   completes a quest loop IN the rendered surface).
-- The GEX44 box remains the render/QA iteration host; the player build is the distribution form.
+- The local Mac (`/Users/m1/worldos-unity`, Unity 6000.5.6f1) is the render/QA iteration host; the
+  player build is the distribution form.

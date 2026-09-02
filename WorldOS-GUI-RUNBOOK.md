@@ -277,21 +277,22 @@ script/build_and_run.sh --verify
 This proves the local/worktree-built bundle launches without killing an existing app. It is only a smoke:
 release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI sweep.
 
-## Support VM lane (heavy sweeps, not Mac-only app truth)
+## Support VM lane (customer-box / explicitly remote; not the default)
 
-> **Successor host:** the GPU box **GEX44 `evaos-gpu-gex44-1`** (see `## GPU-VM lane` below) now runs this
-> same heavy part-B sweep AND a Unity/visual renderer the 32 GB VM could not host — prefer it for new heavy
-> sweeps. This section stays as the reference for the lane mechanics + a fallback host.
+> **Local is primary:** this 14-core / 64 GB Mac owns Unity, visual rendering, and heavy QA. The
+> 32 GB `support-vm-1` is a customer box; use it only for an explicitly remote/customer-box run.
+> This section records that lane's mechanics and is not a reason to move default heavy sweeps off Mac.
 
 - Target: owner-provided **32GB support VM** (`support-vm-1`); connection: `root@178.104.123.213`,
   key `~/.openclaw/secrets/cloud-deploy-key`, repo `/root/worldos-qa/WorldOS`. Further connection/auth
   detail lives in local operator-only runbooks/evidence, not tracked repo docs.
-- Do not assume it is ready for Codex runs until credentials/config are intentionally installed and verified.
-  The default support-VM persona lane is Codex DM plus Codex UI player; Claude is only required when
+- Do not assume it is ready for an explicitly remote/customer-box run until credentials/config are intentionally installed and verified.
+  When selected, the support-VM persona lane is Codex DM plus Codex UI player; Claude is only required when
   the preflight is run with `--provider claude` or `--player-agent claude`. The Codex lane requires
   Codex CLI `>=0.120.0` because it uses per-invocation `codex exec -c mcp_servers.*` overrides rather
   than mutating `CODEX_HOME` with `codex mcp add`.
-- Use it for heavy backend/persona release sweeps and parallel QA once configured.
+- Use it only for explicitly remote/customer-box backend or persona sweeps and parallel QA once configured;
+  local Mac heavy QA remains the default.
 - Do **not** use it as proof for Mac-only surfaces: `WorldOS.app` build/launch, native #356, and built-app
   UI play evidence stay on this Mac or macOS CI.
 - VM preflight before any RRI sweep: record VM identity, repo checkout path, branch/SHA, Codex CLI version,
@@ -321,10 +322,10 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   duo's beat-0 blocker, 2026-06-03.) Art is at `content/worlds/_private/baldurs-gate/images`, NOT top-level
   `_private`. **The full ONE-COMMAND part-B sweep + exact step-by-step is in the `worldos-dev` skill →
   "VM GATE SWEEP — exact procedure"; keep that section and this one in sync as the harness changes.**
-- **VM status UPDATE (2026-06-03 — supersedes the stale 2026-06-01 scout below):** the VM is READY — git-fetch
+- **Historical VM status UPDATE (2026-06-03 — supersedes the stale 2026-06-01 scout below):** the VM was READY — git-fetch
   from origin WORKS now (the old "could not read Username" failure is resolved), claude 2.1.158 is authed,
   codex 0.120.0 present, art present, ~28 GB free. The 2026-06-01 "stale `4524b3e` / sync-failed / Lexar-absent"
-  blockers no longer hold; the heavy part-B `sweep_v2.sh` lane is runnable.
+  blockers no longer held; the heavy part-B `sweep_v2.sh` lane was runnable when this remote lane was selected.
 - **VM status UPDATE (2026-06-07 — current `da05101` staging):** the repo-owned preflight artifact at
   `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/` (historical path — /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/; that machine is gone, see NOW.md) returned `verdict=blocked`, so no
   personas were run. The VM could query GitHub `origin/main` as `da05101`, but its local repo HEAD/local
@@ -358,12 +359,22 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   stays the quality bar** for the release RRI. Full strategy + the cap-rate finding:
   `docs/MODEL-TIERING-STRATEGY.md`.
 
-## GPU-VM lane (evaos-gpu-gex44-1) — heavy part-B sweep + Unity/visual renderer
+## Local Unity lane (GEX44 retired 2026-08-06)
+
+GEX44 is gone. Do not SSH, rsync, build, capture, or save against `46.4.26.123`, `/home/unity`, or
+the retired `gex44-unity-host` skill. Use local Unity 6000.5.6f1 at `/Users/m1/worldos-unity`
+(`/Users/m1/Codex/worldos-unity-mirror`) via `extensions/renderers/unity/tools/mcp_stdio_exec.py`.
+Build with `execute_menu_item "Tools/WorldOS/Build/macOS Player (Universal)"`; capture with `manage_camera`;
+run QA via `qa/qa_sandbox.py` (8866/8972; owner 8776/8981). Keep source authoritative here.
+
+## Historical GEX44 GPU-VM lane (retired — do not follow)
+
+> **GEX44 retired 2026-08-06 — see `docs/roadmap/NOW.md`; local equivalent: the Local Unity lane above.**
+> The dated procedures below are retained only as historical context and evidence provenance.
 
 The **Hetzner GEX44 GPU dedicated server** (`evaos-gpu-gex44-1`, provisioned 2026-06-25; RTX 4000 SFF Ada /
-64 GB / Ubuntu 24.04) is the **successor heavy-QA host** to the `## Support VM lane` above. It runs the same
-part-B 5-persona sweep AND hosts a Unity 6 / Unity-MCP renderer the 32 GB support VM could not. Prefer it for
-new heavy sweeps; the Support VM lane stays documented as the lane-mechanics reference + a fallback host.
+64 GB / Ubuntu 24.04) was the former heavy-QA and Unity render host. This dated record is retained for
+evidence provenance only; use the Local Unity lane and `support-vm-1` above for current work.
 **Connection/auth details live in `~/.openclaw/secrets/gex44.env` (operator-only)** — never put the endpoint,
 SSH key, or the VNC password in this tracked doc (same convention as the Support VM lane).
 
@@ -535,8 +546,8 @@ took over the developer's only display and the Mac had to be rebooted. Now:
   (`worldos-*`/`WORLDOS_*` MCP ids, `dev.worldos.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
 - `_private/` (the 2.9 GB art) is **never committed**. Building/serving from the local checkout is how the
   art is present; worktrees can read it via `WORLDOS_ART_REPO_ROOT=/Users/m1/WorldOS` when needed.
-- 16 GB Mac: tests on **GitHub CI / 32GB support VM** for heavyweight sweeps, never heavy local suites. Parallel read-only agents are
-  fine; do not launch multiple heavyweight persona sweeps locally.
+- 14-core / 64 GB Mac: local heavy QA is the default. Use GitHub CI or the customer `support-vm-1`
+  only when the run is explicitly remote; never launch multiple heavyweight persona sweeps locally.
 - **Verify, don't trust:** ≥2 clean reads for any claim; the RRI scorer reads disk, not the live
   channel; confirm builder PRs actually pushed.
 - The product is the **launchable, played .app**. A green score on any other surface is a

@@ -1,4 +1,9 @@
 set -e
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 python3 -m venv /root/depth_env
 /root/depth_env/bin/pip install --quiet --upgrade pip
 /root/depth_env/bin/pip install --quiet torch --index-url https://download.pytorch.org/whl/cu121

@@ -53,7 +53,7 @@
 
 | Run type | Runner | Tier/cost | Required evidence | Scores surface | Owner doc/skill |
 |---|---|---|---|---|---|
-| room/backdrop gen | `qa/export_scene_grid.py` → `qa/gen_room_from_scene_grid.sh` → `qa/deploy_room.sh` (live Unity lane; ⚠ `--layered` naming lives on the quarantined Godot tool) | Scenario CUs | plate PNG + pin-check + control-anchored panel (MUST include a disclosed WorldOS house-style anchor — e.g. crypt_dense_v1 — alongside the disguised PoE2/BG2 control; a PoE2-only or absolute-score reading is NOT sufficient for adoption, see plate-style-regression #2026-07-08) + room_recipes entry + library/rooms promotion | visual (panel) | asset-gen skill |
+| room/backdrop gen (HISTORICAL — GEX44 retired 2026-08-06) | `qa/export_scene_grid.py` → guarded `qa/gen_room_from_scene_grid.sh` / `qa/gen_dungeon.sh` → guarded `qa/deploy_room.sh` (requires `WORLDOS_ALLOW_RETIRED_HOST=1`; local successor is ROOM-PIPELINE-RUNBOOK “G1 GATE RECIPE”) | Scenario CUs | plate PNG + pin-check + control-anchored panel (MUST include a disclosed WorldOS house-style anchor — e.g. crypt_dense_v1 — alongside the disguised PoE2/BG2 control; a PoE2-only or absolute-score reading is NOT sufficient for adoption, see plate-style-regression #2026-07-08) + room_recipes entry + library/rooms promotion | visual (panel) | asset-gen skill; historical box lane |
 | character/asset gen | asset-gen skill (Meshy/Tripo/Scenario/PixelLab) | ~5-25 CU/asset | registry entry (gen_recipe) + grounded upright render per actor + evidence commit | ⚠ NONE today — gate via pre-gate + panel on first composed use | asset-gen skill |
 | plate-sprint generate→gate→panel→gallery loop | `qa/plate_loop.py` (two-phase: phase 1 generates + runs the deterministic registration/pre-gates + stages the 5-scorer blind panel packet; phase 2 ingests the orchestrator-run panel verdict) | Scenario CUs + panel cost | registration-gate result + staged panel packet (phase 1) then the scores_db row + gallery row (phase 2); an HTML gallery contact sheet (`--gallery <html>`) is UPSERTED with one row per scored candidate (every iteration, not just the adopted one) — owner-facing morning posts embed the best-scoring frame from that gallery | visual (surface="visual", auto via phase 2) | worldos-dev skill + `docs/roadmap/PLATE-RECIPE-DECISION.md` (adopted recipe: flux ControlNet base + Gemini style pass, registration/panel thresholds) |
 | town/room generation chain | `tools/generate_town.py` → `qa/seed_gfx_town.py` | free, zero-CU local | fail-loud static gates incl. the beacon-geometry bar (generator self-gate; seeded world walks every cross_door hop) | — (static gates; output feeds the walk gate) | `docs/roadmap/PROCEDURAL-SCORECARD.md` §THE TOWN COMMAND CHAIN · last-verified 2026-07-20 |
@@ -70,8 +70,10 @@
 3. Half-wired, #1415 update: `felt_rest_panel`'s non-rest write path was VERIFIED — the row was
    never skipped (add_run fires unconditionally per frame), but the REST_LENSES-only dims filter
    silently dropped a non-rest panel's per-lens scores; fixed to pass through arbitrary dims for a
-   non-`rest:` scene. `motion_reel.py`'s Unity-capture hook is now wired against the documented
-   `manage_camera` pattern (env-gated on `WORLDOS_UNITY_MCP_URL`, mockable via `mcp_call=`) but its
-   live `:8080/mcp` round-trip is UNVERIFIED on this lane (no GEX44 box access) — validation queues
-   behind the next box session. Still open: the engine-fetch half of motion_reel (TODO hook,
-   separate scope) and the stale `--layered` naming.
+   non-`rest:` scene. `motion_reel.py`'s Unity-capture hook is wired against the documented
+   `manage_camera` pattern (env-gated on `WORLDOS_UNITY_MCP_URL`, mockable via `mcp_call=`) but it is an
+   **HTTP-only gap; not yet on the Stdio bridge** — `qa/motion_reel.py:481-486` still requires
+   `WORLDOS_UNITY_MCP_URL` and posts to that HTTP endpoint via `_default_unity_mcp_call`; it never
+   invokes `mcp_stdio_exec.py`, so on the documented local Stdio setup the default path returns
+   `no_render`. Still open: migrating that hook to the Stdio bridge, the engine-fetch half of
+   motion_reel (TODO hook, separate scope), and the stale `--layered` naming.

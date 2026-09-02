@@ -1,6 +1,13 @@
 # Derive a depth + view-space normal map FROM an image (Depth-Anything-V2), matching the diffuse by construction
 # → no structure-drift artifacts, works on a frame-filling high-Q diffuse. Output encoding matches WOSRelight.shader.
-import sys, numpy as np
+import os
+import sys
+
+if os.environ.get("WORLDOS_ALLOW_RETIRED_HOST", "0") != "1":
+    print("GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md", file=sys.stderr)
+    raise SystemExit(2)
+
+import numpy as np
 from PIL import Image
 from transformers import pipeline
 inp, out_depth, out_normal = sys.argv[1], sys.argv[2], sys.argv[3]

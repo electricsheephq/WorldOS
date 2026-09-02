@@ -21,8 +21,8 @@ meshy_gen.py --prompt "an elf ranger ..." --out <dir> --moveset
 - **Humanoid-only.** Creatures → Tripo (`tripo_gen.py text --rig`, `spec:"mixamo"`).
 
 ## Feeder B — Mixamo (UPGRADE: larger/higher-quality human mocap)
-The `unity-mcp-mixamo` MCP does **not** fit WorldOS (Windows-only `.exe`, GUI-bound, can't run on the
-headless GEX44 Linux box). Instead use **`mixamo_gen.py`** — a headless urllib wrapper that drives
+The `unity-mcp-mixamo` MCP does **not** fit WorldOS (Windows-only `.exe`, GUI-bound, can't run in the
+local lane). Instead use **`mixamo_gen.py`** — a headless urllib wrapper that drives
 Mixamo's internal REST API with the owner's OAuth token (no browser, no Unity, no `.exe`):
 ```bash
 # one-time: log in at mixamo.com -> DevTools console -> copy(localStorage.access_token)
@@ -45,7 +45,7 @@ long as a Mixamo session is logged in:
 3. `javascript_tool`: trigger a Blob **download** of `localStorage.getItem('access_token')` (keeps the
    raw token OUT of the transcript) — `new Blob([t]) → a.download='mixamo_token.txt' → a.click()`.
 4. `mv ~/Downloads/mixamo_token*.txt ~/.worldos/mixamo.token && chmod 600` it; re-run `--test-key`.
-5. If `mixamo_gen.py` runs on the GEX44 box, `scp ~/.worldos/mixamo.token` to the box's `~/.worldos/`.
+5. Keep `~/.worldos/mixamo.token` on the local Mac; no remote copy is needed.
 This is safe to automate: it's the user's own short-lived token for their own tool. If NO logged-in
 Mixamo tab exists, that's the one human gate — ask the owner to log in, then refresh.
 - Mixamo clips ride Mixamo's skeleton, which matches our `spec:"mixamo"` rigs, so they retarget onto
@@ -54,7 +54,7 @@ Mixamo tab exists, that's the one human gate — ask the owner to log in, then r
   Mixamo = a richer *shared* pack the owner harvests once and we retarget onto many actors.
 
 ## The shared tail (identical for both feeders)
-1. **Import on the GEX44 box** as **`animationType = Generic`, NOT Humanoid.** Tripo/Meshy/Mixamo bone
+1. **Import in the local Unity project** (`/Users/m1/worldos-unity`) as **`animationType = Generic`, NOT Humanoid.** Tripo/Meshy/Mixamo bone
    names don't auto-map to Unity's Humanoid avatar → a Humanoid import **silently drops the clips**.
    Generic preserves them. Strip the redundant mesh, keep the `AnimationClip`. (Load-bearing — see
    `MESHY_PIPELINE.md` / `TRIPO_PIPELINE.md`.)
@@ -62,7 +62,8 @@ Mixamo tab exists, that's the one human gate — ask the owner to log in, then r
    trialed): states idle/walk/run/attack/cast/block/dodge/hit/death + the locomotion blend; the engine
    selects state via the bridge, never owning the controller's logic.
 3. **Camera** — drive a fixed dimetric VCam + combat framing with **Cinemachine** (ADOPTED, see below).
-4. **Render** on GEX44 (`gex44-unity-host` skill: bring-up, capture, non-black gate).
+4. **Render** in the local headed Unity editor via `extensions/renderers/unity/tools/mcp_stdio_exec.py`; use
+   `manage_camera` for captures and keep the non-black gate.
 5. **Score** the motion with the `visual-critic` skill's **L7 MOTION lens** (from a render reel) vs the
    PoE2 painterly bar; feed defects back → re-animate/re-import until it converges.
 

@@ -1,5 +1,7 @@
 # Generator export contract (epic #1508 — DunGen + Tessera Pro arms)
 
+> **GEX44 retired 2026-08-06 — see `docs/roadmap/NOW.md`; the dated box validation below is historical.**
+
 **Date:** 2026-07-11 · **Status:** SPIKE, repo-side complete for both arms. Renamed from
 `DUNGEN-EXPORT-CONTRACT.md` (PR #1509) once the Tessera Pro arm landed — this is now the shared contract
 for BOTH generator-comparison arms the owner asked for: DunGen (room-graph, PR #1509, verified against

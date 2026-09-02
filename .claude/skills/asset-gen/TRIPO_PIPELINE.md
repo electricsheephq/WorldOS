@@ -87,5 +87,5 @@ tripo_gen.py text ... --dry-run  # plan + est credits, no API call
   drops the animation clips** (`clipAnims=0`). Generic preserves them (verified: walk clip 2.33 s).
 - FBX imports **untextured** (flat) — assign the albedo separately (the M1.0 pale-albedo gotcha;
   Tripo embeds texture in the GLB, not always the FBX). Rig + animation are unaffected.
-- The box (GEX44) has **no Blender** — if you ever need GLB→FBX, convert Mac-side. For Tripo, prefer
-  `out_format=fbx` and skip Blender entirely.
+- The local Unity host is `/Users/m1/worldos-unity`; if you ever need GLB→FBX, convert Mac-side. For
+  Tripo, prefer `out_format=fbx` and skip Blender entirely.

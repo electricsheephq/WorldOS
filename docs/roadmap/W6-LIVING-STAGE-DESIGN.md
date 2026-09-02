@@ -72,7 +72,7 @@ leverage fixes, and the current W6 headline aims at the wrong axis of the 3.2-vs
    sidecars, with ONE shared light rig driving plate AND actors. This is the exact Obsidian/PoE bake
    pipeline (4-pass background: albedo/depth/normal + 2-light rig + bg-color-sample pseudo-GI —
    eternity.obsidian.net update #79; Disco Elysium GDC 2020 variant). **Metal/built-in-RP spike on the
-   GEX44 build FIRST** (Metal shader gaps are a documented risk). Greybox depth → SV_DEPTH per-pixel
+   local Mac Unity build FIRST** (Metal shader gaps are a documented risk). Greybox depth → SV_DEPTH per-pixel
    occlusion later obsoletes W6.5's silhouette work; AABB proxies stay as the collision/nav proxy.
 2. **W6.3b DRIFT PREVENTION AT SOURCE.** generate_room.py imports CONTROLNET_PATH but never calls it —
    plates are UNCONDITIONED img2img, which is where paint-vs-grid drift is born. Add a --controlnet

@@ -196,8 +196,8 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   FELT control-parity on hero frames.
 - **Provider-fallback note (red-team amendment):** Scenario + Gemini are single-vendor
   dependencies for the plate pipeline; the registry-by-slot invariant makes output swaps cheap,
-  but the *generation* lane needs a named fallback (ComfyUI/SDXL on GEX44 — already
-  provisioned for #1243) documented in the graphics roadmap.
+  but the *generation* lane needs a named fallback (ComfyUI/SDXL on the local Mac when configured)
+  documented in the graphics roadmap.
 - **Lane:** `lane:art`.
 
 ### S10 — GA Assembly *(cuts 1.0 GA = v1.1.0)*
@@ -227,12 +227,12 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > harness #1336 ✅. QA-economics v2 doctrine merged (#1340, docs/OPERATIONS.md).
 > **Sprint 2 (charter #1337, CLOSED)** — W1–W4 (#1330/#1341/#1344/…) and HV1–HV5 (#1331/#1329/#1338/
 > #1342/…) are MERGED; W5 (#1322, the Unity player tier) remains open, not yet started.
-> **ACTIVE charter = #1386** ("Act II close-out — Rendered Felt"): ordered lane is #1284 actor
+> **Historical charter = #1386** ("Act II close-out — Rendered Felt"): ordered lane was #1284 actor
 > grounding v2 → the rendered rest-scene demo (canon fixture, grounded actors, W1 stage block,
 > FELT panel vs the PoE2 anchor) → W5a Unity player build (#1322) → HV follow-ups (#1378 cross_door
-> re-stage, HV extractor quality pass 2). Entry gate satisfied: v1.0.5 released, GEX44 box
-> reachable, render-delivery decision #1302 CLOSED. Closing #1386 pulls the next charter: S2
-> (#1309, entry gate satisfied) queues after.
+> re-stage, HV extractor quality pass 2). Entry gate was satisfied: v1.0.5 released, local Unity lane
+> reachable, render-delivery decision #1302 CLOSED. #1386 is now history; the current queue is #1702.
+> The superseded follow-on was S2 (#1309, entry gate satisfied); it is not the current queue.
 > **v1.0.5 RELEASED 2026-07-08** — S1 evidence gate: gate3d story 4.2 / mech 4.1 / behavioral GREEN.
 > **Trued 2026-09-02:** the ACTIVE charter is **#1702** (#1386 is history); the renderer runs LOCALLY on
 > the Paris Mac (the GEX44 box is retired); the 3D-first kit chain is the shipping room surface.
@@ -359,7 +359,7 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   turn floor N=3) — artifact scoring runs in a
   nightly batch, never inline (duo latency untouched). Weekly curation batch. **Backdrop cadence:
   2 environments a night, panel-gated, weekly curation → ~100 environments in ~10 weeks** on the
-  proven GEX44 pipeline. `library_metrics` table (size by class/tier, Σreuse_count, promotion
+  proven local Unity pipeline. `library_metrics` table (size by class/tier, Σreuse_count, promotion
   pass-rate, %library-sourced beats) — the flywheel's own eval: the "less AI dependence" trend.
 
 **Act II additive-invariant register** (what a skeptic refutes per stage): HV1 `sc_`/`lc_` hashes
@@ -400,8 +400,8 @@ HV5-hooks + backdrop cadence → W3 → HV4 (+A/B) → W4 (with S8) → W5 → *
 | Sparkle signing key | S10 start | generate/store key (#134) |
 | Licensing: Owlcat/OpenWorlds reference assets | before S8 art ships | #122 audit sign-off |
 | Fan-showcase / user-content policy | milestone 26 | #711 policy call |
-| Asset-Store purchases (if S2/S9 need packs) | as flagged | purchase + import to box project |
-| GPU-box capacity/renewal | retired 2026-08-06 (renderer runs locally) | no standing gate |
+| Asset-Store purchases (if S2/S9 need packs) | as flagged | purchase + import to local Unity project |
+| Unity host capacity/renewal | continuous | local Mac Unity seat |
 | Paid-alpha pricing | Phase B | business call (#712) |
 
 ## 8. Standing gaps register (ALL FILED — the numbers)

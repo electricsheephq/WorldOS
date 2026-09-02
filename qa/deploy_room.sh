@@ -15,12 +15,19 @@
 # Pre-req: the GEX44 ControlMaster at /tmp/gex44-cm.sock (gex44-unity-host skill).
 set -euo pipefail
 
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 LOCAL_PLATE="${1:?usage: deploy_room.sh <local_plate.png> [box_plate_name.png] [campaign_id]}"
 BOX_NAME="${2:-$(basename "$LOCAL_PLATE")}"
 CAMPAIGN="${3:-}"
 LOC_ID="${4:-}"
 CM="/tmp/gex44-cm.sock"
-BOX="root@46.4.26.123"
+# The retired address 46.4.26.123 was RELEASED and may already be reassigned to a third party.
+# The override re-enables the box-era code path only; it must name its own destination.
+BOX="${WORLDOS_RETIRED_HOST:?WORLDOS_ALLOW_RETIRED_HOST=1 also requires WORLDOS_RETIRED_HOST=user@host (46.4.26.123 was released and may be reassigned) — see docs/GEX44-RETIRED.md}"
 BDIR="/home/unity/worldos-unity/Assets/painterly/backdrops"
 
 [ -f "$LOCAL_PLATE" ] || { echo "no such plate: $LOCAL_PLATE" >&2; exit 1; }

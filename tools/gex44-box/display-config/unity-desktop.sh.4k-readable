@@ -1,4 +1,9 @@
 #!/bin/bash
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 export DISPLAY=:0
 export HOME=/home/unity
 export USER=unity
