@@ -228,6 +228,85 @@ def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]
     return out
 
 
+# ── SEEDED-ARC LENS helpers (WORLDOS_GATE_ARC; qa/run_adventure.sh) ────────────────────────────
+# The arc runner drives a PRE-SEEDED world (qa/seed_adventure_demo.py): a fixed map, a fixed cast and
+# a fixed bestiary. Its ARC ADDENDUM states five rules; these helpers give the gate the two things it
+# needs to enforce them — WHICH BEAT a tool call belongs to, and WHICH SPECIES the seed contains.
+_ARC_BEAT_EVENT = "worldos_arc_beat"
+_ARC_SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def _arc_slug(name: str) -> str:
+    """The engine's own creature-TYPE key (servers/engine/bestiary.creature_slug): lowercase, runs of
+    non-alphanumerics collapsed to '-', trimmed. "Goblin Warrior" -> "goblin-warrior"."""
+    return _ARC_SLUG_NON_ALNUM.sub("-", str(name or "").lower()).strip("-")
+
+
+def _arc_seeded_species(path: str) -> set[str]:
+    """The slugs of the creatures the run was SEEDED with, from the manifest run_adventure.sh writes
+    off the fresh seed snapshot. Never hard-coded here: re-seed with different foes and the gate
+    follows. An absent/unreadable manifest returns an empty set and the spawn rule stands down (a
+    missing manifest must not manufacture a FAIL)."""
+    if not path:
+        return set()
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    # `species` is already the engine's slug list; `names` (display labels like "Goblin Warrior 1")
+    # is only the fallback for a manifest written without it.
+    slugs = {_arc_slug(x) for x in (d.get("species") or [])}
+    if not slugs:
+        slugs = {_arc_slug(x) for x in (d.get("names") or [])}
+    return {x for x in slugs if x}
+
+
+def _arc_tool_events(events: list[dict]) -> list[tuple[object, str, dict, object, bool]]:
+    """Ordered (beat, short_name, input, result_obj_or_None, is_error) for the arc lens.
+
+    Same tool_use/tool_result pairing as ``_tool_events``, plus the BEAT: qa/run_adventure.sh stamps
+    ``{"type": "worldos_arc_beat", "beat": n}`` into the combined stream at the top of every beat, so
+    each call is attributed to the beat whose marker most recently preceded its ``tool_use``. Beat is
+    ``None`` before the first marker (the cold-open grounding turn) or in a stream with no markers."""
+    beat: object = None
+    pending: dict[str, tuple[object, str, dict]] = {}
+    out: list[tuple[object, str, dict, object, bool]] = []
+    for ev in events:
+        if ev.get("type") == _ARC_BEAT_EVENT:
+            try:
+                beat = int(ev.get("beat"))
+            except (TypeError, ValueError):
+                pass
+            continue
+        for b in ((ev.get("message", {}) or {}).get("content") or []):
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "tool_use":
+                pending[b.get("id")] = (beat, (b.get("name") or "").split("__")[-1], b.get("input") or {})
+            elif b.get("type") == "tool_result":
+                bt, short, inp = pending.pop(b.get("tool_use_id"), (beat, "", {}))
+                c = b.get("content")
+                if isinstance(c, str):
+                    text = c
+                elif isinstance(c, list) and c and isinstance(c[0], dict):
+                    text = c[0].get("text") or ""
+                else:
+                    text = json.dumps(c)
+                try:
+                    obj: object = json.loads(text) if isinstance(text, str) else None
+                except Exception:
+                    obj = None
+                out.append((bt, short, inp, obj, bool(b.get("is_error"))))
+    # A tool_use whose result never arrived (a truncated final beat) still happened — keep it.
+    for bt, short, inp in pending.values():
+        out.append((bt, short, inp, None, False))
+    return out
+
+
+def _arc_beat_label(beat: object) -> str:
+    return f"beat {beat}" if beat is not None else "beat ?"
+
+
 def _detection_beats_without_check(events: list[dict]) -> list[str]:
     """DM narration text blocks that read like a detection beat (#1287 — same family as the
     ambush/surprise WARN #1271) with NO qualifying Perception/Insight/Investigation tool call
@@ -1707,6 +1786,74 @@ def main() -> int:
             f"{sp} cast by {caster or '?'} returned automated:false but no attack() resolved it")
     if unresolved_spell_atk:
         chk("unresolved_spell_attack", False, "; ".join(unresolved_spell_atk), fatal=False)
+
+    # ── SEEDED-ARC LENS (WORLDOS_GATE_ARC, 2026-09-02 — the G2 completion lever) ────────────────
+    # OFF by default: only qa/run_adventure.sh sets WORLDOS_GATE_ARC, so run_duo/play gates are
+    # untouched. It gives the ARC ADDENDUM's rules TEETH — each of these four deviations was
+    # MEASURED in the three failed Opus-5 arc runs and absent from the passing control, and each is
+    # a hard FAIL (not a WARN) because each one, on its own, cost the arc its completion:
+    #   reroll_character      — the DM offered "roll a new hero" and seated a replacement PC (b20_1)
+    #   add_location          — an invented corridor / a duplicate throne hall the boss then sat in
+    #   non-seeded spawn      — a Zombie / a Hobgoblin / a Wight answering the reversal directive
+    #   false end_combat      — closed with hostiles standing, then the same foes re-fought later
+    if os.environ.get("WORLDOS_GATE_ARC"):
+        arc_events = _arc_tool_events(events)
+
+        rerolls = [_arc_beat_label(bt) for bt, short, _i, _o, err in arc_events
+                   if short == "reroll_character" and not err]
+        if rerolls:
+            chk("arc_no_reroll_character", False,
+                f"reroll_character called at {', '.join(rerolls)} — the seeded PC is the ONLY player "
+                f"character this arc has; seating a replacement hero abandons the run's protagonist "
+                f"and burns the beats the boss needed", fatal=True)
+
+        adds = []
+        for bt, short, inp, _o, err in arc_events:
+            if short != "add_location" or err:
+                continue
+            label = str(inp.get("name") or inp.get("location_id") or "?")
+            adds.append(f"{_arc_beat_label(bt)} \"{label}\"")
+        if adds:
+            chk("arc_no_add_location", False,
+                f"add_location called at {'; '.join(adds)} — the seeded map is complete (crypt "
+                f"connects DIRECTLY to throne_hall); an invented room takes the boss out of the "
+                f"destination the arc is built around", fatal=True)
+
+        seeded_species = _arc_seeded_species(os.environ.get("WORLDOS_ARC_SEED_SPECIES", ""))
+        if seeded_species:
+            # spawn_monster's RESULT carries the CANONICAL bestiary name the engine resolved the
+            # request to ("Goblin" -> "Goblin Warrior"), which slugifies to the same key the seed
+            # snapshot records — so this compares resolved TYPE to resolved TYPE, never a substring
+            # ("Hobgoblin Warrior" must not read as on-seed because it contains "goblin"). A spawn
+            # whose result we cannot resolve (error/unparseable) is SKIPPED, never failed.
+            off_seed = []
+            for bt, short, inp, obj, err in arc_events:
+                if short != "spawn_monster" or err or not isinstance(obj, dict) or obj.get("error"):
+                    continue
+                canonical = obj.get("name") or ""
+                slug = _arc_slug(canonical)
+                if slug and slug not in seeded_species:
+                    off_seed.append(f"{_arc_beat_label(bt)} {canonical}")
+            if off_seed:
+                chk("arc_only_seeded_species", False,
+                    f"spawn_monster minted species the seed does not contain: {'; '.join(off_seed)} "
+                    f"(seeded: {', '.join(sorted(seeded_species))}) — the arc's hostiles are the "
+                    f"seeded goblins and their boss; an invented foe is beats the boss never gets",
+                    fatal=True)
+
+        false_ends = []
+        for bt, short, _i, obj, err in arc_events:
+            if short != "end_combat" or err or not isinstance(obj, dict):
+                continue
+            warn = obj.get("warning_live_hostiles")
+            if isinstance(warn, dict):
+                false_ends.append(f"{_arc_beat_label(bt)} ({warn.get('count')} alive"
+                                  + (", resolution declared" if warn.get("resolved") else "") + ")")
+        if false_ends:
+            chk("arc_end_combat_live_hostiles", False,
+                f"end_combat returned warning_live_hostiles at {'; '.join(false_ends)} — the fight "
+                f"was not over; the survivors stay standing in state and get re-spawned and "
+                f"re-fought later, which is how this arc loses its beat budget", fatal=True)
 
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]

@@ -1345,6 +1345,13 @@ _worldos_runbook_body() {
   # 1) Scene-intro: brand-new location this beat (just arrived → not yet "visited"-narrated) or
   #    the very first beat. Open the place FIRST, then hand back the moment.
   if [ "$beat" -le 1 ] || { [ -n "$cur_loc" ] && [ "$cur_loc" != "$prev_loc" ] && [ "$cur_visited" = "0" ]; }; then
+    # ARC MODE (run_adventure): the cast is SEEDED. The default line's "put at least one named face
+    # here who SPEAKS" is what minted the opening grief-NPC in every failed Opus-5 arc run (three of
+    # three), so arc mode voices the seeded cast instead of demanding a new one.
+    if [ "${WORLDOS_ARC_MODE:-0}" = "1" ]; then
+      printf '%s' "RUNBOOK — SCENE-INTRO (a new place, beat $beat): the party has just arrived somewhere new. BEFORE they act, YOU set this scene — look_around / get_scene first, then narrate the place's tone in your own prose (the light, the sound, who is present, what is wrong), generate_image(kind=\"scene\") for it, and give a quoted line to whoever the SEED already put in this room (and to no one else — do not mint a new face to fill the silence; an empty room is allowed to be empty). Then hand back the open moment. Do not wait for the player to author the room."
+      return 0
+    fi
     printf '%s' "RUNBOOK — SCENE-INTRO (a new place, beat $beat): the party has just arrived somewhere new. BEFORE they act, YOU set this scene — look_around / get_scene first, then narrate the place's tone in your own prose (the light, the sound, who is present, what is wrong), generate_image(kind=\"scene\") for it, and put at least one named face here who SPEAKS. Then hand back the open moment. Do not wait for the player to author the room."
     return 0
   fi
@@ -1357,6 +1364,13 @@ _worldos_runbook_body() {
 
   # 3) Midpoint reversal: at ~beats/2, fire the turn — and make it COST.
   if [ "$beat" -eq "$mid" ] && [ "$beats" -ge 4 ]; then
+    # ARC MODE (run_adventure): the seeded arc answered this directive with a NEW MONSTER three runs
+    # running (a Zombie at beat 5, a Hobgoblin at beat 7), burning 4-7 beats before the crypt was
+    # even cleared. In arc mode the reversal is a PRICE, and it waits for objective 2.
+    if [ "${WORLDOS_ARC_MODE:-0}" = "1" ]; then
+      printf '%s' "RUNBOOK — MIDPOINT REVERSAL (beat $beat ≈ the turn): the reversal is a PRICE, never a new fight or a new creature: a betrayal, a lost item, a broken promise, a time cost, a locked way back — and it fires only after the crypt is cleared (objective 2) or at the true midpoint, whichever is later. Flip the situation and let the cost land on the HERO personally (their own skin, bond, or secret), then keep driving at the throne hall. Do NOT spawn anything to deliver it, and do not smooth it over."
+      return 0
+    fi
     printf '%s' "RUNBOOK — MIDPOINT REVERSAL (beat $beat ≈ the turn): deliver the REVERSAL now, not merely 'harder'. Flip the situation — the ally is the informant, the prize is already gone, the safe path was the trap, the cost lands on the HERO personally (their own skin, bond, or secret on the line, not abstract world-stakes). Make a real attempt FAIL or a choice exact a price that STICKS and changes the scene. This is the lever the story score keeps docking — do not smooth it over."
     return 0
   fi
@@ -1366,6 +1380,13 @@ _worldos_runbook_body() {
     local why="the party has not moved"
     [ "$visited" -lt 2 ] && why="$why and has visited only $visited location(s)"
     [ "$npcs_met" -lt 1 ] && why="$why and NO new named NPC has entered yet (0 met)"
+    # ARC MODE (run_adventure): the default line names add_location + create_character as the two
+    # ways out of a stall — the exact two calls the arc addendum forbids (and the behavioral gate
+    # now FAILs). Arc mode routes the same "the world must MOVE" pressure onto the SEEDED map.
+    if [ "${WORLDOS_ARC_MODE:-0}" = "1" ]; then
+      printf '%s' "RUNBOOK — TRAVEL / PEOPLING (beat $beat: $why): the world must MOVE, along the map the seed already built. Do it THIS beat through the engine — travel_to along an existing connection (advance_time=True for a real journey), toward the next objective: the tavern for Keeper Maera, then the crypt, then the throne hall. Do NOT add_location and do NOT create_character a new face to fill the room — the seeded cast (Keeper Maera, Merchant Oswin) is who exists. A party frozen in one room is a FAILED session — close that gap by MOVING."
+      return 0
+    fi
     printf '%s' "RUNBOOK — TRAVEL / PEOPLING (beat $beat: $why): the world must MOVE. Pick ONE and do it THIS beat through the engine — either (a) move the party to a NEW place: travel_to along a connection (advance_time=True for a real journey) or add_location(make_current=True), then narrate that new place's tone yourself; OR (b) bring a NEW named NPC on-screen: create_character with a name + a voice + at least one quoted line, mark met=True when the party meets them. A session frozen in one room with no new faces is a FAILED session — close that gap now."
     return 0
   fi

@@ -68,6 +68,21 @@ TODO_REASONS = {
         "tests) and qa/test_run_invalidation_guard.sh"
     ),
 }
+# The SEEDED-ARC lens (WORLDOS_GATE_ARC) rows share one reason: they are opt-in — only
+# qa/run_adventure.sh sets the env toggle, and the species rule additionally needs the run's
+# seed-species manifest on a 5th path (WORLDOS_ARC_SEED_SPECIES). Neither is expressible in
+# _write_case's four POSITIONAL argv artifacts, and every synthetic arc bundle also trips the
+# baseline session gates (dice_used / player_in_party), so no case here can ISOLATE one arc row.
+# Covered instead by qa/test_arc_gate.py, which drives this same gate CLI over tiny synthetic
+# transcripts with the toggles set and asserts each row is a [FAIL] naming its beat.
+for _arc_check in ("arc_no_reroll_character", "arc_no_add_location",
+                   "arc_only_seeded_species", "arc_end_combat_live_hostiles"):
+    TODO_REASONS[_arc_check] = (
+        "seeded-arc lens: opt-in via WORLDOS_GATE_ARC (+ WORLDOS_ARC_SEED_SPECIES for the species "
+        "rule) — env toggles and a 5th artifact path that _write_case's 4 positional argv "
+        "artifacts cannot express, and no synthetic arc bundle can isolate one arc row from the "
+        "baseline session gates — covered by qa/test_arc_gate.py (red-first, per-row, per-beat)"
+    )
 
 
 # ── event / artifact builders ─────────────────────────────────────────────────

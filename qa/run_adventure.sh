@@ -75,6 +75,16 @@ worldos_apply_glm_profile
 # Lean-per-beat context (default ON, byte-identical to run_duo).
 WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"
 
+# -- ARC MODE (2026-09-02, G2 lever) ------------------------------------------------------------
+# This runner drives a PRE-SEEDED arc: the cast, the map and the foes already exist. Three directives
+# the shared duo path injects every beat pull AGAINST that seed and were measured driving the three
+# failed Opus-5 arc runs -- the SCENE-INTRO "named face who SPEAKS" mandate (which minted an invented
+# grief-NPC on beat 0 in 3/3 runs), the duo brief's "new named faces enter and speak" obligation, and
+# the MIDPOINT REVERSAL line the DM answered with an invented monster. ARC MODE suppresses/rewrites
+# exactly those three. It is scoped to THIS runner: qa/run_duo.sh never sets it, so the duo runbook
+# and the duo brief stay byte-identical.
+export WORLDOS_ARC_MODE=1
+
 # ── HERMETIC SESSIONS (#1656 root cause) ───────────────────────────────────────────────────────────
 # The DM/player `claude -p` sessions previously inherited the USER-level ~/.claude config — including
 # the claude-mem plugin, whose SessionStart hook injects OLD WorldOS session observations. Measured on
@@ -175,6 +185,39 @@ adv_seed() {
     exit 1
   fi
   echo "[adventure] seeded $CAMPAIGN_ID into $STATE_DIR ($(printf '%s' "$out" | tail -n1))"
+  adv_write_seed_species
+}
+
+# The SEEDED bestiary species, read off the FRESH seed snapshot (before any DM beat can add to it)
+# and written to <run>.seed_species.json. The arc behavioral gate compares every DM spawn_monster
+# against THIS list, so the allowed cast is derived from the seed rather than hard-coded in the gate:
+# re-seed with different foes and the gate follows. `creature_slug` is the engine's own stable TYPE
+# key ("Goblin Warrior" -> goblin-warrior), which is also what spawn_monster's canonical result name
+# slugifies to -- so the comparison is exact, not a name-substring guess.
+SEED_SPECIES="$ROOT/$T/$RUN.seed_species.json"
+adv_write_seed_species() {
+  python3 - "$STATE_DIR" "$SEED_SPECIES" <<'SEEDPY' || echo "[adventure] WARN: could not write the seed-species manifest; the arc spawn gate stands down" >&2
+import glob, json, re, sys
+state_dir, out = sys.argv[1:3]
+species = {}
+for sp in glob.glob(f"{state_dir}/campaigns/*/snapshot.json"):
+    try:
+        d = json.loads(open(sp, encoding="utf-8").read())
+    except Exception:
+        continue
+    for ch in (d.get("characters") or {}).values():
+        if not isinstance(ch, dict) or ch.get("kind") != "monster":
+            continue
+        name = str(ch.get("name") or "")
+        slug = str(ch.get("creature_slug") or "") or re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        if slug:
+            species.setdefault(slug, name)
+if not species:
+    raise SystemExit("no seeded monsters found in the snapshot")
+json.dump({"species": sorted(species), "names": [species[s] for s in sorted(species)]},
+          open(out, "w", encoding="utf-8"), indent=2)
+print(f"[adventure] seeded species: {', '.join(sorted(species))}")
+SEEDPY
 }
 
 # ── quest telemetry + completion short-circuit (between beats) ───────────────────────────────────
@@ -287,9 +330,38 @@ else
   PSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 fi
 
-# The DM brief = the shared duo brief + a short ARC ADDENDUM (the ONLY brief-plumbing run_duo
-# exposes is `cat qa/play_dm_duo.txt`; we CONCATENATE the addendum, we do not fork the brief).
-DM_BRIEF="$(cat qa/play_dm_duo.txt)
+# The DM brief = the shared duo brief + the ARC ADDENDUM (the ONLY brief-plumbing run_duo exposes
+# is `cat qa/play_dm_duo.txt`; we CONCATENATE the addendum, we do not fork the brief).
+#
+# ARC MODE first REWRITES two clauses of the shared brief. The duo brief obliges the DM to make
+# "new named faces enter and speak" -- correct for an emergent duo session, wrong for a seeded arc:
+# all three failed Opus-5 runs opened by minting a camp NPC with a missing brother and walking them
+# into the crypt as a second body to lose, while the passing control created no opening NPC at all.
+# The edits are EXACT-MATCH and FAIL LOUD: if the shared brief is reworded and a clause stops
+# matching, this aborts rather than silently shipping the un-suppressed obligation.
+DM_BRIEF_BASE="$(python3 - qa/play_dm_duo.txt <<'BRIEFPY'
+import sys
+src = open(sys.argv[1], encoding="utf-8").read()
+EDITS = [
+    ("the session obligations you OWN (the clock advances; the party travels to \u22652 locations; "
+     "new named faces enter and speak)",
+     "the session obligations you OWN (the clock advances; the party travels to \u22652 locations; "
+     "the cast already on the table speaks)"),
+    ("and new named NPCs enter and SPEAK \u2014 a whole session spent in the opening location at the "
+     "opening hour with no new faces is a FAILED session that flips the gate RED",
+     "and the characters already in the scene SPEAK \u2014 a whole session spent in the opening "
+     "location at the opening hour is a FAILED session that flips the gate RED"),
+]
+for old, new in EDITS:
+    if src.count(old) != 1:
+        raise SystemExit(f"arc-mode brief filter: expected exactly 1 match for {old[:48]!r}, "
+                         f"found {src.count(old)} -- qa/play_dm_duo.txt was reworded; update qa/run_adventure.sh")
+    src = src.replace(old, new)
+sys.stdout.write(src)
+BRIEFPY
+)" || { echo "[adventure] FATAL: arc-mode brief filter failed (see the message above)" >&2; exit 2; }
+
+DM_BRIEF="$DM_BRIEF_BASE
 ARC ADDENDUM (this is a PRE-SEEDED adventure, NOT a world you build): the world already exists in
 engine state as campaign \"$CAMPAIGN_ID\" — do NOT start_world / start_adventure / create the map.
 GROUND on it: call get_state(\"$CAMPAIGN_ID\"), look_around(\"$CAMPAIGN_ID\"), and get_quests(\"$CAMPAIGN_ID\")
@@ -313,6 +385,23 @@ ever reached. COMBAT-CLOSURE DISCIPLINE, non-negotiable and enforced by the QA g
   (3) ADVANCE THE CLOCK after significant beats — a resolved fight, a cleared room, reaching the
       throne hall — via advance_time / long_rest / travel_to(advance_time=True). An arc where the
       clock never moves is a dm_advanced_time WARN.
+THE SEEDED-ARC RULES, each one enforced by the QA gate as a hard FAIL:
+  (A) THE ONLY HOSTILE CREATURES IN THIS WORLD ARE THE SEEDED ONES: three Goblin Warriors in the
+      crypt and the Goblin Boss in the throne hall. Never spawn_monster a species the seed does not
+      contain — no undead, no hobgoblins, no wights, nothing from the bestiary that is not already
+      here. Nothing hostile is on the road, in the camp, or in the tavern; those are safe rooms.
+  (B) THE REVERSAL IS A PRICE, NOT A FIGHT: a betrayal, a lost item, a broken promise, a time cost,
+      a locked way back — never a new fight and never a new creature. It fires only after the crypt
+      is cleared (objective 2) or at the true midpoint, whichever is LATER.
+  (C) NEVER TAKE THE PC BELOW 1 HP BEFORE THE CRYPT IS CLEARED, AND NEVER SEAT A REPLACEMENT PC:
+      no reroll_character, and never offer the player a new hero — not as a table note, not as a
+      kindness. If the PC drops, an NPC stabilises them INSIDE THE SAME BEAT and the scene goes on.
+  (D) REACH KEEPER MAERA BY BEAT 3 AND THE THRONE HALL BY BEAT 6. Do NOT add_location: the crypt
+      connects DIRECTLY to the seeded throne_hall, and the Goblin Boss never leaves that room — do
+      not stage him in the crypt, do not build a second hall for him, travel the party to him.
+  (E) ONE COMBAT AT A TIME. Call end_combat ONLY when the engine reports zero living hostiles — a
+      result carrying warning_live_hostiles means the fight is NOT over: finish it in that beat
+      rather than re-spawning the survivors later.
 Keep the arc MOVING toward the crypt and the boss; the player is here to finish this job, not to
 linger. The player is the seeded PC already in the party — do NOT seat a new character."
 PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
@@ -476,6 +565,15 @@ for b in $(seq "$START_BEAT" "$BEATS"); do
   PREV_TOD="$(printf '%s' "$PROG_PRE" | cut -f2)"; PREV_TOD="${PREV_TOD:-morning}"
   PREV_LOC="$(printf '%s' "$PROG_PRE" | cut -f5)"
 
+  # ARC BEAT MARKER: stamp the beat number into the combined DM stream BEFORE this beat's events are
+  # appended, so the arc behavioral gate can attribute an offending tool call to its BEAT rather than
+  # guessing from stream position (retries append extra `system/init` events, so init-counting lies).
+  # An unknown event `type` is ignored by every existing consumer (distill.py dispatches on type and
+  # drops the rest; assert_behavioral's _tally/_tool_events read message.content; model_provenance
+  # regex-scans for a "model" field) — so this is invisible to the transcript, the play log and the
+  # scorers.
+  printf '{"type":"worldos_arc_beat","beat":%s}\n' "$b" >> "$COMBINED"
+
   PMSG="$(player_move 0 "The DM says:
 
 $DMSG
@@ -563,7 +661,10 @@ for _scf in "$T/$RUN.tolkien.json" "$T/$RUN.score.json" "$T/$RUN.angrydm.json"; 
   fi
 done
 
-python3 "$ASSERT_BEHAVIORAL_SCRIPT" "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
+# WORLDOS_GATE_ARC turns on the seeded-arc lens (the addendum's five rules as hard FAIL rows);
+# WORLDOS_ARC_SEED_SPECIES hands it the species this run was actually SEEDED with.
+WORLDOS_GATE_ARC=1 WORLDOS_ARC_SEED_SPECIES="$SEED_SPECIES" \
+  python3 "$ASSERT_BEHAVIORAL_SCRIPT" "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 # ── honest scoring on a RED gate (item 11; mirrors run_duo) ──────────────────────────────────────
 # A structurally broken (gate-RED) run must not persist high lens medians — CAP the three lens files
 # to <= 2.5 / INVALID via the SHARED worldos_cap_score_red helper (qa/lib_beat_driver.sh), annotated
