@@ -23,8 +23,25 @@
 // no proxy covers the actor -> stencil 0 -> the pass is culled regardless of the fragile equal-depth test.
 // Behind a proxy, stencil==1 AND ZTest Greater (actor farther than the proxy's nearer depth) -> the tint
 // draws. WORLDOS_SILHOUETTE kill-switch is unchanged (C#-side: no clone spawned when disabled).
+// #1736 DRAW-ORDER SCOPING (the g4 "cyan in the open / cyan beside a pillar" fix). The #1677 stencil gate
+// scopes the pass to "a proxy rendered at this pixel" — but a proxy BEHIND the actor (the tall camp/snug/
+// throne props the actor stands IN FRONT of) stamps that bit across the actor's screen area too. At queue
+// 3000 the depth buffer there already held the ACTOR'S OWN body, so ZTest Greater degenerated into the clone
+// vs the source it was cloned from: two skinning dispatches of one rig, and any part of the actor occluded
+// by ANOTHER part of the actor (a raised arm across the chest, a hood over a face) reads as "farther" and
+// tints. That is the whole-figure cyan the g4 playthrough shot. FIX: the client now renders this pass at
+// queue 1995 — AFTER the depth-only occluder proxies (moved to 1990) and BEFORE the actors (2000). The depth
+// buffer it tests against therefore contains ONLY the proxies (plus the far backdrop at 1900), never the
+// actor, so "Greater" means exactly and only "this actor is behind an occluder proxy". Self-occlusion and
+// actor-behind-actor can no longer fire it, with no tuning constant. Where the actor really is hidden it
+// never writes depth, so its own draw at 2000 leaves the tint standing; where it is visible it paints over
+// it. _DepthBias stays as a 0-by-default escape hatch (WORLDOS_SIL_BIAS) for a platform where the proxy and
+// the actor land on the same depth value.
 Shader "WorldOS/ActorSilhouette" {
-  Properties { _Color ("Tint", Color) = (1,1,1,0.45) }
+  Properties {
+    _Color ("Tint", Color) = (1,1,1,0.45)
+    _DepthBias ("Depth Margin (view units toward camera)", Float) = 0
+  }
   SubShader {
     Tags { "RenderType"="Transparent" "Queue"="Transparent" }
     // #1677: draw ONLY where an OccluderDepth proxy stamped stencil bit 1 (i.e. behind an occluder),
@@ -40,7 +57,14 @@ Shader "WorldOS/ActorSilhouette" {
       #pragma fragment frag
       #include "UnityCG.cginc"
       fixed4 _Color;
-      float4 vert(float4 v:POSITION):SV_POSITION { return UnityObjectToClipPos(v); }
+      float _DepthBias;
+      // Unity view space looks down -Z, so +z moves the vertex toward the camera. A VIEW-space nudge keeps
+      // the margin a constant world distance under this project's ORTHOGRAPHIC dimetric camera. 0 by default.
+      float4 vert(float4 v:POSITION):SV_POSITION {
+        float3 vp = UnityObjectToViewPos(v.xyz);
+        vp.z += _DepthBias;
+        return mul(UNITY_MATRIX_P, float4(vp, 1.0));
+      }
       fixed4 frag():SV_Target { return _Color; }
       ENDCG
     }

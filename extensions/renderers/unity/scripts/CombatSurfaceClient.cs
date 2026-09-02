@@ -77,6 +77,20 @@ public class CombatSurfaceClient : MonoBehaviour
     readonly bool _silhouetteOn = System.Environment.GetEnvironmentVariable("WORLDOS_SILHOUETTE") != "0";
     AnimationClip _donorIdle; bool _donorTried; // goblin.fbx embedded Idle, for clipless-humanoid retarget
 
+    // #1738 ACTOR KEY/FILL/RIM RIG. The canonical scene ships ZERO Light objects and a FLAT ambient of
+    // (0.2,0.22,0.3) in GAMMA space, so every actor — a Standard-shader mesh — is lit by that ambient ALONE
+    // and sits 2-3 stops under the brazier-lit painted plate: the g4 playthrough read "dark blobs with marker
+    // rings", not characters (#1738). Everything else in the scene is UNLIT (PaintedBackdrop = Unlit/Texture,
+    // every ground quad = Sprites/Default, occluder proxies = ColorMask 0), so scene lights and the ambient
+    // term reach the ACTORS ONLY — this rig is an actor-exposure fix that cannot touch plate rendering.
+    // WORLDOS_ACTOR_LIGHT=0 => no rig, ambient untouched, byte-identical to pre-#1738. The WORLDOS_ACTOR_*
+    // floats let the QA rig A/B the exposure against ONE build instead of a rebuild per value.
+    readonly bool _actorLightOn = System.Environment.GetEnvironmentVariable("WORLDOS_ACTOR_LIGHT") != "0";
+    Light _keyLight, _fillLight, _rimLight;
+    static readonly Color ActorKeyColor = new Color(1.00f, 0.84f, 0.62f);    // hearth/brazier warm key
+    static readonly Color ActorFillColor = new Color(0.48f, 0.60f, 0.82f);   // cool night/stone fill
+    static readonly Color ActorRimColor = new Color(0.78f, 0.86f, 1.00f);    // cool separation sliver
+
     // RING-V2 warm-floor port (#1515 fix 2 / #1524, from CohesionProbe.cs): a hearth-INDEPENDENT warm floor
     // blended into the actor grounding so shadows/decals sit in the plate's warm palette instead of neutral
     // grey. Exact ported values — do not retune here (0 = fully cool, 1 = fully warm; the ported weight is 0.35).
@@ -359,6 +373,21 @@ public class CombatSurfaceClient : MonoBehaviour
     System.Collections.Generic.List<object> _occRaw;  // last-parsed raw occluder entries (post-unwrap)
     string _occLocId = "";               // last-parsed location id (a room swap invalidates the proxies)
     string _occSigParsed = "";           // signature of the last-PARSED occluder set + location
+    // #1736: the live proxies + their world-space XZ footprints (minX,minZ,maxX,maxZ), so a proxy an actor is
+    // STANDING INSIDE can be suppressed for as long as that is true (UpdateOccluderActorGating). Rebuilt in
+    // lockstep with the proxies themselves, so the two can never disagree about what exists.
+    readonly System.Collections.Generic.List<Renderer> _occRends = new System.Collections.Generic.List<Renderer>();
+    readonly System.Collections.Generic.List<Vector4> _occFoot = new System.Collections.Generic.List<Vector4>();
+    // #1736 review: each proxy's UNDERSIDE y. XZ containment alone is a 2D test, and every sidecar ships
+    // volumes an actor walks UNDER rather than stands inside — throne/snug/shop door0_arch bottoms at 3.55
+    // and door0_lintel at 4.68, col_*_collar at 6.85, all above a 3.2-tall char. Suppressing those on XZ
+    // alone would drop a real arch/lintel occluder for the WHOLE party whenever anyone crossed the doorway.
+    readonly System.Collections.Generic.List<float> _occBotY = new System.Collections.Generic.List<float>();
+    // #1736: live actor transforms, cached by FindActor so the per-frame gating never runs GameObject.Find.
+    readonly System.Collections.Generic.Dictionary<string, Transform> _actorTf = new System.Collections.Generic.Dictionary<string, Transform>();
+    // #1736 review: this actor's SCALED body height (the #1441 named ActorHeight*, after the #1665 monster
+    // cap), so the vertical half of the containment test uses the actor's real extent, not one constant.
+    readonly System.Collections.Generic.Dictionary<string, float> _bodyHOf = new System.Collections.Generic.Dictionary<string, float>();
     string _occSigBuilt = "\0";      // signature of the last-BUILT proxies (sentinel => first build runs)
 
     // WALKABLE-SLICE-V1 (item 6) RUNTIME PLATE REGISTRY (W5e; docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md):
@@ -532,6 +561,10 @@ public class CombatSurfaceClient : MonoBehaviour
         // (beauty captures) stays byte-identical.
         _onboard = _overlayOn || System.Environment.GetEnvironmentVariable("WORLDOS_ONBOARD") == "1";
 
+        // #1738: stand the actor key/fill/rim rig up before the first surface, aimed off the camera (the
+        // first ApplyPlate re-aims it from that room's painted fires). WORLDOS_ACTOR_LIGHT=0 -> no-op.
+        AimActorLightRig(null);
+
         // #1463: load the OPTIONAL stage manifest (fire flicker + glow anchors). Absent -> byte-identical.
         LoadStageManifest();
         // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
@@ -567,8 +600,14 @@ public class CombatSurfaceClient : MonoBehaviour
     Transform FindActor(string id)
     {
         if (string.IsNullOrEmpty(id)) return null;
+        // #1736: memoize the hit. A destroyed actor compares == null through Unity's fake-null, so a stale
+        // entry self-heals into a fresh Find; the cache only removes the per-frame Find cost for the proxy
+        // gating below (resolution semantics are unchanged).
+        if (_actorTf.TryGetValue(id, out var cached) && cached != null) return cached;
         var go = GameObject.Find("Actor_" + id);
-        return go ? go.transform : null;
+        if (go != null) { _actorTf[id] = go.transform; return go.transform; }
+        _actorTf.Remove(id);
+        return null;
     }
 
     IEnumerator PollLoop()
@@ -781,6 +820,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // Despawn cleanly: dropping the whole container takes every Occluder_* box with it (deterministic;
         // the boxes are never in _spawned, so the actor despawn path never touches them and vice-versa).
         if (_occRoot != null) { Destroy(_occRoot); _occRoot = null; }
+        _occRends.Clear(); _occFoot.Clear(); _occBotY.Clear();   // #1736: the tables die with the proxies they describe
         // UNIFY-THE-FRAMES: the plate-box sidecar takes priority BEFORE the legacy empty-set early-out —
         // a room can have zero legacy occluder props yet a full box sidecar (walls always ship in it);
         // gating the sidecar behind _occRaw would silently drop every wall volume (codex review, #1575).
@@ -815,12 +855,30 @@ public class CombatSurfaceClient : MonoBehaviour
                 bxr.sharedMaterial = mat;
                 bxr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 bxr.receiveShadows = false;
+                RegisterOccluderFootprint(bxr, b[0], b[2], b[3], b[5], b[1] - Mathf.Abs(b[4]) * 0.5f);   // #1736
                 bn++;
             }
             Debug.Log("[CSC] occluders: " + bn + " UNIFIED plate-box volumes (loc=" + _occLocId + ")");
             return;
         }
-        System.Func<string, float> bandH = (b) => b == "tall" ? 7.5f : (b == "low" ? 1.4f : 3.8f);
+        // #1736 PAINT-FIRST PROXY SCALE. The footprint path stamps a FULL-CELL 2x2 box at a band height that
+        // was derived for the 3D GREYBOX rooms it was written for (paint_combat_v1). A PAINT-FIRST room —
+        // one that swapped in a painted plate but ships no plate-derived box sidecar, i.e. camp_clearing —
+        // gets those same numbers off the engine's prop grid, which is not registered to the painting: a
+        // knee-high crate or a bedroll becomes a 2x2x3.8 column that genuinely occludes an actor two cells
+        // behind it, and the walk-behind pass then paints a waist-split ghost on a hero the plate shows in
+        // the open (#1736, measured at camp (8,2)/(10,2)/(12,4) — 74-100% of the figure). Neither the depth
+        // test nor the ground-plane gate can fix that: the proxy really IS in front, it just is not the
+        // thing the player sees. So a paint-first room gets prop-truthful dimensions (a prop sits in the
+        // MIDDLE of its cell, and "mid" is a crate, not a wall). A room with a box sidecar never reaches
+        // this path, and a legacy GREYBOX room (no plate swap for this location) keeps the old numbers
+        // byte-identical. Real fix for camp is a plate-derived sidecar (UNIFY-THE-FRAMES); this is the
+        // client-side floor until it ships.
+        bool paintFirst = _plateBoxesLocId == _locId;   // a plate was applied for THIS room, yet no sidecar
+        float halfXZ = paintFirst ? 0.7f : 1.0f;
+        System.Func<string, float> bandH = paintFirst
+            ? (System.Func<string, float>)((b) => b == "tall" ? 3.2f : (b == "low" ? 0.8f : 1.4f))
+            : ((b) => b == "tall" ? 7.5f : (b == "low" ? 1.4f : 3.8f));
         int occN = 0;
         foreach (var oo in _occRaw)
         {
@@ -837,16 +895,75 @@ public class CombatSurfaceClient : MonoBehaviour
                 Destroy(box.GetComponent<Collider>());       // depth-only proxy, never a physics blocker
                 box.transform.SetParent(_occRoot.transform, true);
                 box.transform.position = new Vector3(wp.x, H * 0.5f, wp.z);
-                box.transform.localScale = new Vector3(2.0f, H, 2.0f);
+                box.transform.localScale = new Vector3(halfXZ * 2f, H, halfXZ * 2f);
                 var br = box.GetComponent<Renderer>();
                 br.sharedMaterial = mat;
                 br.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 br.receiveShadows = false;
+                RegisterOccluderFootprint(br, wp.x, wp.z, halfXZ * 2f, halfXZ * 2f, 0f);   // #1736 (footprint boxes sit ON the floor)
                 occN++;
             }
         }
-        Debug.Log("[CSC] occluders: " + occN + " depth-proxy boxes (loc=" + _occLocId + ")");
+        Debug.Log("[CSC] occluders: " + occN + " depth-proxy boxes (loc=" + _occLocId + ", paintFirst=" + paintFirst + ")");
     }
+
+    // #1736: record one proxy's world-space XZ footprint alongside its renderer (both proxy paths feed this,
+    // so the sidecar and the legacy footprint rooms gate identically).
+    void RegisterOccluderFootprint(Renderer r, float cx, float cz, float sx, float sz, float botY)
+    {
+        _occRends.Add(r);
+        _occFoot.Add(new Vector4(cx - Mathf.Abs(sx) * 0.5f, cz - Mathf.Abs(sz) * 0.5f,
+                                 cx + Mathf.Abs(sx) * 0.5f, cz + Mathf.Abs(sz) * 0.5f));
+        _occBotY.Add(botY);
+    }
+
+    // #1736 PROXY-GHOST RULE (containment). A proxy may only silhouette an actor when it is genuinely
+    // BETWEEN the camera and that actor. The per-pixel half of that is now exact and free: the walk-behind
+    // pass draws at queue 1995, after the proxies and before the actors, so its ZTest Greater compares
+    // against a depth buffer holding ONLY proxies (see ActorSilhouette.shader) — never the actor's own body,
+    // which is what painted the whole-figure and limb-split ghosts the g4 playthrough shot.
+    // What that test cannot see is an actor standing INSIDE a proxy's XZ footprint: it really is behind the
+    // box's front face, so the depth test is right and the tint is still wrong (the camp footprint boxes,
+    // the crypt door landing, the throne arrival cell). A proxy an actor is standing in can never
+    // legitimately hide that actor, so it is suppressed for as long as it is occupied.
+    // Containment is tested in 3D, not just XZ (codex review): a proxy whose UNDERSIDE clears the actor's
+    // head is one the actor walks UNDER — every sidecar arch (bottom 3.55), lintel (4.68) and pillar collar
+    // (6.85) clears a 3.2-tall char — and suppressing those on an XZ hit alone would drop a real occluder
+    // for the whole party the moment anyone crossed a doorway.
+    // Suppression is global for that proxy rather than per actor: scoping one proxy to one actor would mean
+    // re-rendering the proxy set once per actor. Containment is a safe global trigger — a genuine pillar or
+    // wall has impassable footprint cells, so no actor can stand in one and cancel it for the party (a
+    // ground-plane DEPTH gate was tried here and is not safe: a goblin standing in front of the crypt pillar
+    // cancelled the hero's walk-behind tint behind it; and gating the per-actor silhouette clones instead
+    // makes an actor behind a straddling proxy VANISH, which is the very defect #1545 exists to prevent).
+    // Tested against the actor's live world XZ (so a glide INTO a proxy suppresses it on entry rather than a
+    // poll later) and against its engine cell (the cell it is walking toward).
+    void UpdateOccluderActorGating()
+    {
+        if (_occRends.Count == 0) return;
+        for (int i = 0; i < _occRends.Count; i++)
+        {
+            var r = _occRends[i]; if (r == null) continue;
+            var f = _occFoot[i]; float botY = _occBotY[i];
+            bool occupied = false;
+            foreach (var kv in _actorTf)
+            {
+                var t = kv.Value; if (t == null) continue;
+                // A proxy whose UNDERSIDE clears this actor's head is one the actor walks UNDER, not one it
+                // stands inside: it can still legitimately hide OTHER actors, so it must stay live. Unknown
+                // height falls back to the tallest class, i.e. suppress-more (the pre-review behaviour).
+                float bodyH = _bodyHOf.TryGetValue(kv.Key, out var bh) ? bh : ActorHeightFoe;
+                if (botY >= t.position.y + bodyH) continue;
+                if (InFoot(t.position, f)) { occupied = true; break; }
+                if (_cellOf.TryGetValue(kv.Key, out var cell) && cell != null && cell.Length >= 2
+                    && InFoot(CellToWorld(cell[0], cell[1]), f)) { occupied = true; break; }
+            }
+            if (r.enabled == occupied) r.enabled = !occupied;   // write only on a real change
+        }
+    }
+
+    // #1736: is this ground point inside the proxy footprint (minX, minZ, maxX, maxZ)?
+    static bool InFoot(Vector3 p, Vector4 f) { return p.x >= f.x && p.x <= f.z && p.z >= f.y && p.z <= f.w; }
 
     // W6.1 (#1460): the shared depth-only material, built once from the COMMITTED WorldOS/OccluderDepth
     // shader (#1433 — a real .shader asset compiled into the player, unlike the old runtime-created string
@@ -861,7 +978,83 @@ public class CombatSurfaceClient : MonoBehaviour
         var sh = Shader.Find("WorldOS/OccluderDepth");
         if (sh == null) { Debug.LogWarning("[CSC] occluders: WorldOS/OccluderDepth not found (add to Always-Included Shaders); skipping proxies."); return null; }
         _occMat = new Material(sh);
+        // #1736: 1990 instead of the shader's Geometry-1 (1999), so the walk-behind pass can sit at 1995 —
+        // after this depth+stencil stamp, before the actors at 2000. Relative order against everything else
+        // is unchanged (backdrop 1900, ground quads 1950-1958, actors 2000), so depth output is identical.
+        _occMat.renderQueue = 1990;
         return _occMat;
+    }
+
+    // #1738: read a float tuning knob from the environment (absent/malformed -> the shipped default), so the
+    // QA rig can A/B the actor exposure against ONE build instead of a rebuild per value.
+    static float EnvF(string name, float dflt)
+    {
+        var s = System.Environment.GetEnvironmentVariable(name);
+        float v;
+        return (!string.IsNullOrEmpty(s) && float.TryParse(s, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out v)) ? v : dflt;
+    }
+
+    // #1738: build the actor key/fill/rim rig once and lift the flat ambient off near-black. See the field
+    // block: the plate, the ground quads and the occluder proxies are all unlit, so these three directional
+    // lights + the ambient term are ACTOR lighting in effect. Shadows are OFF on all three (nothing in the
+    // scene receives them, and self-shadowing a Meshy humanoid at this exposure only adds acne).
+    void EnsureActorLightRig()
+    {
+        if (!_actorLightOn || _keyLight != null) return;
+        var root = new GameObject("ActorLightRig");
+        _keyLight = MakeRigLight(root, "ActorKey", ActorKeyColor, EnvF("WORLDOS_ACTOR_KEY", 1.25f));
+        _fillLight = MakeRigLight(root, "ActorFill", ActorFillColor, EnvF("WORLDOS_ACTOR_FILL", 0.45f));
+        _rimLight = MakeRigLight(root, "ActorRim", ActorRimColor, EnvF("WORLDOS_ACTOR_RIM", 0.55f));
+        // Ambient floor: the shipped flat ambient crushes an unlit-side cloak to ~0.02 of its albedo. Lift it
+        // (warm-biased) so no body plane is ever pure black — the "hooded dark blob" read in #1738.
+        if (RenderSettings.ambientMode == UnityEngine.Rendering.AmbientMode.Flat)
+        {
+            float lift = EnvF("WORLDOS_ACTOR_AMBIENT", 0.12f);
+            var a = RenderSettings.ambientLight;
+            RenderSettings.ambientLight = new Color(a.r + lift, a.g + lift * 0.94f, a.b + lift * 0.82f, a.a);
+        }
+        Debug.Log("[CSC] actor light rig: key=" + _keyLight.intensity + " fill=" + _fillLight.intensity
+                  + " rim=" + _rimLight.intensity + " ambient=" + RenderSettings.ambientLight);
+    }
+
+    static Light MakeRigLight(GameObject root, string name, Color c, float intensity)
+    {
+        var go = new GameObject(name); go.transform.SetParent(root.transform, false);
+        var l = go.AddComponent<Light>();
+        l.type = LightType.Directional; l.color = c; l.intensity = Mathf.Max(0f, intensity);
+        l.shadows = LightShadows.None; l.renderMode = LightRenderMode.ForcePixel;
+        return l;
+    }
+
+    // #1738: aim the rig for THIS room. The key azimuth comes from the room's dominant PAINTED light — the
+    // mean of the plate manifest's fire/brazier `effects` cells — travelling FROM that light INTO the room
+    // centre, so a hero between the campfire and the middle of the camp is keyed from the fire the player can
+    // see. Rooms whose plate carries no `effects` (snug/throne/shop paint their hearths), or whose fires
+    // average onto the room centre (no usable azimuth), fall back to a front-left key off the dimetric camera.
+    void AimActorLightRig(PlateEntry entry)
+    {
+        if (!_actorLightOn) return;
+        EnsureActorLightRig();
+        var cam = Camera.main; float camYaw = cam != null ? cam.transform.eulerAngles.y : 45f;
+        float keyYaw = camYaw - 40f;                       // fallback: front-left of the dimetric camera
+        Vector3 sum = Vector3.zero; int n = 0;
+        if (entry != null && entry.effects != null)
+            foreach (var es in entry.effects)
+            {
+                if (es == null || es.cell == null || es.cell.Length < 2 || string.IsNullOrEmpty(es.type)) continue;
+                if (es.type.Contains("fire") || es.type.Contains("brazier") || es.type.Contains("candle"))
+                { sum += CellToWorld(es.cell[0], es.cell[1]); n++; }
+            }
+        if (n > 0)
+        {
+            var d = -new Vector3(sum.x / n, 0f, sum.z / n);           // fire -> room centre
+            if (d.magnitude > 1.0f) keyYaw = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+        }
+        _keyLight.transform.rotation = Quaternion.Euler(38f, keyYaw, 0f);
+        _fillLight.transform.rotation = Quaternion.Euler(22f, keyYaw + 145f, 0f);
+        _rimLight.transform.rotation = Quaternion.Euler(18f, camYaw + 125f, 0f);   // back-side sliver
+        Debug.Log("[CSC] actor light aimed: keyYaw=" + keyYaw.ToString("F1") + " fires=" + n + " loc=" + _locId);
     }
 
     void ApplySurf(Surf s)
@@ -1540,7 +1733,13 @@ public class CombatSurfaceClient : MonoBehaviour
         if (sh == null) { Debug.LogWarning("[CSC] silhouette: WorldOS/ActorSilhouette not found (add to Always-Included Shaders); walk-behind mask disabled."); _silMatMissing = true; return null; }
         // Reuse the existing runtime team colors at the #1545 ~0.45 mask alpha (no new hue invented).
         var m = new Material(sh) { color = foe ? new Color(1f, 0.13f, 0.10f, 0.45f) : new Color(0.4f, 0.95f, 1f, 0.45f) };
-        m.renderQueue = 3000;   // Transparent: draws after all opaque geometry + proxy depth is laid
+        // #1736: draw BETWEEN the proxies (1990, EnsureOccluderMaterial) and the actors (Geometry 2000), so
+        // ZTest Greater tests against a depth buffer holding ONLY the occluder proxies — never the actor's
+        // own body, which at the old queue 3000 made the pass silhouette a hood behind its own arm (the g4
+        // whole-figure cyan). Still after the backdrop (1900) and the ground quads (1950-1958), so the tint
+        // composites over the plate exactly as before. Shader header carries the full derivation.
+        m.renderQueue = 1995;
+        m.SetFloat("_DepthBias", EnvF("WORLDOS_SIL_BIAS", 0f));   // escape hatch; 0 = pure order scoping
         if (foe) _silFoe = m; else _silParty = m;
         return m;
     }
@@ -1803,6 +2002,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // (so the first poll doesn't spuriously glide a just-spawned actor already on its engine cell) and the
         // head-top offset for the HP/name plate (height is the scale target; +margin clears the silhouette).
         _topOf[id] = height + 1.4f;
+        _bodyHOf[id] = height;      // #1736 review: the vertical half of the proxy containment test
         _cellOf[id] = new[] { cx, cy };
         Debug.Log("[CSC] spawned " + nm + " model=" + fbx + " x" + sc.ToString("F2") + " @cell(" + cx + "," + cy + ") rends=" + rends.Length);
         // #1665 residual-float re-snap: the ctrl-driven humanoid idle graph (and the avatar retarget) resolves
@@ -1879,6 +2079,7 @@ public class CombatSurfaceClient : MonoBehaviour
             if (g != null) Object.Destroy(g);
         }
         _spawned.Remove(id);
+        _actorTf.Remove(id); _bodyHOf.Remove(id);   // #1736: drop the cached transform/height with the object
         // #1441: tear down any in-flight glide + per-actor state so a re-spawn starts clean.
         if (_glide.TryGetValue(id, out var co) && co != null) StopCoroutine(co);
         KillWalkGraph(id);   // the stopped glide can't destroy its own graph (#1451-review P2)
@@ -2321,6 +2522,8 @@ public class CombatSurfaceClient : MonoBehaviour
         // pulses. Both run every frame regardless of the click/poll gate.
         UpdateHpBars();
         UpdateTurnPulse();
+        // #1736: suppress any occluder proxy an actor is currently standing inside, before this frame renders.
+        UpdateOccluderActorGating();
         if (_busy) return;
         // #1466: drain at most one queued QA click per frame on the MAIN thread (Camera/raycast/coroutines
         // AND Screen.width/height are main-thread only). Same _busy gate as a real click. A cell request
@@ -3873,6 +4076,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // animated fire over the painted firepit, etc.). No `effects` / no registry / no bundle => a clean
         // despawn + nothing spawned (byte-identical to the pre-VFX plate).
         SpawnPlateEffects(entry);
+        // #1738: re-aim the actor key off THIS room's dominant painted light (the same fire/brazier anchors
+        // the VFX above just spawned on), so the cast is keyed from the light the player can see.
+        AimActorLightRig(entry);
         // #idle-fix: the location just changed — settle the whole cast to a grounded idle on the new plate so
         // no actor renders a bind (T) pose or floats after the cross-room reposition (the taste-pass defect).
         SettleCastIdleGrounded();
