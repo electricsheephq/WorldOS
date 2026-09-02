@@ -25,8 +25,11 @@ reported, structured output (score_a, score_b, one-paragraph notes each).
 ## The two-anchor rule
 
 Every panel batch includes:
-1. **The PoE2 control** (`/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg`)
-   — anchors the TOP of the scale.
+1. **The PoE2 control** — `/Users/m1/Codex/worldos-refs/poe2_ruins_brazier_integration_01.jpg` (sha256
+   `69fbb979a00f0d59685847979af74b9fa882a6f7062c96456fe64a479e26e7fb`, 855,066 B). OFF-REPO BY DESIGN: it is a
+   frame of a shipped commercial game and must never be committed; re-pinned 2026-09-02 after the former
+   `/Volumes/LEXAR/WorldOS-Unity-spike/refs/` copy died with that drive. `qa/visual_controls_identity.json`
+   carries the same path. Pass it to `panel_workflow.mjs` as an ABSOLUTE path. Anchors the TOP of the scale.
 2. **At least one SHIPPED plate as a disguised calibration reference** (e.g.
    `plates/shop_v1_registered.png`) — anchors the SHIP BAR. The verdict is "candidate within ~0.5
    of the calibration reference in the SAME run", never the raw Δ band across runs.
