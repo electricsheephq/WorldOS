@@ -60,6 +60,8 @@ def render_plists(repo: Path, app: Path, state: Path, uv: Path,
           "ProgramArguments": ["/bin/bash", str(repo / DM_SCRIPT), "serve", "--run", "owner",
                                "--engine", f"http://127.0.0.1:{engine_port}", "--state", str(state),
                                "--campaign", CAMPAIGN],
+          "StandardOutPath": str(state / "owner-dm.log"),
+          "StandardErrorPath": str(state / "owner-dm.err.log"),
           # WORLDOS_AGENT_PLAY_ROOT: agent_play.sh defaults its run dir to <repo>/qa/agent_play_runs.
           # The owner's run holds the durable chat cursor, so it belongs beside the state the receipt
           # backs up — not inside the pinned checkout that `refresh --sha` moves out from under it.

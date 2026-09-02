@@ -66,6 +66,8 @@ done
 RUNS_ROOT="${WORLDOS_AGENT_PLAY_ROOT:-qa/agent_play_runs}"   # repo-relative by default; absolute is fine
 case "$RUNS_ROOT" in /*) RUN_DIR="$RUNS_ROOT/$RUN" ;; *) RUN_DIR="$ROOT/$RUNS_ROOT/$RUN" ;; esac
 SESSION="$RUN_DIR/session.json"
+HEARTBEAT="$RUN_DIR/serve.heartbeat"
+STARTING="$RUN_DIR/serve.starting"
 
 # ── session file helpers (the durable binding; `say`/`serve`/`status`/`stop` need only --run) ────
 ap_sget() { python3 -c 'import json,sys
@@ -315,6 +317,7 @@ $event_adv"
 # never re-answers a line it already answered.
 AP_SERVE_STOP=0
 ap_serve_cleanup() {
+  rm -f "$HEARTBEAT" "$STARTING"
   [ "$(ap_sget serve_pid)" = "$$" ] && ap_sset serve_pid "" >/dev/null || true
 }
 ap_move_text() {
@@ -330,6 +333,8 @@ else:
     print(f"[{kind}] {detail}")'
 }
 ap_serve() {
+  mkdir -p "$RUN_DIR"; rm -f "$HEARTBEAT"; : > "$STARTING"
+  trap 'rm -f "$HEARTBEAT" "$STARTING"' EXIT
   if [ ! -s "$SESSION" ]; then
     [ -n "$ENGINE" ] && [ -n "$STATE_IN" ] || { echo "[agent-play] serve on a fresh run needs --engine and --state (or run \`start\` first)" >&2; exit 2; }
     ap_start
@@ -340,8 +345,10 @@ ap_serve() {
   trap 'AP_SERVE_STOP=1' TERM INT
   trap 'ap_serve_cleanup' EXIT
   ap_sset stopped "" serve_pid "$$" >/dev/null  # a fresh serve un-stops the run and owns its PID
+  rm -f "$STARTING"
   echo "[agent-play] serving run=$RUN chat=$CHAT moves=$MOVES campaign=$CAMPAIGN_ID dm=$WORLDOS_DM_MODEL max_beats=$label"
   while [ "$AP_SERVE_STOP" = "0" ]; do
+    touch "$HEARTBEAT"                       # explicit serving-state marker, refreshed every poll
     # `stop --run <name>` stamps the session, which is how another shell asks this loop to exit
     # (SIGTERM is the other way; the LaunchAgent uses that one).
     if [ -n "$(ap_sget stopped)" ]; then echo "[agent-play] session marked stopped — exiting serve"; break; fi
@@ -415,6 +422,7 @@ print(f"{tot:.4f}")' "$RUN_DIR/$RUN.dm.*.jsonl" 2>/dev/null || echo 0)"
   echo "run=$RUN campaign=$cid state=$state"
   echo "beats=$used/$total  quest=${status:-unknown}  stamps=$stamps  spend_usd=$spend"
   echo "chat=$(ap_sget chat_path)  session=$SESSION  stopped=$(ap_sget stopped)"
+  if [ -f "$HEARTBEAT" ]; then echo "serve_heartbeat=PRESENT path=$HEARTBEAT"; elif [ -f "$STARTING" ]; then echo "serve_heartbeat=STARTING path=$HEARTBEAT"; else echo "serve_heartbeat=MISSING path=$HEARTBEAT"; fi
 }
 
 ap_stop() {

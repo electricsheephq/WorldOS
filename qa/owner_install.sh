@@ -8,6 +8,9 @@ STATE="$HOME/Library/Application Support/WorldOS/owner_demo"
 AGENTS="$HOME/Library/LaunchAgents"; SESSION=org.worldos.owner-session; PLAYER=org.worldos.owner-player
 DM=org.worldos.owner-dm; DM_SCRIPT=qa/agent_play.sh
 ENGINE_PORT=8776; QA_PORT=8981; BUILD_SHA=; BUILD_REPORT=; SHA=; STAGE=; RESEED=0; PURGE=0
+DM_RUN="$STATE/agent_play_runs/owner"; DM_HEARTBEAT="$DM_RUN/serve.heartbeat"; DM_STARTING="$DM_RUN/serve.starting"
+DM_LOG="$STATE/owner-dm.log"; DM_ERR="$STATE/owner-dm.err.log"
+START_PROBE_TMP=
 die(){ printf 'OWNER INSTALL REFUSED: %s\n' "$*" >&2; exit 1; }
 usage(){ echo "usage: $0 preflight|dry-run|install [app] [--stage dir] [--sha sha] [--build-sha sha] | refresh --sha sha [--reseed] | restore <receipt-dir> | status | uninstall [--purge]"; exit 2; }
 
@@ -22,6 +25,74 @@ await_code(){ local fn=$1 want=$2 secs=$3 what=$4 code='' i; for ((i=0; i<secs; 
 require_dm(){ local s="$1/$DM_SCRIPT"
   if [[ ! -f "$s" ]] || ! grep -qE '(^|[^[:alnum:]_])serve([^[:alnum:]_]|$)' "$s"; then die "$s has no 'serve' mode: the owner-dm agent would start nothing and every say/do/check would queue forever"; fi; }
 
+ledger_consumption(){
+  local ledger=$1 result=$2 elapsed=$3 detail=$4
+  [[ -n "$ledger" && -f "$ledger" ]] || return 0
+  python3 "$ROOT/qa/owner_install_verify.py" ledger "$ledger" --result "$result" \
+    --elapsed "$elapsed" --detail "$detail" || { echo "OWNER INSTALL REFUSED: could not update $ledger" >&2; return 1; }
+}
+
+reset_dm_run(){
+  local state=$1 stamp run chat moved=0
+  stamp=$(date -u +%Y%m%dT%H%M%SZ); run="$state/agent_play_runs/owner"; chat="$state/chat.jsonl"
+  if [[ -e "$run" ]]; then
+    [[ ! -e "$state/agent_play_runs/owner.archived-$stamp" ]] || die "DM archive timestamp collision: $stamp"
+    mv "$run" "$state/agent_play_runs/owner.archived-$stamp"; moved=1
+  fi
+  if [[ -e "$chat" ]]; then
+    [[ ! -e "$state/chat.archived-$stamp.jsonl" ]] || die "chat archive timestamp collision: $stamp"
+    mv "$chat" "$state/chat.archived-$stamp.jsonl"; moved=1
+  fi
+  ((moved == 0)) || echo "Archived prior DM run/chat at timestamp $stamp; reseed will start fresh."
+}
+
+await_dm(){
+  local secs=$1 i log starting=0
+  for ((i=0; i<secs; i++)); do
+    [[ -f "$DM_HEARTBEAT" ]] && return 0
+    [[ ! -f "$DM_STARTING" ]] || starting=1
+    if ((starting && i > 1)) && ! dm_running; then break; fi
+    sleep 1
+  done
+  if ((starting)) && dm_running; then
+    echo "DM cold open still running after ${secs}s; startup marker and LaunchAgent are live."
+    return 0
+  fi
+  echo "OWNER INSTALL DM LOG TAIL (heartbeat missing):" >&2
+  for log in "$DM_LOG" "$DM_ERR"; do
+    [[ ! -f "$log" ]] || { echo "--- ${log##*/} ---" >&2; tail -n 20 "$log" >&2; }
+  done
+  die "DM never reached serving state (no $DM_HEARTBEAT within ${secs}s)"
+}
+
+dm_running(){ launchctl print "gui/$(id -u)/$DM" 2>/dev/null | grep -q 'state = running'; }
+monotonic_seconds(){ python3 -c 'import time; print(int(time.monotonic()))'; }
+await_consumed(){
+  local surface=$1 debug=$2 secs=$3 ledger=${4:-} start now elapsed=0 timeout msg detail
+  curl -fsS --max-time 5 "http://127.0.0.1:$ENGINE_PORT/session-surface" >"$surface"
+  start=$(monotonic_seconds)
+  while ((elapsed < secs)); do
+    now=$(monotonic_seconds); elapsed=$((now - start)); ((elapsed < secs)) || break
+    timeout=$((secs - elapsed)); ((timeout > 5)) && timeout=5
+    curl -fsS --max-time "$timeout" -X POST -H 'Content-Type: application/json' -d '{}' \
+      "http://127.0.0.1:$QA_PORT/debug" >"$debug" 2>/dev/null || printf '{}\n' >"$debug"
+    now=$(monotonic_seconds); elapsed=$((now - start))
+    if python3 "$ROOT/qa/owner_install_verify.py" player-ready "$debug" >/dev/null 2>&1; then
+      if msg=$(python3 "$ROOT/qa/owner_install_verify.py" consumed --surface "$surface" --debug "$debug" \
+          --manifest "$OWNER_REPO/extensions/renderers/unity/plates_manifest.json" 2>&1); then
+        ledger_consumption "$ledger" GREEN "$elapsed" "$msg" || die "could not update consumption verdict in $ledger"
+        printf '%s (elapsed=%ss)\n' "$msg" "$elapsed"; cat "$debug"; echo; return 0
+      fi
+      ledger_consumption "$ledger" REFUSED "$elapsed" "$msg" || die "could not update consumption verdict in $ledger"
+      die "$msg"
+    fi
+    ((elapsed >= secs)) || sleep 1
+  done
+  detail=$(cat "$debug"); ledger_consumption "$ledger" REFUSED "$elapsed" "last /debug: $detail" || die "could not update consumption verdict in $ledger"
+  echo "OWNER INSTALL last /debug after ${elapsed}s: $detail" >&2
+  die "player never reached surf>0 with plateLocMatch=true within ${secs}s"
+}
+
 preflight(){
   local app=$1 out kit room
   [[ -d "$app" && -x "$app/Contents/MacOS/WorldOSPlayer" ]] || die "player app/binary missing: $app"
@@ -34,13 +105,10 @@ preflight(){
   # Unity's StampFailedReport writes a nonempty result=Failed report beside a stale .app,
   # so "readable and nonempty" is not build identity — require the stamped success.
   BUILD_REPORT="$(dirname "$app")/build-report.txt"
-  if [[ -r "$BUILD_REPORT" && -s "$BUILD_REPORT" ]]; then
-    python3 "$ROOT/qa/owner_install_verify.py" build-report "$BUILD_REPORT" || die "build-report.txt beside $app does not record a successful build"
-  else
-    BUILD_REPORT=; [[ -n "$BUILD_SHA" ]] || die "no successful build-report.txt beside $app and no --build-sha"
-  fi
+  [[ -r "$BUILD_REPORT" && -s "$BUILD_REPORT" ]] || die "build-report.txt is required beside $app (a --build-sha cannot prove the built shaders)"
+  python3 "$ROOT/qa/owner_install_verify.py" build-report "$BUILD_REPORT" || die "build-report.txt beside $app does not record a successful build with both required shaders"
   [[ -f "$ROOT/$DM_SCRIPT" ]] || echo "OWNER INSTALL NOTE: $ROOT/$DM_SCRIPT is absent; install will refuse until the DM loop lands." >&2
-  echo "OWNER INSTALL PREFLIGHT GREEN (pins GREEN; KitRoom_=0; crypt+tavern FRESH; build identity ${BUILD_REPORT:+build-report result=Succeeded}${BUILD_REPORT:+ }${BUILD_REPORT:-via --build-sha $BUILD_SHA})"
+  echo "OWNER INSTALL PREFLIGHT GREEN (pins GREEN; KitRoom_=0; crypt+tavern FRESH; build identity build-report result=Succeeded $BUILD_REPORT)"
 }
 
 receipt_dir(){ echo "/Users/m1/Codex/session-notes/$(date -u +%F)/worldos-refresh/artifacts/owner-install/backup-$(date -u +%Y%m%dT%H%M%SZ)"; }
@@ -80,19 +148,18 @@ resolve_worktree(){
 # Session FIRST, then the player, then the DM — only the session plist sets RunAtLoad, so
 # `bootstrap` starts exactly one process and nothing races the engine (#1612's two-kick trap).
 start_and_probe(){
-  local domain tmp; domain="gui/$(id -u)"
+  local domain tmp ledger=${1:-}; domain="gui/$(id -u)"
+  tmp=$(mktemp -d); START_PROBE_TMP=$tmp; trap 'rm -rf "$START_PROBE_TMP"' EXIT
   launchctl bootstrap "$domain" "$AGENTS/$SESSION.plist" 2>/dev/null || launchctl kickstart -k "$domain/$SESSION"
   await_code engine_code 200 90 "engine /session-surface never reached 200 on :$ENGINE_PORT"
   launchctl bootstrap "$domain" "$AGENTS/$PLAYER.plist" 2>/dev/null || true; launchctl kickstart -k "$domain/$PLAYER"
   # Unity binds :$QA_PORT only once the player is up; a single curl races normal startup.
   await_code player_code 200 60 "player QA listener never answered /debug on :$QA_PORT within 60s"
+  rm -f "$DM_HEARTBEAT"                    # a prior serve must not satisfy this start
   launchctl bootstrap "$domain" "$AGENTS/$DM.plist" 2>/dev/null || true; launchctl kickstart -k "$domain/$DM"
-  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN EXIT
-  curl -fsS --max-time 5 "http://127.0.0.1:$ENGINE_PORT/session-surface" >"$tmp/surface.json"
-  curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:$QA_PORT/debug" >"$tmp/debug.json"
-  python3 "$ROOT/qa/owner_install_verify.py" consumed --surface "$tmp/surface.json" --debug "$tmp/debug.json" \
-    --manifest "$OWNER_REPO/extensions/renderers/unity/plates_manifest.json" || die "the installed player never applied the seeded campaign"
-  cat "$tmp/debug.json"; echo
+  await_dm 60
+  await_consumed "$tmp/surface.json" "$tmp/debug.json" 180 "$ledger"
+  trap - EXIT; rm -rf "$tmp"; START_PROBE_TMP=
 }
 
 MODE=${1:-}; [[ -n "$MODE" ]] || usage; shift
@@ -117,10 +184,11 @@ install)
   echo "Rollback (one line, yields a running installation): '$ROOT/qa/owner_install.sh' restore '$RECEIPT'"
   WT=$(resolve_worktree "$SHA"); require_dm "$OWNER_REPO"
   mkdir -p "$(dirname "$TARGET_APP")"; ditto "$APP" "$TARGET_APP"; xattr -dr com.apple.quarantine "$TARGET_APP"; codesign --force --deep --sign - "$TARGET_APP"; echo "Installed with ad-hoc signing; this demo build is unnotarized (accepted)."
+  reset_dm_run "$STATE"
   WORLDOS_STATE_DIR="$STATE" uv run --directory "$OWNER_REPO/servers/engine" python "$OWNER_REPO/qa/seed_adventure_demo.py" "$STATE"
   mkdir -p "$AGENTS"; render "$RECEIPT" install "$TARGET_APP" "$WT" "$RECEIPT/install-ledger.json"
   for L in "$SESSION" "$PLAYER" "$DM"; do install -m 0644 "$RECEIPT/$L.plist" "$AGENTS/$L.plist"; done
-  start_and_probe;;
+  start_and_probe "$RECEIPT/install-ledger.json";;
 restore)
   RECEIPT=$APP  # `restore` takes the receipt dir in the positional slot, not an app
   [[ -d "$RECEIPT" && -f "$RECEIPT/restore.json" ]] || die "restore needs a receipt dir holding restore.json"
@@ -142,7 +210,7 @@ restore)
   done
   start_and_probe; echo "RESTORED from $RECEIPT (worktree ${PRIOR_WT:-unchanged})";;
 refresh)
-  [[ -n "$SHA" ]] || die "refresh requires --sha"; stop_agents; WT=$(resolve_worktree "$SHA"); require_dm "$OWNER_REPO"; if ((RESEED)); then RECEIPT=$(receipt_dir); mkdir -p "$RECEIPT"; [[ ! -d "$STATE" ]] || ditto "$STATE" "$RECEIPT/owner_demo"; echo "Restore state: ditto '$RECEIPT/owner_demo' '$STATE'"; WORLDOS_STATE_DIR="$STATE" uv run --directory "$OWNER_REPO/servers/engine" python "$OWNER_REPO/qa/seed_adventure_demo.py" "$STATE"; fi; start_and_probe; echo "REFRESHED $WT";;
-status) for L in "$SESSION" "$PLAYER" "$DM"; do launchctl print "gui/$(id -u)/$L" || true; done; echo "engine /session-surface $(engine_code)"; echo "player /debug $(player_code)";;
+  [[ -n "$SHA" ]] || die "refresh requires --sha"; stop_agents; WT=$(resolve_worktree "$SHA"); require_dm "$OWNER_REPO"; if ((RESEED)); then RECEIPT=$(receipt_dir); mkdir -p "$RECEIPT"; [[ ! -d "$STATE" ]] || ditto "$STATE" "$RECEIPT/owner_demo"; echo "Restore state: ditto '$RECEIPT/owner_demo' '$STATE'"; reset_dm_run "$STATE"; WORLDOS_STATE_DIR="$STATE" uv run --directory "$OWNER_REPO/servers/engine" python "$OWNER_REPO/qa/seed_adventure_demo.py" "$STATE"; fi; start_and_probe; echo "REFRESHED $WT";;
+status) for L in "$SESSION" "$PLAYER" "$DM"; do launchctl print "gui/$(id -u)/$L" || true; done; echo "engine /session-surface $(engine_code)"; echo "player /debug $(player_code)"; if [[ -f "$DM_HEARTBEAT" ]]; then M=PRESENT; elif [[ -f "$DM_STARTING" ]]; then M=STARTING; else M=MISSING; fi; echo "dm heartbeat $M ($DM_HEARTBEAT)";;
 uninstall) stop_agents; rm -f "$AGENTS/$SESSION.plist" "$AGENTS/$PLAYER.plist" "$AGENTS/$DM.plist"; if ((PURGE)); then rm -rf "$TARGET_APP" "$STATE"; fi; echo "Uninstalled agents; app/state $([[ $PURGE == 1 ]] && echo purged || echo kept).";;
 *) usage;; esac
