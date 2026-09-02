@@ -222,8 +222,9 @@ its pathing (props are obstacles by construction). See `CANONICAL.md` "Occlusion
 **★ GEOMETRY IS GROUND TRUTH (load-bearing principle, 2026-07-16 — the reframe that makes scale
 tractable).** Collision + occlusion are driven ENTIRELY by the geometry — the `scene_grid` + the boxes
 sidecar — which is **true by construction**. The painted plate is **COSMETIC**: it only has to look
-*coherent* with that geometry, never be pixel-exact to it (flux/Gemini WILL nudge a door, invent a
-gallery, move a prop — and that's fine). So "walkability" is never "make the paint match the geometry";
+*coherent* with that geometry, never be pixel-exact to it (the 3D-first kit chain's paint + edit
+passes WILL nudge a door, invent a gallery, move a prop — and that's fine). So "walkability" is never
+"make the paint match the geometry";
 it is (1) project the geometry through the **same camera** the plate was painted at (so actors +
 occluders land on the painted masses), and (2) reconcile only the **cosmetic** seams a player reads as
 wrong (a door glow/label + cross-door landing that sits on the painted arch; a painted walkable-looking
@@ -239,7 +240,10 @@ actually play the room) and the **BACKDROP** craft tier (does it look PoE2). **T
 gates and BOTH are hard floors — the blind beauty panel is BLIND to whether the room is walkable.**
 The actor/effect tier rides "default-if-missing" and is **placeholder-OK** until the polish phase.
 Lens names (`L1`–`L7`) are the `visual-critic` panel lenses, logged to `qa/scores_db.py`
-(`surface="visual"`); the deterministic checks are `qa/visual_pregate.py`.
+(`surface="visual"`); the deterministic checks are `qa/visual_pregate.py`. For rooms built through the
+3D-first kit chain the **per-object registration gate** (`qa/object_align_check.py`, a calibrated floor
+per room, #1734) and the **seg-registration bar** (0.99 on the kit render) are binding alongside
+walkability and the control-anchored backdrop.
 
 - **★ TIER-0 — WALKABILITY (binding; AUTOMATED; the hardest floor — a room does NOT ship unwalkable):**
   A room is not done until the automated walk-test (`qa/walk_test.py`) is **GREEN**. It drives the live
@@ -287,6 +291,8 @@ Lens names (`L1`–`L7`) are the `visual-critic` panel lenses, logged to `qa/sco
     target, not a demo gate).
   A placeholder demo-cast model that is grounded, lit, and screen-correct PASSES Tier-2 even though
   it is not the final art. That is the point.
+  > **MEASURED 2026-09-02 (#1738):** the shipped build renders actors **under-lit** against the plates,
+  > so the L2/L3/L4 floors above are **aspirational** until an actor-luminance primitive exists.
 - **Binary combat-FUN checklist (the demo must be *playable*, not just pretty):**
   - [ ] A real engine attack drives the render (engine = sole writer; renderer replays `/events`).
   - [ ] The hit shows a VFX (default-on-miss slash/impact is fine) AT the correct engine cell.
@@ -303,19 +309,24 @@ until the polish phase. This is exactly the Pillar-4 reconciliation made measura
 ### The Room Readiness Pipeline (how rooms are made — self-verifying, compaction-proof)
 
 A room is authored + verified by ONE resumable command, `qa/room_pipeline.py --room <id>`, that chains
-every gate: generate-geometry → design-gate → `build_room_unified` (greybox + depth + boxes sidecar) →
-`qa/paint_room.py` (the pinned flux-depth-CN → Gemini painter) → **BEAUTY gate** (the blind control-
-anchored panel) → **WALKABILITY gate** (`qa/walk_test.py`) → adopt (`promote.py` + registry) → report.
+every gate — the **3D-FIRST KIT CHAIN**: generate-geometry → design-gate → `build_room_kit` (kit
+assembly) → seg registration **≥ 99 % on the kit render** → the kit scene's own depth → flux depth-CN
+base → structure-holding edit → global + per-object alignment gates (`qa/styled_align_check.py`,
+`qa/object_align_check.py`) → composite → kit-derived boxes sidecar → **BEAUTY gate** (the blind
+control-anchored panel) → **WALKABILITY gate** (`qa/walk_test.py`) → adopt (`promote.py` + registry) →
+report. `qa/paint_room.py` (the pinned flux-depth-CN → Gemini painter) is the RETIRED paint-first
+painter, kept for legacy rooms only — new and regenerated rooms go through the kit chain.
 Each stage writes durable evidence + a stage marker; the command exits **non-zero unless BOTH the beauty
 panel AND the walk-test are green** — that exit code, not a human "ship it", IS the gate. The pipeline
 is hand-off-able to a sub-agent or run by the engine itself, which is what makes hands-off iteration
 toward the 20→50→200-room library real. Full runbook: `docs/ROOM-PIPELINE-RUNBOOK.md`; epic #1581.
 
 **★ RESUME PROTOCOL (any cold start / after compaction — read in this order so work survives context
-loss):** (1) epic #1581 + its OPEN sub-issues (the queue) → (2) this section (the doctrine) → (3)
+loss):** (1) the `active-sprint` charter issue (currently **#1702**, DEMO COMPLETION then the town) +
+`docs/roadmap/NOW.md` (the queue) → (2) this section (the doctrine) → (3)
 `docs/ROOM-PIPELINE-RUNBOOK.md` (the executable process) → (4) the active plan's STATE block → then run
-`qa/room_pipeline.py --resume`. The GOAL, QUEUE, PROCESS, and STATE live in the repo + GitHub — never
-only in an agent's head. This is the fix for our #1 diagnosed failure: a process that lived in context
+`qa/room_pipeline.py --resume`. Epic #1581 is the room-pipeline epic (history), not the queue head.
+The GOAL, QUEUE, PROCESS, and STATE live in the repo + GitHub — never only in an agent's head. This is the fix for our #1 diagnosed failure: a process that lived in context
 died at compaction and we regressed a whole feature.
 
 ## How we build — the dev + decision loop

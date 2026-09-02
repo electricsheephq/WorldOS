@@ -1,6 +1,6 @@
 # WorldOS Product Roadmap — the ladder, the sprints, the versions
 
-> **ACTIVE SPRINT: charter #1386 (Act II close-out — Rendered Felt). Refresh this pointer at every charter transition.**
+> **ACTIVE SPRINT: charter #1702 (DEMO COMPLETION, then the town). Refresh this pointer at every charter transition.**
 
 > **The master navigation doc (v2 — the three Acts).** VISION.md says what the product IS and the
 > bar it must clear; this doc says the ORDER we build it in — every sprint from here to the
@@ -234,6 +234,8 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > reachable, render-delivery decision #1302 CLOSED. Closing #1386 pulls the next charter: S2
 > (#1309, entry gate satisfied) queues after.
 > **v1.0.5 RELEASED 2026-07-08** — S1 evidence gate: gate3d story 4.2 / mech 4.1 / behavioral GREEN.
+> **Trued 2026-09-02:** the ACTIVE charter is **#1702** (#1386 is history); the renderer runs LOCALLY on
+> the Paris Mac (the GEX44 box is retired); the 3D-first kit chain is the shipping room surface.
 
 - **W1 — "Scene at Rest"** *(✅ SHIPPED — PR #1330, incl. the felt_rest_panel instrument)*. Additive `stage` block (`mode: rest|combat` +
   rest tokens) in `build_combat_surface` (viewer/server.py:3376; optionally aliased as
@@ -399,7 +401,7 @@ HV5-hooks + backdrop cadence → W3 → HV4 (+A/B) → W4 (with S8) → W5 → *
 | Licensing: Owlcat/OpenWorlds reference assets | before S8 art ships | #122 audit sign-off |
 | Fan-showcase / user-content policy | milestone 26 | #711 policy call |
 | Asset-Store purchases (if S2/S9 need packs) | as flagged | purchase + import to box project |
-| GPU-box capacity/renewal | continuous | GEX44 lease + Unity seat |
+| GPU-box capacity/renewal | retired 2026-08-06 (renderer runs locally) | no standing gate |
 | Paid-alpha pricing | Phase B | business call (#712) |
 
 ## 8. Standing gaps register (ALL FILED — the numbers)
@@ -413,8 +415,9 @@ authored from §4 when their predecessor's gate passes — same template.
 
 ## 9. ★ DEMO COMPLETION — THE GOVERNING MILESTONE (owner-set 2026-07-22)
 
-**The milestone:** the owner plays "The Crypt Below" (adventure_demo_v1) end-to-end in the WorldOS
-player, unassisted: camp hub → Keeper Maera (visible, quest accepted) → crypt (visible goblins,
+**The milestone:** an AGENT plays "The Crypt Below" (adventure_demo_v1) end-to-end in the WorldOS
+player, unassisted (owner ruling 2026-09-02 — the agent plays first; the owner tests only at the 80/20
+wall): camp hub → Keeper Maera (visible, quest accepted) → crypt (visible goblins,
 combat runs AND CLOSES with XP) → throne (visible boss, fight completes) → return → reward →
 quest_completed — with ZERO user-truth defects. Demo completion proves the system can build the rest.
 
@@ -428,9 +431,10 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
 - G2 — arc-duo eval: completion at bar with behavioral GREEN (surface=adventure, av_ ruler).
 - G3 — walked-arc eval GREEN over the FULL arc route INCLUDING the return-for-reward leg back to
   the giver (navigation + cast presence + VQA stages at every leg).
-- G4 — owner playthrough observes ZERO user-truth defects of ANY severity (walk-through, invisible
-  actor, dead door, spawn-in-furniture, stuck UI panel) and files zero new P1s of any class (the
-  residual unknown-unknowns absorber).
+- G4 — AGENT playthrough (owner ruling 2026-09-02): an agent playthrough observes ZERO P1 user-truth
+  defects of ANY class (walk-through, invisible actor, dead door, spawn-in-furniture, stuck UI panel)
+  across TWO CONSECUTIVE builds, and then a BLIND agent persona completes the arc. The owner tests only
+  at the 80/20 wall (the residual unknown-unknowns absorber).
 
 ### 9.1 Demo-critical path (dependency-ordered; ⊘ = independent of the pipeline fork)
 1. ⊘ #1645 combat lifecycle (M) — DM closes fights (action economy, end_combat, XP, time-advance).
@@ -439,7 +443,7 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
    demo's FIRST beat: Maera parley → door-cross). UI/panel lifecycle is a NAMED demo property.
 4. ⊘ #1647 wave 1 (S-M) — coherence-aware spawns/arrivals (instrument merged; relocation in
    flight); silhouette fix + door hotspots (#1649); #1584 spawn test wired into CI.
-5. ⊘ ONE box build carrying the client fixes → sandbox gates → owner install (install gate = §9.2).
+5. ⊘ ONE local build carrying the client fixes → sandbox gates → owner install (install gate = §9.2).
 6. Camp HUB (fork-dependent): regen geometry is GREEN; ships as greybox-composite / #1642-lit /
    3D-first per the spike outcome.
 7. ⊘ #1642 alive plates (M) — normal pass + light composite (batch with build 5 when ready).
@@ -450,8 +454,8 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
 ### 9.2 THE HARNESS SYSTEM (the enforcement redesign, red-team-amended)
 - **`qa/player_cert`** — CHARTERED WORK (L), not an aspiration: fold walk_test + adventure_walk +
   journey_eval + the user-truth stages + a combat-lifecycle probe into ONE tri-state command.
-  SPLIT (red-team F1): a CI-RUNNABLE static/headless half (every PR) and a BOX-HOSTED live half
-  with a NAMED trigger — scheduled box session + owning runbook step + a version-stamp the owner
+  SPLIT (red-team F1): a CI-RUNNABLE static/headless half (every PR) and a LOCALLY-HOSTED live half
+  with a NAMED trigger — a local Editor session + owning runbook step + a version-stamp the owner
   app self-reports on launch, diffed against the latest cert run (drift is loud, not silent).
   ROSTER-COMPLETE (F2): live properties iterate the FULL actor roster; any roster addition is a
   trigger event re-running the applicable property set against the new member.
