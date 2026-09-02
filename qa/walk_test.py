@@ -835,8 +835,12 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
                                                 settle, move_timeout, fire_cells=fire_cells)
         # a requested visual gate that measured NOTHING must fail loud, never read as a vacuous GREEN
         if not report["visual"]["cases"]:
-            report["visual"]["fail"] += 1
-            report["visual"]["error"] = "visual registration requested but produced no measurable cases"
+            err = report["visual"].get("error")
+            if err:  # preflight/harness fault, not a room verdict
+                report["harness_errors"].append(f"visual: {err}")
+            else:
+                report["visual"]["fail"] += 1
+                report["visual"]["error"] = "visual registration requested but produced no measurable cases"
 
     # 6) OCCLUSION evidence — a /shot near an occluder for the human contact sheet (non-gating here).
     shot = _capture_shot(qa, out, f"{room}_final")
