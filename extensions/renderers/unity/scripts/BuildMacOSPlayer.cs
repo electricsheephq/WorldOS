@@ -394,7 +394,10 @@ public static class BuildMacOSPlayer
     // the player build strips them unless they are listed in Graphics -> Always-Included Shaders. The player
     // build MUST carry both or the runtime feature (occluder proxies / walk-behind silhouette) silently no-ops
     // in the shipped .app. Keep this list in sync with qa/check_always_included_shaders.py (the pre-flight gate).
-    static readonly string[] RequiredAlwaysIncluded = { "WorldOS/OccluderDepth", "WorldOS/ActorSilhouette" };
+    // #1777 adds WorldOS/UnlitColor: the HUD quad shader (HP bars + turn marker). It replaced the built-in
+    // "Unlit/Color", which the player build stripped — Shader.Find returned null in the shipped .app and the
+    // resulting Material(null) killed the client's whole /combat-surface poll loop.
+    static readonly string[] RequiredAlwaysIncluded = { "WorldOS/OccluderDepth", "WorldOS/ActorSilhouette", "WorldOS/UnlitColor" };
 
     // Ensure every RequiredAlwaysIncluded shader is registered in Graphics -> Always-Included Shaders
     // (idempotent — mirrors W5bWireScene.EnsureAlwaysIncluded). Returns the resolved list for the build-report

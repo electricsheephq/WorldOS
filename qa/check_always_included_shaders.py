@@ -35,7 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # Keep this list in sync with BuildMacOSPlayer.RequiredAlwaysIncluded (the C# source of truth).
-REQUIRED_SHADERS = ["WorldOS/OccluderDepth", "WorldOS/ActorSilhouette"]
+REQUIRED_SHADERS = ["WorldOS/OccluderDepth", "WorldOS/ActorSilhouette", "WorldOS/UnlitColor"]
 
 BUILD_SCRIPT_REL = "extensions/renderers/unity/scripts/BuildMacOSPlayer.cs"
 SHADER_DIR_REL = "extensions/renderers/unity/shaders"
@@ -43,6 +43,8 @@ SHADER_DIR_REL = "extensions/renderers/unity/shaders"
 SHADER_FILES = {
     "WorldOS/OccluderDepth": "OccluderDepth.shader",
     "WorldOS/ActorSilhouette": "ActorSilhouette.shader",
+    # #1777: the HUD quad shader (HP bars + turn marker) that replaced the stripped built-in "Unlit/Color".
+    "WorldOS/UnlitColor": "UnlitColor.shader",
 }
 
 

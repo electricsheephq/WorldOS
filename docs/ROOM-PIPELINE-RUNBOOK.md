@@ -489,9 +489,14 @@ python3 qa/check_always_included_shaders.py                                   # 
 python3 qa/check_always_included_shaders.py --build-report BuildOutput/build-report.txt   # post-build confirm
 ```
 
-Sync the shader files (`extensions/renderers/unity/shaders/ActorSilhouette.shader`,
-`OccluderDepth.shader`) to the LOCAL Unity project's `/Users/m1/worldos-unity/Assets/Shaders/` before the
-rebuild; then `player_cert`'s
+Sync EVERY shader in `BuildMacOSPlayer.RequiredAlwaysIncluded` from
+`extensions/renderers/unity/shaders/` to the LOCAL Unity project's `/Users/m1/worldos-unity/Assets/` before the
+rebuild — currently `ActorSilhouette.shader`, `OccluderDepth.shader` and `UnlitColor.shader` (#1752's HUD
+shader). That list is the contract: `EnsureAlwaysIncludedShaders` only WARNS and continues when
+`Shader.Find` misses, so an unsynced shader does not fail the build — it silently drops out of the build
+report, and the post-build `check_always_included_shaders.py --build-report` is what finally goes RED. The
+repo-side pre-flight cannot catch it, because it checks the repository copy, not the Unity project's.
+Then `player_cert`'s
 silhouette assert flips GREEN and `WORLDOS_SILHOUETTE=0` reproduces the RED as the deliberate-regression proof.
 
 ### 10b. The sandbox hot-load GATE LOOP (the proven per-room iteration cycle, 2026-07-16)
