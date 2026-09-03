@@ -969,7 +969,12 @@ def test_force_hit_is_dead_code_without_env(tmp_path, monkeypatch):
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("WORLDOS_COMBAT_TEST", raising=False)
     import server
-    dice_mod.reseed_process_rng(None)
+    # Deterministic dice (the #1739 flake): unseeded, the hit count was a fresh binomial n=40 p=0.05
+    # draw on every run and the original `hits <= 6` cap failed ~0.3 % of runs (P(hits >= 7) =
+    # 0.0034), reddening CI on unrelated PRs. The RNG source is orthogonal to what this test proves —
+    # the double guard reads ONLY the env + is_sandbox, never the dice — so a fixed seed keeps the
+    # proof intact and makes the count reproducible run to run (seed 20260902 currently lands 2/40).
+    dice_mod.reseed_process_rng(20260902)
     cid = server.create_campaign("Guard")["id"]
     server.add_location(campaign_id=cid, name="P", description="x", make_current=True)
     c = server._require(cid)
@@ -983,9 +988,11 @@ def test_force_hit_is_dead_code_without_env(tmp_path, monkeypatch):
         if _one_attack(server, store, cid, a, t, force_hit=True)["hit"]
     )
     # vs AC 30 with +0, only natural 20s hit (~5%). NOT ~40. So force_hit is DEAD here.
-    assert hits <= 12, (  # binomial n=40, p=0.05 (nat-20 only): P(hits > 12) < 1e-7; the forced case is 40/40 — the old cap of 6 failed ~1.2 % of runs
-        f"force_hit leaked without the env guard: {hits}/40 hits"
-    )
+    # The cap stays a WIDE statistical bound (binomial n=40 p=0.05: P(hits > 12) < 1e-7) rather than
+    # the seed's exact count, so a future change to how many dice `attack` draws (e.g. a new rider
+    # roll reshuffling the seeded sequence) cannot turn this into a brittle golden value. The forced
+    # case is 40/40 — see the sibling test below.
+    assert hits <= 12, f"force_hit leaked without the env guard: {hits}/40 hits"
 
 
 def test_force_hit_forces_hit_under_guard_without_faking_crits(tmp_path, monkeypatch):
@@ -995,7 +1002,9 @@ def test_force_hit_forces_hit_under_guard_without_faking_crits(tmp_path, monkeyp
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     monkeypatch.setenv("WORLDOS_COMBAT_TEST", "1")
     import server
-    dice_mod.reseed_process_rng(None)
+    # Same fixed seed as the sibling above: the crit count is reproducible, and the bound below stays
+    # a wide statistical one (binomial n=80 p=0.05: P(crits >= 40) is ~1e-30), not a golden value.
+    dice_mod.reseed_process_rng(20260902)
     cid = server.create_campaign("Guard2")["id"]
     server.add_location(campaign_id=cid, name="P", description="x", make_current=True)
     c = server._require(cid)
