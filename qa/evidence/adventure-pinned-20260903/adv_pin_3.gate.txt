@@ -1,0 +1,45 @@
+=== behavioral assertions ===
+  [PASS] run_infra_valid
+  [PASS] dm_produced_output
+  [PASS] narration_no_ooc_leak
+  [PASS] both_sides_acted
+  [PASS] player_turns_structured
+  [PASS] dm_voices_characters
+  [PASS] dm_beat_honesty
+  [PASS] dm_beat_honesty_no_consecutive_collapse
+  [PASS] player_used_facade
+  [PASS] dm_resolved_player_moves
+  [PASS] player_engaged
+  [WARN] player_probed — player asked 0 questions + requested 0 checks across 22 moves — played along, never probed (clarify/request_check).
+  [WARN] action_economy_engaged — start_combat fired but combat shows no action consumed ({action_used=False, action_attacks_made=0}) — action economy never engaged?
+  [PASS] round1_turn_skipped
+  [PASS] party_location_coherence
+  [PASS] duration_expiry
+  [PASS] dice_used
+  [PASS] combat_resolved
+  [PASS] combat_ended
+  [PASS] xp_awarded
+  [PASS] player_in_party
+  [PASS] caster_has_spellbook
+  [PASS] quest_objectives_progress
+  [PASS] no_duplicate_companion
+  [PASS] world_advanced_time
+  [WARN] dm_advanced_time — the DM never issued a time-advance tool in 21 beats — only the harness soft-tick moved the clock, so companion regard / camp / day-gated systems stay starved; call long_rest / advance_time / downtime
+  [PASS] party_traveled
+  [WARN] world_peopled — only 1 NPC(s) engaged (met) across 21 beats — a living world should introduce new faces, not just sit in the seeded roster
+  [PASS] ambush_ran_surprise_gate
+  [WARN] detection_beat_requires_check — 1 DM narration beat(s) staged an NPC detecting/noticing the party with no preceding Perception/Insight/Investigation skill_check (or reason-tagged roll) in the same beat — DM fiat, not a gated roll — e.g. 'Maera hears you out, and for a moment the rag goes still in her fist.\n\n"Good," she says — '
+  [WARN] engine_guards_hit — 4 engine guard rejection(s) (recoverable, DM expected to retry): ['Bash', 'attack', 'attack', 'attack']
+  [PASS] end_combat_no_living_hostiles
+  [PASS] xp_awarded_on_progression
+  [PASS] companion_location_synced
+  [PASS] companion_location_synced_on_travel
+  [PASS] companion_xp_synced_on_award
+  [PASS] caster_has_signature_proficiency
+  [PASS] fighter_second_wind_considered
+  [PASS] signature_feature_exercised
+  [PASS] ranged_disadvantage_in_melee
+  [PASS] maneuver_rider_consumed
+  [PASS] guiding_bolt_advantage_consumed
+  [FAIL] arc_only_seeded_species — spawn_monster minted species the seed does not contain: beat 18 Dire Wolf (seeded: goblin-boss, goblin-warrior) — the arc's hostiles are the seeded goblins and their boss; an invented foe is beats the boss never gets
+  [FAIL] arc_end_combat_live_hostiles — end_combat returned warning_live_hostiles at beat 12 (3 alive, resolution declared) — the fight was not over; the survivors stay standing in state and get re-spawned and re-fought later, which is how this arc loses its beat budget

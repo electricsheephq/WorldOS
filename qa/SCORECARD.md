@@ -239,3 +239,12 @@ The completion-truth instrument (#1784/#1789; ruler `av_bc15bcc23d53` → `av_2a
 hostiles survived and Keeper Maera was dead before the reward. The DM-stamped completion was accepted by the old ruler; the label "control passed"
 is withdrawn. Consequence: no run under ANY DM model has verifiably completed "The Crypt Below"; the next G2 measurement is N=3 with the
 DM pinned to `claude-opus-4-8` under arc-mode + addendum v2 (#1766) and verified completion — the first honest number.
+
+### 2026-09-03 — G2 at the honest ruler: N=3, DM pinned `claude-opus-4-8`, arc-mode + addendum v2, verified completion — **FAIL 0/3**
+
+`adv_agg_n3_pin_20260903` (runs `adv_pin_1..3`, 20 beats, measured=true, dm=claude-opus-4-8): claimed 0/3, verified 0/3, behavioral RED ×3. With the
+model pinned to the last "passing" one and the invented-content FAIL rows in place, the arc harness does not produce a completable "The Crypt Below"
+under any DM today. The lever is no longer the model id; it is the arc itself (combat AI cannot close opening distance, #1776; essential-cast and
+reversal rules bite every run). Per the stuck audit (#1793) this is parked behind the room week ("the room is the scene"); the G2 row stays FAIL.
+Evidence: `qa/evidence/adventure-pinned-20260903/` (per-run `.adventure.json` / `.gate.txt` / `.quest_trace.json` + the aggregate
+`adv_agg_n3_pin_20260903.json`; the scores row's `source_path` points at it; `qa/scores_ledger.md` re-rendered from the db).

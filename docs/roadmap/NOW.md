@@ -4,7 +4,7 @@
 > a bootstrapping agent reads after OPERATIONS.md. Keep it under a screen. History belongs in
 > git, not here.
 
-_Last updated: 2026-09-02 (UTC) — **REBOOT MEASURED.** Five weeks dormant + a machine migration
+_Last updated: 2026-09-03 (UTC) — **STUCK AUDIT → THE ROOM WEEK** (issue #1793; plan `~/.claude/plans/worldos-rooms-are-the-scene.md`). Reboot context: Five weeks dormant + a machine migration
 (Paris Mac mini M4 Pro; the GEX44 GPU box and the LEXAR drive are GONE — any `46.4.26.123`,
 `/Volumes/LEXAR` or `/Users/lume` path in older docs is historical). Unity 6000.5.6f1 now runs
 LOCALLY on `/Users/m1/worldos-unity` (Stdio MCP bridge:
@@ -23,12 +23,14 @@ LOCALLY on `/Users/m1/worldos-unity` (Stdio MCP bridge:
 - **§9 gate table (qa/SCORECARD.md, 2026-09-02):** **G1 INTERIM-GREEN** on local build
   `07a997e9` (walk_test crypt/tavern exhaustive GREEN, visual 4/0; player_cert live slice GREEN;
   packaged pins GREEN; certs sha-pinned #1723) — stays INTERIM until an OWNER-installed build
-  exists · **G2 FAIL 0/3** at the 15-beat budget (root cause: the `opus` alias now resolves to
-  Opus 5, which invents extra fights and overruns a knife-edge budget; the July DM model completes
-  at beat 19 under 20) → ruler raised to **20 beats** (#1722, predeclared) and the N=3 re-run at 20
-  is in flight · **G3 ROUTE-INCOMPLETE** (the 6 walked stages camp→snug→camp→crypt→throne→camp all ARRIVED, but the
+  exists · **G2 FAIL 0/3 at the honest ruler** (`adv_agg_n3_pin_20260903`, 2026-09-03: N=3, DM pinned
+  `claude-opus-4-8`, arc-mode + addendum v2 #1766, VERIFIED completion #1784/#1789/#1791, 20 beats) — the
+  model-swap hypothesis is CLOSED (#1781); the arc harness itself is the lever (#1776); PARKED behind the
+  room week per #1793 · **G3 ROUTE-INCOMPLETE** (the 6 walked stages camp→snug→camp→crypt→throne→camp all ARRIVED, but the
   binding §9 route also needs the return-for-reward leg back to Keeper Maera — not walked, #1709; VQA scorer
-  credential now fixed, full-route re-run pending) · **G4 PENDING** (owner install kit in flight; local ad-hoc-signed build).
+  credential now fixed, full-route re-run pending) · **G4 = the AGENT playthrough** (owner plays only at the 80/20 wall; roadmap §9 protocol #1785) — **FAIL** on
+  build `bf890b43` (`agent_g4` row: P1 5 / P2 13 / P3 1; #1755–#1765, #1771); owner install kit landed (#1733/#1768),
+  instance LIVE on the actor-light build with grid==paint legacy rooms (#1786/#1790).
 - **Shipping surface = the 3D-first KIT chain** (crypt kit v1 / tavern kit v2 plates, kit-derived
   sidecars, per-object gate #1703, build contamination gate #1705). Paint-first generation is
   RETIRED for new rooms; legacy rooms (throne/shop/snug/camp) carry the registration debt G1 measures.
@@ -40,20 +42,26 @@ LOCALLY on `/Users/m1/worldos-unity` (Stdio MCP bridge:
 
 ## Live lanes
 
-- **A-T N=3 @20 beats** (`adv_b20_1..3`, shipping config) → blind adjudication → G2 row.
-- **Codex:** #1717 post-merge fixes (T2–T7) · `qa/owner_install.sh` kit (dry-run only; the real
-  install is an owner gate: ports 8776/8981, campaign `adventure_demo_v1`, one pinned worktree).
-- **Track B ★ editor head-to-head** (prompt-fix · Gemini 4K+refs · Qwen 3.0 Pro · FLUX.2) on the
-  kit crypt base, repo gates + one blind panel; ≤$25 of the owner's ~$100 trial cap.
-- **Owner review:** #1714 (CANONICAL.md proposed diff — kit chain as current-best) · #1716
-  (model-registry allowlist for `model_google-gemini-pro-image-editing`; merging = approval).
-- **Then:** charter re-rank by the G2 verdict → client fixes (#1677/#1522/#1666/#1665) → ONE
-  build → owner install → G4 → Track C (town layout generator design first).
+- **THE ROOM WEEK (#1793 — "the room is the scene", Strategy B; D = predeclared fallback; C never).**
+  The audit measured why plates≠collision after two months: the picture is painted from a rough 3D layout
+  and nothing reconciles it back to the grid/sidecars. Fix = build each room LIVE in Unity from
+  `qa/room_geometries/*.json` (`build_room_kit.cs`), paint only textures; the same meshes are collision +
+  occlusion. Day 1 = sidecar re-export (Editor `Build Room From Kit` + `Export Kit Boxes` for snug/shop/
+  throne/camp; disagreement list `qa/evidence/legacy-reauthor-20260902/occluder_disagreement.txt` → 0/0) →
+  ONE build → `qa/owner_install.sh install`. Days 2–3 = crypt live-3D proof (blind panel within 0.5 of the
+  shipped crypt plate ∧ seg 100 % ∧ hero masked at (13,7) ∧ ≥ 60 fps). Days 4–5 = legacy rooms live → ONE
+  build → agent G4 pass (`qa/agent_play.sh` + `qa/agent_g4_row.py --persist`).
+- **Then:** G3 live walk over the FULL route incl. the return leg (#1746/#1782) → Track C (town) only
+  after agent G4 = zero P1 in two consecutive builds. G2's arc harness (#1776) reopens after the room week.
+- **Done this reboot (2026-09-02/03):** completion-truth ruler `av_2aa0edfe7407` · arc-mode + FAIL rows
+  #1766 · actor lighting + 3D proxy containment #1774 · combat surface #1778 + client HUD #1788 · legacy
+  rooms grid==paint #1786/#1790 · owner install kit #1733/#1768 · agent-play loop #1750 · Track B editor
+  head-to-head = recorded negative (#1734/#1735).
 
 ## Blockers
 
-None probe-verified. Owner gates only: the install moment, #1714/#1716, any recurring paid
-service (Rodin Business), the camp-hub art fork (taste — post frames first).
+None probe-verified. Owner gates only: the B-vs-D doctrine call after the Day-3 frames, any recurring
+paid service (Rodin Business), live customer-facing changes. Refills approved: Scenario CU + Codex.
 
 ## Known frictions (not blockers)
 
