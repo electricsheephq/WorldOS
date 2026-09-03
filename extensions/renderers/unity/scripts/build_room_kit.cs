@@ -627,6 +627,8 @@ public static class BuildRoomKit
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.20f, 0.22f, 0.30f);                      // r3 cool stone ambient fill
 
+        ApplyPainterlyRoomTextures(root);
+
         // ── camera (paint contract, 1344x768 fit) so the SAVED scene carries the plate-contract rig ──
         var cam = MainCam(create: true);
         SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
@@ -654,6 +656,75 @@ public static class BuildRoomKit
         Debug.Log($"[KitRoom] BUILT {rootName} @ {cols}x{rows}: floor={nFloor} walls={nWall} doors={nDoor} " +
                   $"pillars={nPillar} sarcophagi={nSarc} braziers={nBrazier} buttresses={nButtress} plinths={nPlinth} " +
                   $"kit_props={nKit} fallbacks={nFallback} material_fixes={nMatFix}");
+    }
+
+    static void ApplyPainterlyRoomTextures(GameObject root)
+    {
+        string raw = Environment.GetEnvironmentVariable("WORLDOS_ROOM_TEXTURES");
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        string dir = raw.Replace('\\', '/').TrimEnd('/');
+        string assets = Application.dataPath.Replace('\\', '/');
+        if (Path.IsPathRooted(dir) && dir.StartsWith(assets + "/", StringComparison.OrdinalIgnoreCase))
+            dir = "Assets" + dir.Substring(assets.Length);
+        if (dir != "Assets" && !dir.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+        { Debug.LogWarning($"[BuildRoomKit] WORLDOS_ROOM_TEXTURES must be under Assets: {raw}"); return; }
+        string diskDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, dir);
+        if (!Directory.Exists(diskDir))
+        { Debug.LogWarning($"[BuildRoomKit] WORLDOS_ROOM_TEXTURES directory not found: {dir}"); return; }
+
+        var shader = Shader.Find("WorldOS/PainterlyRoom");
+        if (shader == null) { Debug.LogError("[BuildRoomKit] WorldOS/PainterlyRoom shader not found."); return; }
+        var cache = new Dictionary<string, Material>();
+        var kinds = new HashSet<string>();
+        int nRenderers = 0, nMaterials = 0;
+        Transform lights = root.transform.Find("Lights");
+        foreach (var rend in root.GetComponentsInChildren<Renderer>(true))
+        {
+            if (rend == null || (lights != null && rend.transform.IsChildOf(lights))) continue;
+            bool skip = false;
+            foreach (var old in rend.sharedMaterials)
+                if (old != null && old.shader != null && old.shader.name == "Unlit/Color") { skip = true; break; }
+            if (skip) continue;
+
+            Transform placed = rend.transform;
+            while (placed.parent != null && placed.parent.parent != root.transform) placed = placed.parent;
+            // Placed names are "<propId>_<KitPiece>" (e.g. gate_brazier_l_Brazier, stone_pillar_ne_Pillar), so the
+            // material class is read from the WHOLE lowercased name, never from the first '_' token.
+            string kind = placed.name.ToLowerInvariant();
+            // Light sources keep their kit materials (emissive bowls/flames are the beacons the plate is judged by).
+            if (kind.Contains("brazier") || kind.Contains("torch") || kind.Contains("candle") || kind.Contains("fire")
+                || kind.Contains("flame") || kind.Contains("lamp") || kind.Contains("glow") || kind.Contains("ember")) continue;
+            string file = RoomTextureFile(kind), assetPath = dir + "/" + file;
+            if (!cache.TryGetValue(assetPath, out Material mat))
+            {
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+                if (tex == null) Debug.LogWarning($"[BuildRoomKit] PainterlyRoom texture not found: {assetPath}");
+                else
+                {
+                    mat = new Material(shader) { name = "PainterlyRoom_" + Path.GetFileNameWithoutExtension(file) };
+                    mat.SetTexture("_MainTex", tex);
+                    mat.SetFloat("_TriScale", file == "floor.png" || file == "wall.png" || file == "pillar.png" ? 2f : 1f);
+                    nMaterials++;
+                }
+                cache[assetPath] = mat;
+            }
+            if (mat == null) continue;
+            var assigned = new Material[rend.sharedMaterials.Length];
+            for (int i = 0; i < assigned.Length; i++) assigned[i] = mat;
+            rend.sharedMaterials = assigned; nRenderers++; kinds.Add(kind);
+        }
+        Debug.Log($"[BuildRoomKit] PainterlyRoom textures from {dir}: {nRenderers} renderers, {nMaterials} materials, {kinds.Count} kinds");
+    }
+
+    static string RoomTextureFile(string kind)
+    {
+        if (kind.Contains("pillar") || kind.Contains("post") || kind.Contains("column")) return "pillar.png";
+        if (kind.Contains("floor")) return "floor.png";
+        if (kind.Contains("sarcophagus") || kind.Contains("tomb") || kind.Contains("altar") || kind.Contains("dais") || kind.Contains("throne")) return "tomb.png";
+        if (kind.Contains("rubble") || kind.Contains("rock") || kind.Contains("debris")) return "rubble.png";
+        if (kind.Contains("barrel") || kind.Contains("crate") || kind.Contains("table") || kind.Contains("bench") || kind.Contains("bar") || kind.Contains("counter") || kind.Contains("shelf") || kind.Contains("wood")) return "wood.png";
+        if (kind.Contains("wall") || kind.Contains("stone") || kind.Contains("ruin") || kind.Contains("jamb") || kind.Contains("lintel") || kind.Contains("arch") || kind.Contains("door") || kind.Contains("parapet")) return "wall.png";
+        return "wall.png";
     }
 
     // ════════════════════════════════════════════════════════════════════════════════════════════════
