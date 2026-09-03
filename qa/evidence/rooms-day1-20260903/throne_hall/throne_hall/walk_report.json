@@ -1,0 +1,2323 @@
+{
+  "schema_version": 1,
+  "repo_sha": "b8f89fb4",
+  "manifest_sha256": "b4e80eceb5a1ccb8e61bbb9fa6ce8c505f7d5e501ee33bf3a06e7757a1ca10c7",
+  "ts": "2026-09-03T05:51:52.432619+00:00",
+  "engine_url": "http://127.0.0.1:8886",
+  "qa_url": "http://127.0.0.1:8992",
+  "room": "throne_hall",
+  "ortho": 11.7851,
+  "sceneId": "camp_townslice01:adventure_demo_v1_throne_hall",
+  "grid": {
+    "cols": 16,
+    "rows": 12
+  },
+  "camera": {
+    "dbg": {
+      "ok": true,
+      "enq": 0,
+      "deq": 0,
+      "acted": 0,
+      "surf": 4,
+      "busy": false,
+      "last": "none",
+      "parleyOpen": false,
+      "camOrtho": 11.7851,
+      "camRx": 30,
+      "camRy": 45,
+      "camRz": 0,
+      "camPx": -48.9898,
+      "camPy": 40,
+      "camPz": -48.9898,
+      "originVX": 0.5,
+      "originVY": 0.5,
+      "occCount": 69,
+      "plateLocMatch": true,
+      "actorVX": 0.40454,
+      "actorVY": 0.44695
+    },
+    "fails": [],
+    "ok": true,
+    "pose_mismatch": false
+  },
+  "orphans": [],
+  "path": {
+    "pass": 85,
+    "fail": 0,
+    "violations": []
+  },
+  "reachable": {
+    "pass": 85,
+    "fail": 1,
+    "cases": [
+      {
+        "cell": [
+          1,
+          1
+        ],
+        "landed": [
+          1,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          2
+        ],
+        "landed": [
+          1,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          3
+        ],
+        "landed": [
+          1,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          4
+        ],
+        "landed": [
+          1,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          5
+        ],
+        "landed": [
+          1,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          6
+        ],
+        "landed": [
+          1,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          7
+        ],
+        "landed": [
+          1,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          8
+        ],
+        "landed": [
+          1,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          9
+        ],
+        "landed": [
+          1,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          10
+        ],
+        "landed": [
+          1,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          1
+        ],
+        "landed": [
+          2,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          2
+        ],
+        "landed": [
+          2,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          4
+        ],
+        "landed": [
+          2,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          5
+        ],
+        "landed": [
+          2,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          6
+        ],
+        "landed": [
+          2,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          7
+        ],
+        "landed": [
+          2,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          8
+        ],
+        "landed": [
+          2,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          9
+        ],
+        "landed": [
+          2,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          10
+        ],
+        "landed": [
+          2,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          1
+        ],
+        "landed": [
+          3,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          2
+        ],
+        "landed": [
+          3,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          3
+        ],
+        "landed": [
+          3,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          4
+        ],
+        "landed": [
+          3,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          5
+        ],
+        "landed": [
+          3,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          6
+        ],
+        "landed": [
+          3,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          7
+        ],
+        "landed": [
+          3,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          8
+        ],
+        "landed": [
+          3,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          9
+        ],
+        "landed": [
+          3,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          10
+        ],
+        "landed": [
+          3,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          1
+        ],
+        "landed": [
+          4,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          2
+        ],
+        "landed": [
+          4,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          3
+        ],
+        "landed": [
+          4,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          4
+        ],
+        "landed": [
+          4,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          5
+        ],
+        "landed": [
+          4,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          6
+        ],
+        "landed": [
+          4,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          7
+        ],
+        "landed": [
+          4,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          8
+        ],
+        "landed": [
+          4,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          9
+        ],
+        "landed": [
+          4,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          10
+        ],
+        "landed": [
+          4,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          1
+        ],
+        "landed": [
+          5,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          2
+        ],
+        "landed": [
+          5,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          3
+        ],
+        "landed": [
+          5,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          4
+        ],
+        "landed": [
+          5,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          5
+        ],
+        "landed": [
+          5,
+          4
+        ],
+        "ok": false
+      },
+      {
+        "cell": [
+          5,
+          6
+        ],
+        "landed": [
+          5,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          7
+        ],
+        "landed": [
+          5,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          9
+        ],
+        "landed": [
+          5,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          10
+        ],
+        "landed": [
+          5,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          3
+        ],
+        "landed": [
+          6,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          4
+        ],
+        "landed": [
+          6,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          5
+        ],
+        "landed": [
+          6,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          6
+        ],
+        "landed": [
+          6,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          7
+        ],
+        "landed": [
+          6,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          9
+        ],
+        "landed": [
+          6,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          10
+        ],
+        "landed": [
+          6,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          4
+        ],
+        "landed": [
+          7,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          5
+        ],
+        "landed": [
+          7,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          6
+        ],
+        "landed": [
+          7,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          7
+        ],
+        "landed": [
+          7,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          8
+        ],
+        "landed": [
+          7,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          9
+        ],
+        "landed": [
+          7,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          10
+        ],
+        "landed": [
+          7,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          3
+        ],
+        "landed": [
+          8,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          4
+        ],
+        "landed": [
+          8,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          5
+        ],
+        "landed": [
+          8,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          6
+        ],
+        "landed": [
+          8,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          7
+        ],
+        "landed": [
+          8,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          8
+        ],
+        "landed": [
+          8,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          9
+        ],
+        "landed": [
+          8,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          10
+        ],
+        "landed": [
+          8,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          3
+        ],
+        "landed": [
+          9,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          4
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          6
+        ],
+        "landed": [
+          9,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          7
+        ],
+        "landed": [
+          9,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          8
+        ],
+        "landed": [
+          9,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          10
+        ],
+        "landed": [
+          9,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          1
+        ],
+        "landed": [
+          10,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          2
+        ],
+        "landed": [
+          10,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          3
+        ],
+        "landed": [
+          10,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          4
+        ],
+        "landed": [
+          10,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          5
+        ],
+        "landed": [
+          10,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          8
+        ],
+        "landed": [
+          10,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          9
+        ],
+        "landed": [
+          10,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          10
+        ],
+        "landed": [
+          10,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          4
+        ],
+        "landed": [
+          11,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "impassable": {
+    "pass": 105,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          0,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          4
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          10
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          10
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          4
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          10
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          4
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          10
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          4
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          10
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          0
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          1
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          2
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          3
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          4
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          5
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          6
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          7
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          8
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          9
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          10
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          11
+        ],
+        "landed": [
+          11,
+          5
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "doors": {
+    "pass": 1,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          8,
+          11
+        ],
+        "to": "crypt",
+        "ok": true,
+        "detail": {
+          "crossed_to": "crypt",
+          "target": "crypt",
+          "pose": {
+            "dest": {
+              "ortho": 11.7851,
+              "dbg": {
+                "ok": true,
+                "enq": 192,
+                "deq": 192,
+                "acted": 192,
+                "surf": 551,
+                "busy": false,
+                "last": "cell(8,11) rest=True foe=(5,5)'char_968e07574df5' imp=n occ=n",
+                "parleyOpen": false,
+                "camOrtho": 11.7851,
+                "camRx": 30,
+                "camRy": 45,
+                "camRz": 0,
+                "camPx": -48.9898,
+                "camPy": 40,
+                "camPz": -48.9898,
+                "originVX": 0.5,
+                "originVY": 0.5,
+                "occCount": 73,
+                "plateLocMatch": true,
+                "actorVX": 0.66235,
+                "actorVY": 0.68179
+              }
+            },
+            "home": {
+              "ortho": 11.7851,
+              "dbg": {
+                "ok": true,
+                "enq": 193,
+                "deq": 193,
+                "acted": 193,
+                "surf": 553,
+                "busy": false,
+                "last": "cell(15,5) rest=True foe=(3,8)'char_ef0e18bae0e7' imp=n occ=n",
+                "parleyOpen": false,
+                "camOrtho": 11.7851,
+                "camRx": 30,
+                "camRy": 45,
+                "camRz": 0,
+                "camPx": -48.9898,
+                "camPy": 40,
+                "camPz": -48.9898,
+                "originVX": 0.5,
+                "originVY": 0.5,
+                "occCount": 69,
+                "plateLocMatch": true,
+                "actorVX": 0.63442,
+                "actorVY": 0.35627
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "visual": {
+    "pass": 4,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          3,
+          10
+        ],
+        "moved": true,
+        "dist_px": 7.5,
+        "tol_px": 74.2,
+        "ok": true,
+        "dist_prev_px": 182.3,
+        "n_blobs": 6,
+        "blob_area_max": 1540,
+        "n_blobs_masked": 2
+      },
+      {
+        "cell": [
+          2,
+          6
+        ],
+        "moved": true,
+        "dist_px": 12.3,
+        "tol_px": 74.2,
+        "ok": true,
+        "dist_prev_px": 7.5,
+        "n_blobs": 5,
+        "blob_area_max": 1096,
+        "n_blobs_masked": 0
+      },
+      {
+        "cell": [
+          5,
+          4
+        ],
+        "moved": true,
+        "dist_px": 4.2,
+        "tol_px": 74.2,
+        "ok": true,
+        "dist_prev_px": 12.3,
+        "n_blobs": 8,
+        "blob_area_max": 1241,
+        "n_blobs_masked": 0
+      },
+      {
+        "cell": [
+          1,
+          1
+        ],
+        "moved": true,
+        "dist_px": 2.1,
+        "tol_px": 74.2,
+        "ok": true,
+        "dist_prev_px": 8.0,
+        "n_blobs": 7,
+        "blob_area_max": 1303,
+        "n_blobs_masked": 0
+      }
+    ],
+    "window": [
+      1280,
+      700
+    ],
+    "capture_scale": 1.0,
+    "diff_params": {
+      "cell_px": 59.4,
+      "merge_px": 27,
+      "min_area_px": 60
+    },
+    "fire_cells": [
+      [
+        9,
+        5
+      ],
+      [
+        9,
+        9
+      ]
+    ]
+  },
+  "harness_errors": [],
+  "door_pose_fail": [],
+  "shots": [
+    "qa/evidence/rooms-day1-20260903/throne_hall/throne_hall/shot_throne_hall_final.png"
+  ],
+  "verdict": "RED",
+  "occupied_skipped": []
+}

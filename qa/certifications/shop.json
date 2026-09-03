@@ -2,7 +2,8 @@
   "room": "shop",
   "verdicts": {
     "walk": "GREEN",
-    "beauty_panel": "GREEN"
+    "beauty_panel": "GREEN",
+    "sidecar_grid": "GREEN"
   },
   "manifest_entry": {
     "plate": "plates/shop_v1_registered.png",
@@ -11,7 +12,7 @@
       "pitch": 30,
       "yaw": 45
     },
-    "boxes": "boxes/shop_v1_boxes.json",
+    "boxes": "boxes/shop_v2_boxes.json",
     "_door_hotspots_comment": "#1585/#1647 PAINTED-DOOR HOTSPOTS (plate-pixel click targets in the 1344x768 registered plate; a click inside a hotspot routes exactly like clicking door_cell -> cross_door). Measured 2026-07-22 by overlaying the contract-camera cell projection (qa/walk_test.world_to_window_px at texW/texH) on shop_v1_registered.png and reading the PAINTED arch centroid off a 50px grid (artifacts/zoom_shop_door12_5.png). the painted dark archway opening centroid sits at ~(900,275). RETARGETED 2026-09-02 by the legacy re-author (qa/reauthor_legacy_room.md): the shop door moved to the perimeter cell (12,4), whose landing (11,4) is inside the painted arch, while (6,0) and (12,5) became wall. The hotspot PIXEL is unchanged (the arch did not move) but its door_cell must track the live door \u2014 CombatSurfaceClient.TryDoorHotspot only fires for a cell present in _doorTo, so a stale cell draws a glow on the arch that does nothing.",
     "door_hotspots": [
       {
@@ -30,8 +31,8 @@
   },
   "artifacts": {
     "plate_sha256": "fa6d79814f32484f587f1e661ff1958b935e1e0edcd5f072f7f4ab29ed908c37",
-    "boxes_sha256": "23120009cd1f61a795d0c4a80842cc8c610fca0e2ac51afba2298704fbd65f29",
+    "boxes_sha256": "100f402a2b7063234cbec051ece8731cd6dbc6362ee876ed87bfbf9351c3af0c",
     "geometry_sha256": "994a93365103486d2e92dbd4b983c9c967b1ceb369762dba0523a1dad22dfc5c"
   },
-  "walk_report": "qa/evidence/legacy-reauthor-20260902/shop/shop/walk_report.json"
+  "walk_report": "/Users/m1/worldos-wt-day1/qa/evidence/rooms-day1-20260903/shop/shop/walk_report.json"
 }

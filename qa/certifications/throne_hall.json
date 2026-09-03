@@ -1,0 +1,23 @@
+{
+  "room": "throne_hall",
+  "verdicts": {
+    "walk": "GREEN",
+    "sidecar_grid": "GREEN"
+  },
+  "manifest_entry": {
+    "plate": "plates/throne_hall_v1_registered.png",
+    "cameraPin": {
+      "ortho": 11.7851,
+      "pitch": 30,
+      "yaw": 45
+    },
+    "boxes": "boxes/throne_hall_v2_boxes.json",
+    "_provenance": "SHIP-THREE-PLATES (2026-07-15): NEW room class (dais/throne/banner molded kinds). Panel 7.0 (cycle-2 levers documented). Geometry qa/room_geometries/throne_hall_geometry.json. World wiring: crypt (15,5) door -> throne_hall in the ship seed."
+  },
+  "artifacts": {
+    "plate_sha256": "20f3768ff86f1be83bb62182ae9c25db6b21ac32aaa9b95a137ef43f748e954d",
+    "boxes_sha256": "8f297d9f094cc546250b11e152e65a37e9beac04ba1f88b42b32ead935ddcf66",
+    "geometry_sha256": "f8e32e5898c6326582a81c0ad67862215bf3099eb2ecceed41bc1658e6adb745"
+  },
+  "walk_report": "/Users/m1/worldos-wt-day1/qa/evidence/rooms-day1-20260903/throne_hall/throne_hall/walk_report.json"
+}
