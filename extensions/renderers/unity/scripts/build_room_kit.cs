@@ -1500,7 +1500,9 @@ public static class BuildRoomKit
 
             // (5) the human-readable sidecar (also the runtime fallback if the component is ever reset).
             var fg = new PainterlyRoomLights.FireGlobals { id = roomId, count = n, pos = pos, color = col, grade = grade };
-            File.WriteAllText($"{LiveRoomsDir}/{roomId}.json", JsonUtility.ToJson(fg, true));
+            string sidecarPath = $"{LiveRoomsDir}/{roomId}.json";
+            File.WriteAllText(sidecarPath, JsonUtility.ToJson(fg, true));
+            AssetDatabase.ImportAsset(sidecarPath, ImportAssetOptions.ForceUpdate);   // -> a TextAsset the player can Resources.Load
 
             // (6) refuse to write a prefab that would red the build gate or ship missing materials.
             foreach (var t in copy.GetComponentsInChildren<Transform>(true))

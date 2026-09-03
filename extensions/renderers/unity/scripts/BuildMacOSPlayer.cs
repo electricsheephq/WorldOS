@@ -261,6 +261,25 @@ public static class BuildMacOSPlayer
             options = BuildOptions.None
         };
 
+        // #1793 Day 3, MEASURED 2026-09-03: BuildPipeline.BuildPlayer raises Unity's OWN "Scene(s) Have Been
+        // Modified — Save / Don't Save / Cancel" prompt whenever the ACTIVE scene is dirty. It does that
+        // regardless of BuildPlayerOptions.scenes, so the temp-copy strip above does NOT avoid it. In this
+        // headed-but-remotely-driven editor a modal DEADLOCKS the session (BOX.md #1196): it blocks the main
+        // thread, which is where the MCP bridge pumps, so every subsequent call times out and the only exits
+        // are a human clicking Save (which writes the canonical scene — the exact thing the strip exists to
+        // prevent) or Don't Save (which silently discards live editor work). Refuse BEFORE the modal instead.
+        {
+            var act = EditorSceneManager.GetActiveScene();
+            if (act.IsValid() && act.isDirty)
+                FailBuild("refusing to build: the active scene '"
+                    + (string.IsNullOrEmpty(act.path) ? "Untitled" : act.path)
+                    + "' has UNSAVED changes, and BuildPlayer would raise a modal save prompt that deadlocks a "
+                    + "remotely-driven editor. Resolve it deliberately first: either save that scene yourself, "
+                    + "or bake what you need out of it (Tools/WorldOS/Kit/Bake Live Room Prefab writes the live "
+                    + "room to Assets/Resources, so the build no longer needs the dirty scene) and reopen the "
+                    + "scene clean, then rebuild.");
+        }
+
         Debug.Log("[BuildMacOSPlayer] Starting build -> " + appPath + " (arch=" + archResult + ")");
         BuildReport report;
         try { report = BuildPipeline.BuildPlayer(options); }
@@ -389,6 +408,19 @@ public static class BuildMacOSPlayer
         return hits;
     }
 
+    // Remove every BeautifyEffect.Beautify from a scene (reflection: the asset may be absent in a given
+    // project, and this file must still compile). Returns how many were removed.
+    static int StripCameraGrade(Scene scene)
+    {
+        var t = PainterlyRoomLights.BeautifyType();
+        if (t == null) return 0;
+        int n = 0;
+        foreach (var go in scene.GetRootGameObjects())
+            foreach (var c in go.GetComponentsInChildren(t, true))
+            { UnityEngine.Object.DestroyImmediate(c, true); n++; }
+        return n;
+    }
+
     static string[] StripQAConstructions(ref string buildScenePath)
     {
         var active = EditorSceneManager.GetActiveScene();
@@ -438,6 +470,14 @@ public static class BuildMacOSPlayer
             foreach (var go in tmp.GetRootGameObjects())
                 if (go != null && go.name.StartsWith(QARootPrefix, StringComparison.Ordinal))
                 { UnityEngine.Object.DestroyImmediate(go); destroyed++; }
+            // #1793 Day 3b: the room-authoring session adds a Beautify post component to Main Camera to grade
+            // the LOOK capture. It lives only in memory — but this copy is taken FROM memory, so it would ship
+            // and grade every painted plate, none of which was authored or panel-judged under it. The grade is
+            // a property of a live room now (baked on its prefab, applied by CombatSurfaceClient.ApplyRoom),
+            // so strip it from the shipped scene: grade-free by construction, not by a runtime disable alone.
+            int graded = StripCameraGrade(tmp);
+            if (graded > 0) Debug.LogWarning("[BuildMacOSPlayer] removed " + graded + " editor-only "
+                + PainterlyRoomLights.BeautifyTypeName.Split(',')[0] + " component(s) from the build scene copy");
             bool saved = EditorSceneManager.SaveScene(tmp);
             EditorSceneManager.CloseScene(tmp, true);
             if (!saved || destroyed != qaRoots.Count)

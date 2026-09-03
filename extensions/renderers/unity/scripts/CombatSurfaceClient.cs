@@ -607,6 +607,12 @@ public class CombatSurfaceClient : MonoBehaviour
         // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
         // -> no swap, the scene's baked plate stands (byte-identical to pre-W5e).
         LoadPlateManifest();
+        // #1793 Day 3b: the crypt's LOOK is authored in a live editor scene that carries a Beautify post
+        // component on Main Camera. That scene is dirty in memory when a player is built, so the build's
+        // scene copy CAN carry that component into the player — where it would grade every painted plate,
+        // none of which was authored or panel-judged under it. Start it OFF; the grade is switched on only
+        // by a VISIBLE live room, from the values baked onto that room's prefab (ApplyRoom).
+        PainterlyRoomLights.DisableGrade(Camera.main);
         // VFX-ANCHORS: load the OPTIONAL effects registry (type -> prefab asset path). Absent -> no effects
         // resolve -> nothing spawns (byte-identical). Paired with the per-plate `effects` array above.
         LoadEffectsRegistry();
