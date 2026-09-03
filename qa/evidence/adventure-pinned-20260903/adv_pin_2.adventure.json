@@ -1,0 +1,23 @@
+{
+  "run": "adv_pin_2",
+  "campaign_id": "adventure_demo_v1",
+  "quest_status": "active",
+  "completed": false,
+  "completion_claimed": false,
+  "completion_verified": false,
+  "completion_truth": [],
+  "beats_to_complete": null,
+  "last_completed_beat": 20,
+  "session_beats": 20,
+  "dm_model": "claude-opus-4-8",
+  "actor_model": "sonnet",
+  "dm_model_resolved": "claude-opus-4-8",
+  "player_model_resolved": null,
+  "measured": true,
+  "dead_beats": 7,
+  "behavioral": "RED",
+  "stages_reached": [
+    "reached_giver",
+    "quest_accepted"
+  ]
+}

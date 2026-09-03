@@ -1,0 +1,28 @@
+{
+  "run": "adv_pin_3",
+  "campaign_id": "adventure_demo_v1",
+  "quest_status": "active",
+  "completed": false,
+  "completion_claimed": false,
+  "completion_verified": false,
+  "completion_truth": [
+    "objective 2 'Clear the crypt of goblins': seeded crypt hostile char_4aacf1f6e166 alive at 10; seeded crypt hostile char_57f92c32acce alive at 10; seeded crypt hostile char_cd3139e8d814 alive at 10",
+    "objective 3 'Slay the goblin boss': party at crypt, not seeded throne/boss location"
+  ],
+  "beats_to_complete": null,
+  "last_completed_beat": 20,
+  "session_beats": 20,
+  "dm_model": "claude-opus-4-8",
+  "actor_model": "sonnet",
+  "dm_model_resolved": "claude-opus-4-8",
+  "player_model_resolved": null,
+  "measured": true,
+  "dead_beats": 3,
+  "behavioral": "RED",
+  "stages_reached": [
+    "reached_giver",
+    "quest_accepted",
+    "entered_dungeon",
+    "boss_dead"
+  ]
+}

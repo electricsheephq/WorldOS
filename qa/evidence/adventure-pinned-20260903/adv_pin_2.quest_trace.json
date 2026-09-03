@@ -1,0 +1,54 @@
+{
+  "stamps": [
+    {
+      "stage": "reached_giver",
+      "beat": 1,
+      "ts": "2026-09-02T21:45:42+00:00",
+      "signal": "location:at-giver"
+    },
+    {
+      "stage": "quest_accepted",
+      "beat": 1,
+      "ts": "2026-09-02T21:45:42+00:00",
+      "signal": "objective:'Speak with Keeper Maera'"
+    }
+  ],
+  "seeded_world": {
+    "giver_id": "char_0e5930b01afc",
+    "giver_location_id": "tavern_snug",
+    "crypt_location_id": "crypt",
+    "throne_location_id": "throne_hall",
+    "crypt_hostile_ids": [
+      "char_6f634716ff78",
+      "char_73e65a860d35",
+      "char_a60fcc0db29b"
+    ],
+    "boss_id": "char_a8f905bca38a"
+  },
+  "objective_truth": [
+    {
+      "index": 1,
+      "objective": "Speak with Keeper Maera",
+      "verified": true,
+      "reason": ""
+    }
+  ],
+  "completion_claimed": false,
+  "completion_verified": false,
+  "completion_truth": [],
+  "campaign_id": "adventure_demo_v1",
+  "quest_id": "quest_5e72d9e597e5",
+  "quest_title": "The Crypt Below",
+  "quest_status": "active",
+  "completed_objectives": [
+    "Speak with Keeper Maera"
+  ],
+  "objectives": [
+    "Speak with Keeper Maera",
+    "Clear the crypt of goblins",
+    "Slay the goblin boss",
+    "Return to Maera for the reward"
+  ],
+  "updated_ts": "2026-09-02T23:32:31+00:00",
+  "updated_beat": 20
+}

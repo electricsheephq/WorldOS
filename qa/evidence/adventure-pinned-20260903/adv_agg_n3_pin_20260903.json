@@ -1,0 +1,133 @@
+{
+  "n": 3,
+  "completion_rate": 0.0,
+  "completion_claimed": 0.0,
+  "completion_verified": false,
+  "completion_truth": [
+    {
+      "run": "adv_pin_3",
+      "reasons": [
+        "objective 2 'Clear the crypt of goblins': seeded crypt hostile char_4aacf1f6e166 alive at 10; seeded crypt hostile char_57f92c32acce alive at 10; seeded crypt hostile char_cd3139e8d814 alive at 10",
+        "objective 3 'Slay the goblin boss': party at crypt, not seeded throne/boss location"
+      ]
+    }
+  ],
+  "measured": true,
+  "median_beats_to_complete": null,
+  "median_wall_s": null,
+  "median_s_per_beat": 154.3,
+  "stuck_rate": 1.0,
+  "green_rate": 0.0,
+  "story_overall": 2.5,
+  "mech_overall": 2.5,
+  "angrydm_overall": 2.5,
+  "engagement_pct": 1.0,
+  "dimensions": {
+    "completion": 0.0,
+    "pace": 0.0,
+    "stuck": 0.0,
+    "engagement": 1.0,
+    "story": 0.5,
+    "mechanics": 0.5,
+    "behavioral": 0.0
+  },
+  "weakest_link": "behavioral",
+  "weakest_score": 0.0,
+  "verdict": "WEAKEST-LINK: behavioral (0.00) -> behavioral: the deterministic gate is RED on runs; fix the structural break before chasing quality",
+  "dm_model_recorded": "claude-opus-4-8",
+  "actor_model_recorded": "sonnet",
+  "dm_model_resolved": "claude-opus-4-8",
+  "player_model_resolved": null,
+  "beat_budget": 20.0,
+  "runs": [
+    {
+      "run": "adv_pin_1",
+      "prefix": "/Users/m1/WorldOS/qa/transcripts/adv_pin_1",
+      "completed": false,
+      "completion_claimed": false,
+      "completion_verified": false,
+      "completion_truth": [],
+      "beats_to_complete": null,
+      "dead_beats": 3,
+      "stage_gap_outlier": false,
+      "stuck": true,
+      "engagement_pct": 1.0,
+      "story": 2.5,
+      "mech": 2.5,
+      "angrydm": 2.5,
+      "behavioral": "RED",
+      "wall_s": null,
+      "s_per_beat": 149.9,
+      "stages_reached": [
+        "reached_giver",
+        "quest_accepted"
+      ],
+      "dm_model": "claude-opus-4-8",
+      "actor_model": "sonnet",
+      "dm_model_resolved": "claude-opus-4-8",
+      "player_model_resolved": null,
+      "measured": true
+    },
+    {
+      "run": "adv_pin_2",
+      "prefix": "/Users/m1/WorldOS/qa/transcripts/adv_pin_2",
+      "completed": false,
+      "completion_claimed": false,
+      "completion_verified": false,
+      "completion_truth": [],
+      "beats_to_complete": null,
+      "dead_beats": 7,
+      "stage_gap_outlier": false,
+      "stuck": true,
+      "engagement_pct": 1.0,
+      "story": 2.5,
+      "mech": 2.5,
+      "angrydm": 2.5,
+      "behavioral": "RED",
+      "wall_s": null,
+      "s_per_beat": 168.4,
+      "stages_reached": [
+        "reached_giver",
+        "quest_accepted"
+      ],
+      "dm_model": "claude-opus-4-8",
+      "actor_model": "sonnet",
+      "dm_model_resolved": "claude-opus-4-8",
+      "player_model_resolved": null,
+      "measured": true
+    },
+    {
+      "run": "adv_pin_3",
+      "prefix": "/Users/m1/WorldOS/qa/transcripts/adv_pin_3",
+      "completed": false,
+      "completion_claimed": false,
+      "completion_verified": false,
+      "completion_truth": [
+        "objective 2 'Clear the crypt of goblins': seeded crypt hostile char_4aacf1f6e166 alive at 10; seeded crypt hostile char_57f92c32acce alive at 10; seeded crypt hostile char_cd3139e8d814 alive at 10",
+        "objective 3 'Slay the goblin boss': party at crypt, not seeded throne/boss location"
+      ],
+      "beats_to_complete": null,
+      "dead_beats": 3,
+      "stage_gap_outlier": true,
+      "stuck": true,
+      "engagement_pct": 1.0,
+      "story": 2.5,
+      "mech": 2.5,
+      "angrydm": 2.5,
+      "behavioral": "RED",
+      "wall_s": null,
+      "s_per_beat": 154.3,
+      "stages_reached": [
+        "reached_giver",
+        "quest_accepted",
+        "entered_dungeon",
+        "boss_dead"
+      ],
+      "dm_model": "claude-opus-4-8",
+      "actor_model": "sonnet",
+      "dm_model_resolved": "claude-opus-4-8",
+      "player_model_resolved": null,
+      "measured": true
+    }
+  ]
+}
