@@ -118,6 +118,25 @@ def test_boxless_sidecar_fails(tmp_path):
     assert any("NO occluder volumes" in f for f in WS.lint_manifest_entry("x", entry, tmp_path))
 
 
+# --- ROOMS-ARE-THE-SCENE live-room keys (#1793 Day 3, red-first) -------------------------------------
+def test_unknown_live_room_mode_fails():
+    """A misspelled mode falls through to "visible" in the client — a room gated as an occluder would
+    then ship as the picture. Fail it in CI instead."""
+    fails = WS.lint_live_room("crypt", {"liveRoom": "crypt", "liveRoomMode": "occluders"})
+    assert any("liveRoomMode" in f for f in fails)
+
+
+def test_live_room_keys_without_live_room_fail():
+    assert any("without `liveRoom`" in f
+               for f in WS.lint_live_room("x", {"liveRoomMode": "occluder"}))
+
+
+def test_live_room_entry_passes():
+    assert WS.lint_live_room("crypt", {"liveRoom": "crypt", "liveRoomMode": "occluder"}) == []
+    assert WS.lint_live_room("crypt", {"liveRoom": "crypt"}) == []
+    assert WS.lint_live_room("crypt", {}) == []
+
+
 def test_prop_on_door_landing_fails():
     """Prop footprints count as blocked even when the geometry does NOT fold them into walls
     (the generate_town convention) — a barrel on the landing must go red."""
