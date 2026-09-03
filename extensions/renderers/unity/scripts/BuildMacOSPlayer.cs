@@ -187,6 +187,25 @@ public static class BuildMacOSPlayer
     [MenuItem("Tools/WorldOS/Build/macOS Player (Universal)")]
     public static void Build()
     {
+        // #1793 Day 3, MEASURED 2026-09-03: BuildPipeline.BuildPlayer raises Unity's OWN "Scene(s) Have Been
+        // Modified — Save / Don't Save / Cancel" prompt whenever the ACTIVE scene is dirty. It does that
+        // regardless of BuildPlayerOptions.scenes, so the temp-copy strip above does NOT avoid it. In this
+        // headed-but-remotely-driven editor a modal DEADLOCKS the session (BOX.md #1196): it blocks the main
+        // thread, which is where the MCP bridge pumps, so every subsequent call times out and the only exits
+        // are a human clicking Save (which writes the canonical scene — the exact thing the strip exists to
+        // prevent) or Don't Save (which silently discards live editor work). Refuse BEFORE the modal instead.
+        {
+            var act = EditorSceneManager.GetActiveScene();
+            if (act.IsValid() && act.isDirty)
+                FailBuild("refusing to build: the active scene '"
+                    + (string.IsNullOrEmpty(act.path) ? "Untitled" : act.path)
+                    + "' has UNSAVED changes, and BuildPlayer would raise a modal save prompt that deadlocks a "
+                    + "remotely-driven editor. Resolve it deliberately first: either save that scene yourself, "
+                    + "or bake what you need out of it (Tools/WorldOS/Kit/Bake Live Room Prefab writes the live "
+                    + "room to Assets/Resources, so the build no longer needs the dirty scene) and reopen the "
+                    + "scene clean, then rebuild.");
+        }
+
         // #1436: package the runtime actor bundle + registry into StreamingAssets FIRST so the built
         // player can runtime-spawn actors for any campaign (not just the baked scene's cast).
         EnsurePackaged();
@@ -260,25 +279,6 @@ public static class BuildMacOSPlayer
             targetGroup = BuildTargetGroup.Standalone,
             options = BuildOptions.None
         };
-
-        // #1793 Day 3, MEASURED 2026-09-03: BuildPipeline.BuildPlayer raises Unity's OWN "Scene(s) Have Been
-        // Modified — Save / Don't Save / Cancel" prompt whenever the ACTIVE scene is dirty. It does that
-        // regardless of BuildPlayerOptions.scenes, so the temp-copy strip above does NOT avoid it. In this
-        // headed-but-remotely-driven editor a modal DEADLOCKS the session (BOX.md #1196): it blocks the main
-        // thread, which is where the MCP bridge pumps, so every subsequent call times out and the only exits
-        // are a human clicking Save (which writes the canonical scene — the exact thing the strip exists to
-        // prevent) or Don't Save (which silently discards live editor work). Refuse BEFORE the modal instead.
-        {
-            var act = EditorSceneManager.GetActiveScene();
-            if (act.IsValid() && act.isDirty)
-                FailBuild("refusing to build: the active scene '"
-                    + (string.IsNullOrEmpty(act.path) ? "Untitled" : act.path)
-                    + "' has UNSAVED changes, and BuildPlayer would raise a modal save prompt that deadlocks a "
-                    + "remotely-driven editor. Resolve it deliberately first: either save that scene yourself, "
-                    + "or bake what you need out of it (Tools/WorldOS/Kit/Bake Live Room Prefab writes the live "
-                    + "room to Assets/Resources, so the build no longer needs the dirty scene) and reopen the "
-                    + "scene clean, then rebuild.");
-        }
 
         Debug.Log("[BuildMacOSPlayer] Starting build -> " + appPath + " (arch=" + archResult + ")");
         BuildReport report;
