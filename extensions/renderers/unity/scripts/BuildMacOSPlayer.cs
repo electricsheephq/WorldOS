@@ -189,7 +189,7 @@ public static class BuildMacOSPlayer
     {
         // #1793 Day 3, MEASURED 2026-09-03: BuildPipeline.BuildPlayer raises Unity's OWN "Scene(s) Have Been
         // Modified — Save / Don't Save / Cancel" prompt whenever the ACTIVE scene is dirty. It does that
-        // regardless of BuildPlayerOptions.scenes, so the temp-copy strip above does NOT avoid it. In this
+        // regardless of BuildPlayerOptions.scenes, so the temp-copy strip below does NOT avoid it. In this
         // headed-but-remotely-driven editor a modal DEADLOCKS the session (BOX.md #1196): it blocks the main
         // thread, which is where the MCP bridge pumps, so every subsequent call times out and the only exits
         // are a human clicking Save (which writes the canonical scene — the exact thing the strip exists to
