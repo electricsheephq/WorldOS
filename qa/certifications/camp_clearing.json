@@ -1,0 +1,34 @@
+{
+  "room": "camp_clearing",
+  "verdicts": {
+    "walk": "GREEN",
+    "sidecar_grid": "GREEN"
+  },
+  "manifest_entry": {
+    "plate": "plates/camp_clearing_night_truegrey_v1.png",
+    "cameraPin": {
+      "ortho": 13.0
+    },
+    "boxes": "boxes/camp_clearing_v1_boxes.json",
+    "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit \u2014 it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
+    "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
+    "effects": [
+      {
+        "type": "fire_medium",
+        "cell": [
+          5,
+          8
+        ],
+        "scale": 1.5,
+        "y": 0.0
+      }
+    ],
+    "_sync_comment": "MIRROR of camp_clearing_night (the adventure fixture keys the hub as camp_clearing; walkslice/camp_smoke key it as camp_clearing_night). test_seed_adventure_demo pins the two entries identical \u2014 edit BOTH or the sync lint fails."
+  },
+  "artifacts": {
+    "plate_sha256": "21e7373dce2e5db1c0235d124d42a2646946c87f70673ec7dea3afd5d24ef4cc",
+    "boxes_sha256": "0a09aa630a3b54b7e6bfa533f2ba141958bab8b161a82a35f12527ed8bd56b28",
+    "geometry_sha256": "fba4a9a73d75a6c728194a98f29ae4480eb13ec5b73ed3af29d4c66f418c283b"
+  },
+  "walk_report": "/Users/m1/worldos-wt-day1/qa/evidence/rooms-day1-20260903/camp_clearing/camp_clearing/walk_report.json"
+}

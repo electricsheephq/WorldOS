@@ -196,6 +196,16 @@ public static class BuildMacOSPlayer
         // THIS BUILD ONLY — buildScenePath is redirected to a temp copy, never the tracked scene.
         string buildScenePath = SceneToBuild;
         string[] strippedQARoots = StripQAConstructions(ref buildScenePath);
+        // Belt and braces (#1793 Day 1, 2026-09-03): the strip above trusts the IN-MEMORY root scan, but BuildPlayer
+        // reads the scene FILE. A canonical scene that build_room_kit had SAVED with a kit room in it built clean
+        // in memory and shipped KitRoom_camp_clearing on disk while strippedQARoots read (none). Scan the bytes of
+        // the scene that will actually be built — the same test qa_sandbox / owner_install run on level0 later.
+        string[] foreignKitNames = KitNamesOnDisk(buildScenePath);
+        if (foreignKitNames == null || foreignKitNames.Length > 0)
+            FailBuild("refusing to build: " + buildScenePath + " on disk contains QA kit names "
+                + (foreignKitNames == null ? "(file missing)" : string.Join(",", foreignKitNames))
+                + " (a kit room was saved into the scene, or the temp strip scene is missing). "
+                + "Restore the scene (git checkout -- " + SceneToBuild + "), reopen it, then rebuild.");
 
         // --- Player identity (was DefaultCompany/WorldOS-Unity-spike) ---
         PlayerSettings.companyName = "worldos";
@@ -295,6 +305,20 @@ public static class BuildMacOSPlayer
     // Returns the stripped root names (empty = nothing to strip) and, when a strip happened, redirects
     // buildScenePath at the temp scene. A strip that cannot be completed FAILS the build (FailBuild) —
     // a silent failure here would ship the contamination under a green build stamp.
+    // Every `KitRoom_…` token in the scene FILE that is not one of build_room_kit's helper-light children
+    // (KitRoom_Fire / KitRoom_TombGlow / KitRoom_CoolKey — the same helper-only contract qa/qa_sandbox.py applies to
+    // level0). Null when the file is missing. A token is matched whole, so "KitRoom_Firepit" is foreign, not "Fire".
+    static string[] KitNamesOnDisk(string scenePath)
+    {
+        if (!File.Exists(scenePath)) return null;
+        var helpers = new HashSet<string> { BuildRoomKit.KitHelperFire, BuildRoomKit.KitHelperTombGlow, BuildRoomKit.KitHelperCoolKey };
+        var foreign = new SortedSet<string>();
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                     File.ReadAllText(scenePath), QARootPrefix + @"[A-Za-z0-9_\-]+"))
+            if (!helpers.Contains(m.Value)) foreign.Add(m.Value);
+        return new List<string>(foreign).ToArray();
+    }
+
     static string[] StripQAConstructions(ref string buildScenePath)
     {
         var active = EditorSceneManager.GetActiveScene();

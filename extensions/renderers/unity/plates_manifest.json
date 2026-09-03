@@ -56,6 +56,7 @@
    "cameraPin": {
     "ortho": 13.0
    },
+   "boxes": "boxes/camp_clearing_v1_boxes.json",
    "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit \u2014 it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
    "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
    "effects": [
@@ -88,7 +89,7 @@
     "pitch": 30,
     "yaw": 45
    },
-   "boxes": "boxes/throne_hall_v1_boxes.json",
+   "boxes": "boxes/throne_hall_v2_boxes.json",
    "_provenance": "SHIP-THREE-PLATES (2026-07-15): NEW room class (dais/throne/banner molded kinds). Panel 7.0 (cycle-2 levers documented). Geometry qa/room_geometries/throne_hall_geometry.json. World wiring: crypt (15,5) door -> throne_hall in the ship seed."
   },
   "shop": {
@@ -98,7 +99,7 @@
     "pitch": 30,
     "yaw": 45
    },
-   "boxes": "boxes/shop_v1_boxes.json",
+   "boxes": "boxes/shop_v2_boxes.json",
    "_door_hotspots_comment": "#1585/#1647 PAINTED-DOOR HOTSPOTS (plate-pixel click targets in the 1344x768 registered plate; a click inside a hotspot routes exactly like clicking door_cell -> cross_door). Measured 2026-07-22 by overlaying the contract-camera cell projection (qa/walk_test.world_to_window_px at texW/texH) on shop_v1_registered.png and reading the PAINTED arch centroid off a 50px grid (artifacts/zoom_shop_door12_5.png). the painted dark archway opening centroid sits at ~(900,275). RETARGETED 2026-09-02 by the legacy re-author (qa/reauthor_legacy_room.md): the shop door moved to the perimeter cell (12,4), whose landing (11,4) is inside the painted arch, while (6,0) and (12,5) became wall. The hotspot PIXEL is unchanged (the arch did not move) but its door_cell must track the live door \u2014 CombatSurfaceClient.TryDoorHotspot only fires for a cell present in _doorTo, so a stale cell draws a glow on the arch that does nothing.",
    "door_hotspots": [
     {
@@ -122,7 +123,7 @@
     "pitch": 30,
     "yaw": 45
    },
-   "boxes": "boxes/tavern_snug_v1_boxes.json",
+   "boxes": "boxes/tavern_snug_v2_boxes.json",
    "_provenance": "ROOM-READINESS VARIANT PROOF (2026-07-16, epic #1581/#1588): tavern_snug 12x10 \u2014 the SAME class vocabulary in a different plan (bar back-centre, EAST-wall hearth). Cycle-1 panel 6 vs control 9 delta -3.0 OUT OF BAND (honest negative, did not ship); cycle-2 with scorer levers (blue-violet chiaroscuro, atmospheric falloff, worked walls) + the shared single-storey anti-invention lock \u2014 panel result in qa/evidence/paint-room/tavern_snug_c2/panel.json. Geometry qa/room_geometries/tavern_snug_geometry.json; ortho = _fit_ortho_size(12,10). Static gate caught the draft hearth blocking the east door landing pre-CU."
   },
   "camp_clearing": {
@@ -130,6 +131,7 @@
    "cameraPin": {
     "ortho": 13.0
    },
+   "boxes": "boxes/camp_clearing_v1_boxes.json",
    "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit \u2014 it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
    "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
    "effects": [

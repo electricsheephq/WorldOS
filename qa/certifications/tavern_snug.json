@@ -2,7 +2,8 @@
   "room": "tavern_snug",
   "verdicts": {
     "walk": "GREEN",
-    "beauty_panel": "GREEN"
+    "beauty_panel": "GREEN",
+    "sidecar_grid": "GREEN"
   },
   "manifest_entry": {
     "plate": "plates/tavern_snug_v1_registered.png",
@@ -11,13 +12,13 @@
       "pitch": 30,
       "yaw": 45
     },
-    "boxes": "boxes/tavern_snug_v1_boxes.json",
+    "boxes": "boxes/tavern_snug_v2_boxes.json",
     "_provenance": "ROOM-READINESS VARIANT PROOF (2026-07-16, epic #1581/#1588): tavern_snug 12x10 \u2014 the SAME class vocabulary in a different plan (bar back-centre, EAST-wall hearth). Cycle-1 panel 6 vs control 9 delta -3.0 OUT OF BAND (honest negative, did not ship); cycle-2 with scorer levers (blue-violet chiaroscuro, atmospheric falloff, worked walls) + the shared single-storey anti-invention lock \u2014 panel result in qa/evidence/paint-room/tavern_snug_c2/panel.json. Geometry qa/room_geometries/tavern_snug_geometry.json; ortho = _fit_ortho_size(12,10). Static gate caught the draft hearth blocking the east door landing pre-CU."
   },
   "artifacts": {
     "plate_sha256": "cd6235125a56c029987282849b227edd8f754bdd7bc3fac94f71293349c6e792",
-    "boxes_sha256": "2d0120fa2970547d6b21d84d8323d720a500ab09f5d36a130948e85802337f68",
+    "boxes_sha256": "d90aa10665eb66e08d88f51f6740ee2f6e95854b66d6e034356cfc7f7c9427d1",
     "geometry_sha256": "e623503f044f8bc990e370ea6d75ab220d83e1020b193c4eb34c1cdf698e853b"
   },
-  "walk_report": "qa/evidence/legacy-reauthor-20260902/tavern_snug/tavern_snug/walk_report.json"
+  "walk_report": "/Users/m1/worldos-wt-day1/qa/evidence/rooms-day1-20260903/tavern_snug/tavern_snug/walk_report.json"
 }

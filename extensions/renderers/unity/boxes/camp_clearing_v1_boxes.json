@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "ortho": 13,
+  "cols": 16, "rows": 12,
+  "provenance": "kit-derived (build_room_kit ExportBoxes): per-mass renderer bounds of KitRoom_camp_clearing",
+  "boxes": [
+    {"kind": "campfire", "size": [3.9, 0.5, 3.9], "center": [-6, 0.25, -6]},
+    {"kind": "firewood", "size": [3.9, 0.8, 1.9], "center": [0, 0.4, -5]},
+    {"kind": "firewood", "size": [3.9, 0.8, 1.9], "center": [-2, 0.4, -7]},
+    {"kind": "crate", "size": [3.9, 1.4, 3.9], "center": [-10, 0.7, 6]},
+    {"kind": "crate", "size": [1.9, 1.4, 1.9], "center": [-13, 0.7, 5]},
+    {"kind": "crate", "size": [1.9, 1.4, 1.9], "center": [-11, 0.7, 3]},
+    {"kind": "wall", "size": [3.9, 1.8, 1.9], "center": [-4, 0.9, 7]},
+    {"kind": "wall", "size": [1.9, 1.8, 3.9], "center": [7, 0.9, -4]},
+    {"kind": "wall", "size": [1.9, 1.8, 1.9], "center": [9, 0.9, -5]},
+    {"kind": "wall", "size": [3.9, 1.8, 1.9], "center": [8, 0.9, -7]},
+    {"kind": "wall", "size": [1.9, 1.8, 1.9], "center": [9, 0.9, -9]},
+    {"kind": "ruin", "size": [1.9, 1.8, 3.9], "center": [15, 0.9, -2]},
+    {"kind": "ruin", "size": [1.9, 1.8, 7.9], "center": [15, 0.9, -8]},
+    {"kind": "ruin", "size": [3.9, 1.8, 3.9], "center": [12, 0.9, -10]},
+    {"kind": "shelter", "size": [5.9, 2.6, 3.9], "center": [7, 1.3, 2]},
+    {"kind": "bedroll", "size": [3.9, 0.3, 1.9], "center": [6, 0.15, -1]},
+    {"kind": "ruin", "size": [1.9, 0.85, 1.9], "center": [7, 0.425, -9]},
+    {"kind": "ruin", "size": [1.9, 1.8, 3.9], "center": [9, 0.9, -2]}
+  ]
+}
