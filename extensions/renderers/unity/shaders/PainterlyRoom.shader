@@ -6,6 +6,10 @@ Shader "WorldOS/PainterlyRoom"
         _Tint ("Tint", Color) = (1,1,1,1)
         _TriScale ("World units per tile", Float) = 2.0
         _TriSharpness ("Blend sharpness", Range(1,8)) = 4
+        _DetailTex ("Grime / detail (world-space, multiply)", 2D) = "white" {}
+        _GrimeStrength ("Grime strength", Range(0,1)) = 0
+        _GrimeScale ("Grime tile scale", Float) = 3
+        _GrimeHeight ("Grime fade height (world u)", Float) = 1.6
         _Desat ("Desaturate", Range(0,1)) = 0.25
         _KeyColor ("Key (hearth) Color", Color) = (1.0,0.604,0.271,1)
         _AmbientColor ("Ambient Fill Color", Color) = (0.227,0.247,0.333,1)
@@ -46,7 +50,7 @@ Shader "WorldOS/PainterlyRoom"
             #include "Lighting.cginc"
             #include "AutoLight.cginc"
 
-            sampler2D _MainTex;
+            sampler2D _MainTex; sampler2D _DetailTex; float _GrimeStrength, _GrimeScale, _GrimeHeight;
             fixed4 _Tint, _KeyColor, _AmbientColor, _CoolRimColor;
             fixed4 _SceneLitSideTint, _SceneShadowTint, _AtmColor;
             float4 _KeyDir;
@@ -107,6 +111,9 @@ Shader "WorldOS/PainterlyRoom"
             {
                 float3 N=normalize(i.normal), V=normalize(i.view), L=normalize(_KeyDir.xyz), w=triWeights(N);
                 fixed3 albedo=triSample(i.wpos,w)*_Tint.rgb; float a=lum(albedo); albedo=lerp(albedo,a.xxx,_Desat);
+                // Day-3 lever: world-space grime multiply, strongest near the floor (contact dirt at wall bases / prop feet)
+                { float3 gp=i.wpos/_GrimeScale; float3 gw=triWeights(N); fixed3 g=tex2D(_DetailTex,gp.zy).rgb*gw.x+tex2D(_DetailTex,gp.xz).rgb*gw.y+tex2D(_DetailTex,gp.xy).rgb*gw.z;
+                  float gl=dot(g,fixed3(0.3,0.59,0.11)); float hf=saturate(1.0-i.wpos.y/max(_GrimeHeight,0.01)); float grime=lerp(1.0,lerp(0.55,1.05,gl),_GrimeStrength*(0.35+0.65*hf)); albedo*=grime; }
                 float lambert=dot(N,L), lo=lerp(-0.25,0.18,_TermSharp), hi=lerp(0.55,0.34,_TermSharp);
                 float keyMask=smoothstep(lo,hi,lambert);
                 fixed3 key=lerp(fixed3(1,1,1),_KeyColor.rgb,0.92), cool=_AmbientColor.rgb*1.9+fixed3(0,0.02,0.10);
