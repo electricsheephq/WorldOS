@@ -230,6 +230,686 @@
       "critic_score": 0.0,
       "default_used": false,
       "humanoid": false
+    },
+    "pc_fighter_human": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_fighter_human/pc_fighter_human.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a human male fighter, plate armor, longsword and kite shield, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=f271a665-41a0-42d7-8133-8b80a89f874b rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_fighter_human/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_wolf": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_wolf/cre_wolf.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a dire wolf, on all fours, hackles raised, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=8d7e936b-597e-46dc-bbca-e82266b55e0b rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_wolf/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_tavern_table": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_tavern_table/prop_tavern_table.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a sturdy wooden tavern table, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=095f6cbd-ef4a-4653-9266-2232840ed5eb rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_tavern_table/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_wizard_elf": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_wizard_elf/pc_wizard_elf.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a high elf male wizard, long robe, gnarled staff, spellbook at hip, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=a1d52876-5aa3-4c97-8298-3e7eb7284532 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_wizard_elf/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_cleric_drow": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_cleric_drow/pc_cleric_drow.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a drow female cleric, chainmail, mace and round shield, holy symbol, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=daf15db5-ad7d-417c-a737-92bdd20ddf16 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_cleric_drow/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_rogue_tiefling": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_rogue_tiefling/pc_rogue_tiefling.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a tiefling male rogue, dark leather armor, dual daggers, hood, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=8871e693-a4de-42ca-8c76-76f26dcaa067 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_rogue_tiefling/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_ranger_elf": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_ranger_elf/pc_ranger_elf.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wood elf female ranger, hooded cloak, longbow, quiver, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=0418c785-0707-47ac-9c4b-4d469581985c rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_ranger_elf/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_barbarian_halforc": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_barbarian_halforc/pc_barbarian_halforc.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a half-orc male barbarian, fur and hide, greataxe, bare chest, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=4435744e-4400-4bbc-9e78-65d0fa863bd9 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_barbarian_halforc/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_paladin_dragonborn": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_paladin_dragonborn/pc_paladin_dragonborn.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a dragonborn male paladin, ornate heavy armor, warhammer, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=936d632b-d32d-47dc-8a22-b96d965883b1 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_paladin_dragonborn/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_warlock_human": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_warlock_human/pc_warlock_human.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a human female warlock, dark tattered robes, eldritch staff, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=6193831f-6aed-436b-9d92-96b772ce6de2 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_warlock_human/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_sorcerer_tiefling": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_sorcerer_tiefling/pc_sorcerer_tiefling.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a tiefling female sorcerer, draconic scale accents, flowing robe, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=38e94e5c-00be-46bf-8996-a99d3c30b579 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_sorcerer_tiefling/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_bard_gnome": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_bard_gnome/pc_bard_gnome.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a gnome male bard, colorful doublet, lute on back, rapier, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=70d7d24b-a417-480a-862d-91dc7a811d83 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_bard_gnome/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_druid_elf": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_druid_elf/pc_druid_elf.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a elf female druid, leaf-and-bark garb, wooden staff, antler circlet, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=925bc27d-b735-4a26-80d7-621083659ad4 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_druid_elf/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "pc_monk_githyanki": {
+      "kind": "character",
+      "model_ref": "Assets/cast/pc_monk_githyanki/pc_monk_githyanki.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a githyanki male monk, wrapped forearms, simple gi, bald head, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=11f44b0e-c8fc-407d-889f-b2b96fc6f508 rig_task=None. Clips: idle, run, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/pc_monk_githyanki/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "npc_blacksmith": {
+      "kind": "character",
+      "model_ref": "Assets/cast/npc_blacksmith/npc_blacksmith.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a burly human male blacksmith, leather apron, smithing hammer, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=27de6f81-3e03-4d0a-ad3a-bdddf7a56f33 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/npc_blacksmith/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "npc_merchant": {
+      "kind": "character",
+      "model_ref": "Assets/cast/npc_merchant/npc_merchant.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a stout human male merchant, fine tunic, coin purse, scroll, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=ae57de30-f4a9-45a6-927d-d53ae21201aa rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/npc_merchant/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "npc_guard": {
+      "kind": "character",
+      "model_ref": "Assets/cast/npc_guard/npc_guard.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a human male town guard, chain shirt, spear, kettle helm, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=24a1568e-2829-4b2a-8c6d-fd20af90db0c rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/npc_guard/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "npc_beggar": {
+      "kind": "character",
+      "model_ref": "Assets/cast/npc_beggar/npc_beggar.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a elderly human female beggar, ragged shawl, walking stick, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=7bb7b533-7aa4-4093-823c-683c7568766a rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/npc_beggar/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_owlbear": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_owlbear/cre_owlbear.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a owlbear, bear body with owl head and feathers, on all fours, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=ff118edf-58b6-46d5-ac80-71afc696b663 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_owlbear/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_giant_spider": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_giant_spider/cre_giant_spider.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a giant spider, eight long legs, venomous fangs, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=71e45de6-a061-44c9-ab7f-99f1840d3a4d rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_giant_spider/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_raven": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_raven/cre_raven.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a giant raven, wings spread wide, perched, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=c1e37e87-e2c2-46b5-bfc6-c1f0a157bb18 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_raven/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_goblin": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_goblin/cre_goblin.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a goblin warrior, green skin, scavenged armor, scimitar, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=6b828a60-52b4-4175-a875-49efcc5a5d72 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_goblin/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_skeleton": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_skeleton/cre_skeleton.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a animated skeleton warrior, rusted sword and battered shield, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=4b826f9d-5901-4d2b-ad5a-7062e674d1ea rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_skeleton/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_imp": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_imp/cre_imp.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a small winged imp, leathery wings, barbed tail, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=342adc62-131c-4902-83c1-4f3ec924d79d rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_imp/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "boss_young_red_dragon": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/boss_young_red_dragon/boss_young_red_dragon.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a young red dragon, massive gargantuan boss, four legs, folded wings, horns, crimson scales, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready, isolated on plain background'. gen_task=2809fc1a-ae48-4ee8-a3cb-bf7a91002418 rig_task=None. Clips: idle, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/boss_young_red_dragon/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_wooden_chair": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_wooden_chair/prop_wooden_chair.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a simple wooden tavern chair, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=26aa41de-5a72-4b84-945e-26bf79deae34 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_wooden_chair/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_barrel": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_barrel/prop_barrel.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden barrel with iron hoops, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=23596364-42f0-41ca-8f79-915c3c0a0187 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_barrel/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_crate": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_crate/prop_crate.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden shipping crate, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=46b33200-fe9f-499d-905a-2aae1771e0dd rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_crate/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_market_stall": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_market_stall/prop_market_stall.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden market stall with canvas awning, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=3a5bf2cb-1dde-4b7e-89d2-e0253b446bc4 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_market_stall/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_well": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_well/prop_well.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a stone water well with wooden bucket and crank, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=27674d13-ecb6-4029-8e10-7fc6aabc14ef rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_well/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_lantern_post": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_lantern_post/prop_lantern_post.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a iron street lantern post, warm glow, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=5e24dd6a-824a-460d-af1b-6181819911e1 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_lantern_post/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_hand_cart": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_hand_cart/prop_hand_cart.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden two-wheel hand cart, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=d2b2ca80-f953-4dff-9008-241dc312e4da rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_hand_cart/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_signpost": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_signpost/prop_signpost.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden signpost with hanging tavern sign, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=c024d005-ab4e-406d-954b-0fdd02cc4c82 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_signpost/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_anvil": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_anvil/prop_anvil.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a blacksmith anvil on a tree stump, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=8b9f6ff3-4874-4d09-8be5-5daf7a951239 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_anvil/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_fountain": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_fountain/prop_fountain.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a stone town fountain with tiered basin, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=90bee4bb-bbe0-435a-917c-69ea6c51c0bf rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_fountain/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_bench": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_bench/prop_bench.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden park bench, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=238f7a93-3cf5-4829-b4b8-15127baa250f rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_bench/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_treasure_chest": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_treasure_chest/prop_treasure_chest.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a ornate wooden treasure chest with iron bands, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=94b09304-1427-480c-95b2-49967a76a583 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_treasure_chest/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_sarcophagus": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_sarcophagus/prop_sarcophagus.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a ancient stone sarcophagus with carved lid, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=a3a4a8cb-7e0b-40b7-9847-0b57a13e8b00 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_sarcophagus/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_iron_gate": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_iron_gate/prop_iron_gate.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wrought iron dungeon gate, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=656c9a28-67b8-447a-a651-4ebae8498c77 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_iron_gate/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_torch_sconce": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_torch_sconce/prop_torch_sconce.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wall-mounted iron torch sconce with flame, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=c3d015a2-e825-42ca-8996-02c291e7c9f1 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_torch_sconce/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_stone_pillar": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_stone_pillar/prop_stone_pillar.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a ancient carved stone pillar, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=8c9f15b2-ce51-4b2e-9f39-97edfd306ccc rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_stone_pillar/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_rubble_pile": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_rubble_pile/prop_rubble_pile.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a pile of broken stone rubble, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=f7bab24a-354e-4557-8aa9-cf84b120b250 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_rubble_pile/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_altar": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_altar/prop_altar.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a dark stone ritual altar with carved runes, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=034f2d32-85cd-4b35-8bdc-e8e893280972 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_altar/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_brazier": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_brazier/prop_brazier.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a iron brazier with burning coals, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=40f67396-d849-4ee0-b6e0-acb22191c013 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_brazier/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_wooden_door": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_wooden_door/prop_wooden_door.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a heavy wooden dungeon door with iron hinges, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=b5929568-0387-4a6a-9fdb-cb8a54edd2b6 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_wooden_door/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_gargoyle_statue": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_gargoyle_statue/prop_gargoyle_statue.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a crouching stone gargoyle statue, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=d47f5dec-8912-44b2-8738-5029172e3011 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_gargoyle_statue/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_bookshelf": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_bookshelf/prop_bookshelf.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a tall wooden bookshelf filled with old tomes, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=8c1fadb4-6e53-4585-a82e-eb4aa1f788d8 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_bookshelf/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_intellect_devourer": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_intellect_devourer/cre_intellect_devourer.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a intellect devourer monster, a walking brain creature on four clawed beast legs, quadruped, on all fours, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=eb852c53-a976-4734-9a04-2cf767b2b8a8 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_intellect_devourer/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_throne": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_throne/prop_throne.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a imposing stone throne on a small dais, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=497b0674-8893-4f6f-b21e-a12b0fa3ed53 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_throne/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_portcullis": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_portcullis/prop_portcullis.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a iron portcullis gate, half-raised, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=6fb4800a-e97a-4e3f-afb4-ffcfc99fefc0 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_portcullis/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "boss_ogre_chieftain": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/boss_ogre_chieftain/boss_ogre_chieftain.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'an ogre chieftain, huge hulking boss, crude spiked club, fur loincloth, bone jewelry, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready, isolated on plain background'. gen_task=92653178-7303-48c0-b63d-0369b7a48abb rig_task=None. Clips: idle, slash, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/boss_ogre_chieftain/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_zombie": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_zombie/cre_zombie.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a shambling zombie, rotting clothes, arms hanging low, biped, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=330a4f2b-205c-4a1d-b8e0-1b56ff103683 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_zombie/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_giant_rat": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_giant_rat/cre_giant_rat.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a giant rat, dog-sized, mangy fur, on all fours, long tail, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=5cb65d54-10a6-497d-a0cc-c006d9d5d5f8 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_giant_rat/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_mimic": {
+      "kind": "prop",
+      "model_ref": "Assets/props/cre_mimic/cre_mimic.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a mimic monster, a treasure chest with teeth and a long tongue, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=488bac50-2279-4a2a-a3f2-6a666486c5a2 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_mimic/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "npc_noble": {
+      "kind": "character",
+      "model_ref": "Assets/cast/npc_noble/npc_noble.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a haughty human male noble, velvet doublet, rapier, feathered hat, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=ed5cb1a3-96d4-40f2-aad5-753fbe24ce49 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/npc_noble/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "npc_priest": {
+      "kind": "character",
+      "model_ref": "Assets/cast/npc_priest/npc_priest.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a human male priest, white and gold robes, holy symbol, staff, A-pose, full body, feet on ground, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=3c787e66-13ef-401f-8565-b7c815d3740c rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/npc_priest/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_weapon_rack": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_weapon_rack/prop_weapon_rack.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden weapon rack with swords and axes, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=48404ae4-5455-46a6-9860-bf5d7aeb1a07 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_weapon_rack/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_armor_stand": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_armor_stand/prop_armor_stand.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a armor stand displaying a suit of chainmail, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=cb4af21a-e1d0-43dc-9b60-bd76a547ad01 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_armor_stand/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_stocks": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_stocks/prop_stocks.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a wooden pillory stocks, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=e40c6efa-84cd-498a-92f9-825c2844769a rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_stocks/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_candelabra": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_candelabra/prop_candelabra.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a tall iron candelabra with five lit candles, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=2235b3b7-2d19-4395-93fa-40ccc87fc3d9 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_candelabra/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_standing_torch": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_standing_torch/prop_standing_torch.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a standing iron torch with flame, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=79212960-4b1b-4492-a0d7-f2f3657539d3 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_standing_torch/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_bed": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_bed/prop_bed.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a simple wooden bed with wool blanket, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=cc489c35-fccb-41de-bfdd-36c66cb2878c rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_bed/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_gnoll": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_gnoll/cre_gnoll.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a gnoll, hyena-headed humanoid, scavenged leather armor, spear, biped, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=bd4f04b0-3b60-407e-a0f5-8a162507bee9 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_gnoll/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_harpy": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_harpy/cre_harpy.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a harpy, winged bird-woman, talons, wings spread, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=a07fdc14-f2fa-4bee-8fdf-ce62acd09781 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_harpy/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cre_doppelganger": {
+      "kind": "monster",
+      "model_ref": "Assets/cast/cre_doppelganger/cre_doppelganger.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a doppelganger, pale featureless humanoid, smooth blank face, biped, full body, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=d542b747-cebd-4882-befc-e8659b9c2f11 rig_task=None. Clips: idle, walk. Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/cre_doppelganger/ (deploy rigged.fbx to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_campfire": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_campfire/prop_campfire.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a stone-ringed campfire with burning logs, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=7e117646-bbbb-4eca-b2fe-6bb213e9b69f rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_campfire/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_dungeon_stairs": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_dungeon_stairs/prop_dungeon_stairs.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a worn stone dungeon stairs descending, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=3d6ee0ef-1c5f-4adf-81ac-3607c6bfef61 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_dungeon_stairs/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "prop_barricade": {
+      "kind": "prop",
+      "model_ref": "Assets/props/prop_barricade/prop_barricade.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1628 Tripo3D bulk demo library (2026-07-21). Prompt: 'a makeshift wooden barricade with spikes, stylized hand-painted dark fantasy RPG, muted earthy palette, game-ready low poly, isolated on plain background'. gen_task=71215094-1c25-4460-a358-05a96d288c09 rig_task=None. Clips: none (avian: no working presets 2026-07-21). Local binaries: /Volumes/LEXAR/Codex/worldos-asset-library/prop_barricade/ (deploy model.glb to this path; FBX imports untextured -> assign albedo separately; import animationType=Generic NEVER Humanoid). NOTE: model_ref updated .glb->.fbx (Mac-side Blender convert for the box; source glb in the deploy tarball).",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
     }
   }
 }
