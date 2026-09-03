@@ -267,6 +267,14 @@ public static class BuildMacOSPlayer
         finally { if (buildScenePath != SceneToBuild) AssetDatabase.DeleteAsset(buildScenePath); }
         var s = report.summary;
 
+        // #1793 Day 3 (rooms-are-the-scene): the scene byte-scan above only proves the SCENE is clean. A live
+        // room now ships as a PREFAB under Assets/Resources (build_room_kit.BakeLiveRoomPrefab), which lands in
+        // resources.assets/sharedassets*, NOT in the scene — so the exact contamination class the scan exists to
+        // stop (a `KitRoom_*` construction inside the player) could walk straight back in through Resources.
+        // Run the SAME token scan over the built data files, i.e. over what qa_sandbox/owner_install read later.
+        string[] builtKitNames = s.result == BuildResult.Succeeded
+            ? KitNamesInBuiltData(s.outputPath) : new string[0];
+
         string reportPath = Path.Combine(outDir, ReportFileName);
         File.WriteAllText(reportPath,
             "result=" + s.result + "\n" +
@@ -281,7 +289,14 @@ public static class BuildMacOSPlayer
             "architecture=" + archResult + "\n" +
             "alwaysIncludedShaders=" + string.Join(",", includedShaders) + "\n" +
             "strippedQARoots=" + (strippedQARoots.Length == 0 ? "(none)" : string.Join(",", strippedQARoots)) + "\n" +
-            "scenesBuilt=" + string.Join(",", options.scenes) + "\n");
+            "scenesBuilt=" + string.Join(",", options.scenes) + "\n" +
+            "builtDataKitNames=" + (builtKitNames.Length == 0 ? "(none)" : string.Join(",", builtKitNames)) + "\n");
+
+        if (builtKitNames.Length > 0)
+            FailBuild("refusing to ship: the BUILT player data contains QA kit names "
+                + string.Join(",", builtKitNames) + " (a KitRoom_* construction reached the player through the "
+                + "scene or through Assets/Resources). Re-bake the live room prefab so nothing in it is named "
+                + QARootPrefix + "* (Tools/WorldOS/Kit/Bake Live Room Prefab renames every descendant to LiveRoom_).");
 
         Debug.Log("[BuildMacOSPlayer] DONE result=" + s.result + " errors=" + s.totalErrors
             + " warnings=" + s.totalWarnings + " size=" + s.totalSize + " time=" + s.totalTime
@@ -317,6 +332,61 @@ public static class BuildMacOSPlayer
                      File.ReadAllText(scenePath), QARootPrefix + @"[A-Za-z0-9_\-]+"))
             if (!helpers.Contains(m.Value)) foreign.Add(m.Value);
         return new List<string>(foreign).ToArray();
+    }
+
+    // #1793 Day 3: the same whole-token scan run over the BUILT player's serialized data — level0 (the scene),
+    // resources.assets (everything under Assets/Resources, i.e. the live-room prefab + its materials) and the
+    // sharedassets*.assets the scene/prefab pull in. Byte-level (these files are binary; a text decode would
+    // corrupt the surrounding bytes and could split a token). Empty array = clean.
+    static string[] KitNamesInBuiltData(string appPath)
+    {
+        var foreign = new SortedSet<string>();
+        string dataDir = Path.Combine(appPath, "Contents", "Resources", "Data");
+        if (!Directory.Exists(dataDir))
+        {
+            Debug.LogWarning("[BuildMacOSPlayer] built data dir not found (" + dataDir + ") — kit scan skipped");
+            return new string[0];
+        }
+        var helpers = new HashSet<string> { BuildRoomKit.KitHelperFire, BuildRoomKit.KitHelperTombGlow, BuildRoomKit.KitHelperCoolKey };
+        var targets = new List<string>();
+        foreach (var f in Directory.GetFiles(dataDir))
+        {
+            string n = Path.GetFileName(f);
+            if (n.StartsWith("level", StringComparison.Ordinal)
+                || n.StartsWith("resources.assets", StringComparison.Ordinal)
+                || n.StartsWith("sharedassets", StringComparison.Ordinal)) targets.Add(f);
+        }
+        foreach (var f in targets)
+            foreach (var tok in KitTokensInBytes(File.ReadAllBytes(f)))
+                if (!helpers.Contains(tok)) foreign.Add(tok);
+        Debug.Log("[BuildMacOSPlayer] built-data kit scan: " + targets.Count + " file(s), "
+                  + (foreign.Count == 0 ? "clean" : "FOREIGN " + string.Join(",", new List<string>(foreign).ToArray())));
+        return new List<string>(foreign).ToArray();
+    }
+
+    // Every whole `KitRoom_<token>` occurrence in a byte buffer (token chars = A-Za-z0-9_-), matching the
+    // regex KitNamesOnDisk applies to the scene text.
+    static List<string> KitTokensInBytes(byte[] bytes)
+    {
+        var hits = new List<string>();
+        var pre = System.Text.Encoding.ASCII.GetBytes(QARootPrefix);
+        for (int i = 0; i + pre.Length <= bytes.Length; i++)
+        {
+            bool match = true;
+            for (int k = 0; k < pre.Length; k++) if (bytes[i + k] != pre[k]) { match = false; break; }
+            if (!match) continue;
+            var sb = new System.Text.StringBuilder(QARootPrefix);
+            int j = i + pre.Length;
+            while (j < bytes.Length)
+            {
+                char c = (char)bytes[j];
+                if (!(char.IsLetterOrDigit(c) || c == '_' || c == '-')) break;
+                sb.Append(c); j++;
+            }
+            hits.Add(sb.ToString());
+            i = j - 1;
+        }
+        return hits;
     }
 
     static string[] StripQAConstructions(ref string buildScenePath)
