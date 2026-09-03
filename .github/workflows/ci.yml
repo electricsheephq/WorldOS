@@ -29,6 +29,12 @@ jobs:
         run: python3 qa/walk_static.py
       - name: Static walkability units (red-first proofs for the gate itself)
         run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_walk_static.py
+      - name: Occluder sidecar vs grid gate (every manifest sidecar projected onto its geometry; stdlib-only)
+        # "The room is the scene" Day 1 (#1793): a box over walkable floor is the cyan-ghost class, an impassable cell
+        # with no box draws the walker through the painted mass. Red-first units: qa/test_sidecar_grid_check.py.
+        run: python3 qa/sidecar_grid_check.py
+      - name: Occluder sidecar gate units
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_sidecar_grid_check.py
       - name: Per-object alignment gate units (red-first proofs for qa/object_align_check.py)
         # The instrument's own failure modes, pinned: a FEATURELESS crop pair correlates to a perfect
         # dx=dy=0 with a dead peak (a deleted object certified as aligned — the exact class the gate

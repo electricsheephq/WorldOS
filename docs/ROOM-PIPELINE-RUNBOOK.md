@@ -449,6 +449,32 @@ is what keeps the renderer a pure consumer (the sole-writer invariant, restated 
 `BuildMacOSPlayer.EnsurePackaged` copies `plates_manifest.json` + every referenced plate PNG +
 `effects_registry.json` into `StreamingAssets/` at build time.
 
+### 9b. Occluder sidecars are DERIVED from a kit build, and kit rooms never touch the canonical scene (#1793 Day 1, 2026-09-03)
+
+The occluder sidecar (`boxes/<room>_boxes.json`) is what the player masks the walker with; it must agree with the
+engine grid cell-for-cell or the room ghosts (a box over open floor = the cyan walk-behind silhouette on legal
+floor, #1736) or x-rays (an impassable cell with no box = the hero drawn through the painted mass, crypt (13,7)).
+Never hand-author one. The recipe, all inside the running Editor (`execute_code`; a Hub-launched Editor inherits
+no shell env, so set the variables in-process):
+
+```csharp
+System.Environment.SetEnvironmentVariable("WORLDOS_ROOM_GEO", "/Users/m1/WorldOS/qa/room_geometries/<room>_geometry.json");
+System.Environment.SetEnvironmentVariable("WORLDOS_KIT_ROOM_ID", "<room>");            // = the manifest key
+BuildRoomKit.BuildRoom(); BuildRoomKit.ExportBoxes();                                    // -> <unity project>/boxes/<room>_boxes.json
+UnityEngine.Object.DestroyImmediate(GameObject.Find("KitRoom_<room>"));                 // QA construction: in memory only
+```
+
+Then `python3 qa/sidecar_grid_check.py --room <room> --boxes <unity project>/boxes/<room>_boxes.json` must read
+**0 / 0** before the file is promoted to `extensions/renderers/unity/boxes/` and the manifest repointed. The
+builder is footprint-exact by construction (one mass per axis-aligned rectangle of the authored cells, one column
+per cell of a multi-cell pillar, a kit prefab that under-covers its cells is replaced by exact masses, kind
+heights from `KindHeight`) — if the gate still reads non-zero the geometry or the builder is wrong, never the gate.
+
+`BuildRoom` does NOT save `Assets/Scenes/M1CombatV1_canonical.unity` (it used to; on 2026-09-03 that shipped a kit
+room inside the player while the build's root strip read the clean in-memory scene). `BuildMacOSPlayer` now also
+byte-scans the scene file it builds and refuses on any `KitRoom_` string — if a build refuses, `git -C
+/Users/m1/worldos-unity checkout -- Assets/Scenes/M1CombatV1_canonical.unity`, reopen the scene, rebuild. ⚠ In a HEADED Editor that restore raises the modal *"The open scene(s) have been modified externally — Ignore / Reload"*, which blocks the main thread (the MCP bridge heartbeat freezes and every `execute_code` times out) until it is answered. Answer **Reload** (memory == the restored file) via the cua driver: `list_windows(pid)` → the untitled ~260×320 window → `get_window_state` → click the `Reload` button. The "Load Input and Layer Presets" utility window (an animation pack's nag, re-shown on every script reload) is harmless.
+
 ### 10. Player pickup — hot-load for ITERATION, local rebuild for SHIP
 
 **★ Hot-load (empirically confirmed 2026-07-16, dwing gates):** on macOS, `StreamingAssets` is
@@ -611,6 +637,7 @@ PY="uv run --directory $WOS/servers/engine python"                # relative qa/
 # 0. build identity (the "build sha" in SCORECARD rows = the player BINARY sha256 prefix; unity repo head + engine main are recorded beside it)
 shasum -a 256 "$APP/Contents/MacOS/WorldOSPlayer" | cut -c1-8; git -C /Users/m1/worldos-unity rev-parse --short HEAD; git -C $WOS rev-parse --short main
 strings "$(find "$APP/Contents/Resources/Data" -name level0 | head -1)" | grep -c KitRoom_   # must be 0 (contamination gate)
+python3 $WOS/qa/sidecar_grid_check.py                               # every manifest sidecar 0/0 vs its geometry (the ghost gate, #1793 Day 1)
 $PY $WOS/qa/packaged_pins.py "$APP" --repo "$WOS"                   # packaged plate/boxes/manifest per room == repo root → GREEN required
 # 1. the registered-world fixture (party seeded IN the crypt; no monsters) — the kit rooms live only here
 $PY $WOS/qa/qa_sandbox.py up --run g1 --campaign registered_world_v1 --app "$APP" \

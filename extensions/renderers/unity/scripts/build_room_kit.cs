@@ -102,6 +102,7 @@ public static class BuildRoomKit
     const float PILLAR_FOOT_FILL = 0.85f; // fraction of the authored footprint span the pillar fills on x and z
     const float PILLAR_MIN_XZ    = 1.2f;  // floor for the per-axis pillar world target (preserves the r5 minimum)
     const float PILLAR_TGT_H     = 4.0f;  // pillar world height target (unchanged)
+    const float POST_XZ          = 0.6f;  // timber post / beam target width (painted posts are ~0.4u; #1793 Day 1)
 
     // r8 (#83/#84) ALBEDO SEPARATION targets — so the FLAT-LIGHT score frame measures PLACEMENT, not tone.
     // r7 flat score 67.19%: ALL 35 shared invisible-wall residuals were one class — a dark stone MASS that
@@ -402,8 +403,31 @@ public static class BuildRoomKit
                     int idx = Mathf.Abs(fp.anchorC * 7 + fp.anchorR * 13) % 5;
                     var pf = pillars[idx];
                     if (pf == null) { for (int k = 0; k < 5 && pf == null; k++) pf = pillars[k]; }   // first available
-                    float ptx = Mathf.Max(PILLAR_MIN_XZ, fp.spanX * PILLAR_FOOT_FILL);
-                    float ptz = Mathf.Max(PILLAR_MIN_XZ, fp.spanZ * PILLAR_FOOT_FILL);
+                    // Day 1 (#1793): a timber POST is painted ~0.4u wide; the 1.7u Synty-pillar target put a proxy three
+                    // times the painted post around it, and the walk-behind silhouette tinted actors standing BESIDE the
+                    // post (snug post_w (4,3): Maera at (5,3) fully cyan, Aldric at (3,3) banded). Thin kinds get a thin
+                    // target; the sidecar box follows the placed mesh.
+                    bool thinPost = pid.Contains("post") || kind.Contains("post") || pid.Contains("beam") || kind.Contains("timber");
+                    if (cells.Count > 1)
+                    {
+                        // Day 1 of "the room is the scene" (#1793): a multi-cell pillar prop is a ROW OF COLUMNS, one per
+                        // authored cell. One footprint-span pillar (r7) left the END cells of the throne's 10-cell colonnade
+                        // uncovered and claimed the gap cells between its columns ((11,1)/(11,10) vs (11,4)/(11,5)), and a
+                        // 1x2 "col" at 0.85 x the CENTRE span covered neither cell centre. The sidecar must be cell-exact
+                        // (qa/sidecar_grid_check.py); a 1.7u column at every authored cell is, and reads as a colonnade.
+                        int placedCols = 0;
+                        float side = thinPost ? POST_XZ : Mathf.Max(PILLAR_MIN_XZ, CELL * PILLAR_FOOT_FILL);
+                        foreach (var co in cells)
+                        {
+                            if (!TryCell(co, out int pc, out int pr)) continue;
+                            if (pf != null && PlacePillar(pf, $"{pid}_Pillar0{idx + 1}_{pc}_{pr}", propParent, CellToWorld(pc, pr, cols, rows), side, side, PILLAR_TGT_H, ref nMatFix) != null) placedCols++;
+                            else if (FallbackBoxes($"{pid}_pillar", propParent, new List<object> { co }, cols, rows, 4.2f, false, ref nMatFix, MassMat())) nFallback++;
+                        }
+                        nPillar += placedCols;
+                        continue;
+                    }
+                    float ptx = thinPost ? POST_XZ : Mathf.Max(PILLAR_MIN_XZ, fp.spanX * PILLAR_FOOT_FILL);
+                    float ptz = thinPost ? POST_XZ : Mathf.Max(PILLAR_MIN_XZ, fp.spanZ * PILLAR_FOOT_FILL);
                     if (pf != null && PlacePillar(pf, $"{pid}_Pillar0{idx + 1}", propParent, fp.center, ptx, ptz, PILLAR_TGT_H, ref nMatFix) != null) nPillar++;
                     else if (FallbackBox($"{pid}_pillar", propParent, fp, 4.2f, false, ref nMatFix, MassMat())) nFallback++;   // r3: taller fat fallback; r8: dark-masonry albedo
                     continue;
@@ -486,7 +510,7 @@ public static class BuildRoomKit
                     // and stone-grey. Raise the pile to RUBBLE_H and force the dark-masonry albedo so it reads as
                     // a placed mass in the flat gate (a deterministic primitive mass; any kit rubble mesh is not
                     // used here, so the height + contrast are guaranteed regardless of the pack contents).
-                    if (FallbackBox($"{pid}_rubble", propParent, fp, RUBBLE_H, false, ref nMatFix, MassMat())) nFallback++;
+                    if (FallbackBoxes($"{pid}_rubble", propParent, cells, cols, rows, RUBBLE_H, false, ref nMatFix, MassMat())) nFallback++;
                     continue;
                 }
 
@@ -498,10 +522,20 @@ public static class BuildRoomKit
                 Material fbMat = woodish ? PropWoodMat() : null;
                 if (kit != null)
                 {
-                    if (Place(kit, $"{pid}_{kit.name}", propParent, fp.center, fp.spanX, fp.spanZ, 0f, false, woodish, ref nMatFix) != null) nKit++;
-                    else if (FallbackBox(pid, propParent, fp, KindHeight(kind), woodish, ref nMatFix, fbMat)) nFallback++;
+                    var placedKit = Place(kit, $"{pid}_{kit.name}", propParent, fp.center, fp.spanX, fp.spanZ, 0f, false, woodish, ref nMatFix);
+                    if (placedKit != null && !CoversCells(placedKit, cells, cols, rows))
+                    {
+                        // Day 1 (#1793): a kit mesh scaled to the CENTRE span of a multi-cell footprint (throne offering
+                        // well over (5,8)+(6,8)) leaves the authored cells' centres outside its bounds, so the exported
+                        // sidecar would not mask a walker behind the painted mass. The sidecar is derived from what is
+                        // placed, so place something cell-exact instead and say so.
+                        Debug.Log($"[KitRoom] kit prefab '{kit.name}' under-covers '{pid}' ({cells.Count} cells) — replaced by footprint-exact masses.");
+                        UnityEngine.Object.DestroyImmediate(placedKit); placedKit = null;
+                    }
+                    if (placedKit != null) nKit++;
+                    else if (FallbackBoxes(pid, propParent, cells, cols, rows, KindHeight(kind), woodish, ref nMatFix, fbMat)) nFallback++;
                 }
-                else if (FallbackBox(pid, propParent, fp, KindHeight(kind), woodish, ref nMatFix, fbMat)) nFallback++;
+                else if (FallbackBoxes(pid, propParent, cells, cols, rows, KindHeight(kind), woodish, ref nMatFix, fbMat)) nFallback++;
             }
         }
 
@@ -597,16 +631,25 @@ public static class BuildRoomKit
         var cam = MainCam(create: true);
         SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
 
-        // ── CANONICAL discipline: MarkSceneDirty + SaveScene (no render-and-forget) ──────────────────
+        // ── scene persistence: NEVER into the canonical build scene ─────────────────────────────────
+        // The July "MarkSceneDirty + SaveScene" discipline persisted the kit room for the remote box session. On
+        // 2026-09-03 (#1793 Day 1) it saved KitRoom_camp_clearing INTO Assets/Scenes/M1CombatV1_canonical.unity;
+        // the build's root strip read the (already cleaned) in-memory scene while BuildPlayer read the FILE, and
+        // the player shipped the kit room — the third occurrence of the embedded-kit-scene class. A kit room is a
+        // QA construction: it lives in memory for the session (Capture/ExportBoxes read the live objects), and
+        // only a NON-canonical scene may persist it.
         EditorUtility.SetDirty(root);
         var scene = SceneManager.GetActiveScene();
-        EditorSceneManager.MarkSceneDirty(scene);
-        if (!string.IsNullOrEmpty(scene.path))
+        bool canonical = !string.IsNullOrEmpty(scene.path) && scene.path.EndsWith("M1CombatV1_canonical.unity", StringComparison.Ordinal);
+        if (canonical)
+            Debug.LogWarning($"[KitRoom] {rootName} built IN MEMORY only — {scene.path} is the canonical build scene and is never saved with a kit room in it (destroy the root when done; the build strip + byte scan refuse it otherwise).");
+        else if (!string.IsNullOrEmpty(scene.path))
         {
+            EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
             Debug.Log($"[KitRoom] scene saved: {scene.path}");
         }
-        else Debug.LogWarning("[KitRoom] active scene is untitled — MarkSceneDirty only; save the scene once to persist the kit room.");
+        else Debug.LogWarning("[KitRoom] active scene is untitled — not saved; save the scene once to persist the kit room.");
 
         Debug.Log($"[KitRoom] BUILT {rootName} @ {cols}x{rows}: floor={nFloor} walls={nWall} doors={nDoor} " +
                   $"pillars={nPillar} sarcophagi={nSarc} braziers={nBrazier} buttresses={nButtress} plinths={nPlinth} " +
@@ -1079,6 +1122,70 @@ public static class BuildRoomKit
 
     // r8: `overrideMat` (items 4/5) names the exact material for the box — dark-masonry for rubble, dark-wood
     // for wooden props — instead of the woodish/stone default. null keeps the prior material-defensive default.
+    // Footprint-EXACT fallback masses (Day 1 of "the room is the scene", #1793). FallbackBox below covers the
+    // BOUNDING RECTANGLE of a footprint at a 0.9 inset, so an L-shaped prop claimed walkable cells (snug hearth
+    // -> (9,6), table_s -> (5,5)) and a 10-cell run lost its END cells (throne arcade rows 1 and 10): the exported
+    // occluder sidecar disagreed with the engine grid in both directions. Decompose the authored cells into
+    // maximal axis-aligned rectangles (greedy: widest run first, then extend down) and place one cube per
+    // rectangle sized to the cell lattice minus a 0.1u seam — every authored cell's centre lies inside exactly
+    // one mass and no walkable cell's centre lies inside any (qa/sidecar_grid_check.py is the gate).
+    // True when every authored cell centre lies strictly inside the placed object's world XZ bounds (0.05u margin,
+    // the same rule qa/sidecar_grid_check.py projects the exported boxes with).
+    static bool CoversCells(GameObject go, List<object> cells, int cols, int rows)
+    {
+        var rends = go.GetComponentsInChildren<Renderer>(false);
+        if (rends.Length == 0) return false;
+        Bounds b = rends[0].bounds; for (int i = 1; i < rends.Length; i++) b.Encapsulate(rends[i].bounds);
+        foreach (var co in cells)
+        {
+            if (!TryCell(co, out int c, out int r)) continue;
+            var w = CellToWorld(c, r, cols, rows);
+            if (w.x <= b.min.x + 0.05f || w.x >= b.max.x - 0.05f || w.z <= b.min.z + 0.05f || w.z >= b.max.z - 0.05f) return false;
+        }
+        return true;
+    }
+
+    static bool FallbackBoxes(string pid, GameObject parent, List<object> cells, int cols, int rows, float height,
+                              bool woodish, ref int matFix, Material overrideMat = null)
+    {
+        var set = new HashSet<long>(); var list = new List<(int c, int r)>();
+        foreach (var co in cells) if (TryCell(co, out int c, out int r) && set.Add(CellKey(c, r))) list.Add((c, r));
+        if (list.Count == 0) return false;
+        list.Sort((a, b) => a.r != b.r ? a.r.CompareTo(b.r) : a.c.CompareTo(b.c));
+        var used = new HashSet<long>(); int n = 0;
+        ResolveFallbackMaterials();
+        foreach (var start in list)
+        {
+            if (used.Contains(CellKey(start.c, start.r))) continue;
+            int w = 1;
+            while (set.Contains(CellKey(start.c + w, start.r)) && !used.Contains(CellKey(start.c + w, start.r))) w++;
+            int h = 1;
+            while (true)
+            {
+                bool full = true;
+                for (int k = 0; k < w; k++)
+                {
+                    long key = CellKey(start.c + k, start.r + h);
+                    if (!set.Contains(key) || used.Contains(key)) { full = false; break; }
+                }
+                if (!full) break;
+                h++;
+            }
+            for (int dr = 0; dr < h; dr++) for (int k = 0; k < w; k++) used.Add(CellKey(start.c + k, start.r + dr));
+            Vector3 a = CellToWorld(start.c, start.r, cols, rows), z = CellToWorld(start.c + w - 1, start.r + h - 1, cols, rows);
+            Vector3 centre = (a + z) * 0.5f;
+            var b = GameObject.CreatePrimitive(PrimitiveType.Cube); b.name = $"{pid}_fallback";
+            UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
+            b.transform.SetParent(parent.transform, true);
+            b.transform.position = new Vector3(centre.x, height * 0.5f, centre.z);
+            b.transform.localScale = new Vector3(w * CELL - 0.1f, height, h * CELL - 0.1f);
+            b.GetComponent<Renderer>().sharedMaterial = overrideMat ?? (woodish ? _woodMat : _stoneMat);
+            n++;
+        }
+        Debug.Log($"[KitRoom] no kit prefab for '{pid}' — {n} footprint-exact fallback mass(es) over {list.Count} cell(s), h={height:F1}.");
+        return true;
+    }
+
     static bool FallbackBox(string pid, GameObject parent, Footprint fp, float height, bool woodish, ref int matFix, Material overrideMat = null)
     {
         var b = GameObject.CreatePrimitive(PrimitiveType.Cube); b.name = $"{pid}_fallback";
@@ -1108,6 +1215,12 @@ public static class BuildRoomKit
         return new string[0];
     }
 
+    // Fallback-mass heights in WORLD units (CELL = 2u = 5 ft, so a standing figure is ~2.4u). These are the
+    // occluder heights ExportBoxes stamps into the sidecar for every kind with no kit prefab, so they are what
+    // masks a walker standing camera-behind the mass. Day-1 of "the room is the scene" (#1793): the legacy
+    // rooms (snug/shop/throne/camp) are almost all fallback kinds, and a flat 1.4u for a fire pit, a bedroll
+    // or a shelf is the over-tall/under-tall proxy class that leaves silhouette bands on legal floor. Keep the
+    // table ORDERED most-specific first — several kinds share substrings (stone_wall vs stone_well).
     static float KindHeight(string kind)
     {
         if (kind.Contains("barrel")) return 1.5f;
@@ -1115,6 +1228,16 @@ public static class BuildRoomKit
         if (kind.Contains("rubble") || kind.Contains("debris")) return 0.6f;
         if (kind.Contains("urn") || kind.Contains("pot") || kind.Contains("vase")) return 1.2f;
         if (kind.Contains("well")) return 1.3f;
+        if (kind.Contains("campfire") || kind.Contains("fire_pit") || kind.Contains("firepit")) return 0.5f;   // a ring of stones + embers
+        if (kind.Contains("bedroll") || kind.Contains("rug") || kind.Contains("mat")) return 0.3f;               // floor-level; exported (>= 0.15) but never masks a figure
+        if (kind.Contains("log")) return 0.8f;                                                                    // fallen log
+        if (kind.Contains("table") || kind.Contains("bench") || kind.Contains("stool")) return 1.0f;            // tabletop ~0.75 m
+        if (kind.Contains("bar") || kind.Contains("counter")) return 1.4f;                                        // bar counter ~1.1 m
+        if (kind.Contains("stone_wall") || kind.Contains("ruin")) return 1.8f;                                    // ruined wall / low arcade wall
+        if (kind.Contains("throne") || kind.Contains("chair")) return 2.2f;                                       // tall-backed seat
+        if (kind.Contains("shelf") || kind.Contains("bookcase") || kind.Contains("cabinet")) return 2.6f;        // ~2 m
+        if (kind.Contains("timber") || kind.Contains("frame") || kind.Contains("tent") || kind.Contains("shelter")) return 2.6f;
+        if (kind.Contains("hearth") || kind.Contains("chimney") || kind.Contains("fireplace")) return 2.8f;      // chimney breast
         return 1.4f;
     }
 
