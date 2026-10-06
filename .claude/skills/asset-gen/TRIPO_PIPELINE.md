@@ -80,6 +80,17 @@ tripo_gen.py text ... --dry-run  # plan + est credits, no API call
 ## Credits / timing (measured)
 - Full humanoid gen→rig→1 retarget ≈ **~100 credits, ~3 min**. rig-check is free. The whole
   humanoid+creature validation run cost **215 credits**.
+- **Bulk-library measured rates (2026-07-21, 68-asset run, issue #1628):** P1 lowpoly gen ~40 cr /
+  ~75 s; biped rig+walk/idle ~45 cr / ~50 s; 4-clip biped total ~105 cr / ~3.5 min; v3.1 boss gen
+  ~45 cr but SLOW (~4–5 min — split gen and rig stages across shell-timeout boundaries); static
+  P1 prop ~40 cr. Failed retarget submits error in ~1 s and charge nothing.
+- **AVIAN rigs have NO working retarget presets (2026-07-21, probed exhaustively):** `walk`, `idle`,
+  `fly`, `flying`, `fly_forward`, `flap`, `soar`, `glide`, `hover` all fail error 1004 on an avian
+  rig. Quadruped/hexapod/octopod get `walk` only (`idle` unsupported). Plan avian units as
+  rigged-but-clipless (static/perched) or hand-animate later.
+- rig-check can return `riggable:true, rig_type:"others"` (a brain-on-legs devourer did) — the rig
+  then aborts. Fix: REGENERATE with explicit body-plan phrasing ("quadruped, on all fours") — the
+  regen rigged cleanly. ~40 cr cheaper than fighting the rigger.
 
 ## Unity consumption (critical — see also the Unity section of `SKILL.md`)
 - Import the rigged/animated FBX as **`animationType = Generic`, NOT Humanoid.** Tripo's bone names
