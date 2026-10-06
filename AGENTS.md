@@ -1,4 +1,4 @@
-# WorldOS — what this repo is (read before the GitNexus block)
+# WorldOS — what this repo is
 WorldOS is a living-world D&D 5e engine: a deterministic Python engine is the SOLE WRITER of world state; the player's own AI agent is the DM; renderers (the Unity player, the web viewer, the text tier) are pure consumers. Destination: a fully rendered CRPG at Pillars of Eternity II quality, built AND playtested by agents.
 Five rules every agent follows: (1) the engine is the sole writer — no renderer or harness mutates state; (2) decision-by-eval — no claim without its instrument (gate exit codes are the verdict, the author never judges their own run, blind adjudication for panels and playtests); (3) geometry is ground truth — collision/occlusion come from the grid + boxes sidecar, paint is cosmetic, every room ships walk-certified with a sha-pinned cert; (4) the agent plays first — every build gets an agent playthrough (sandbox player + /click /shot /debug + the viewer) before any owner ask; the owner is the escalation at the 80/20 wall; (5) pixels before credit — nothing rendered is done until a frame of the RUNNING build was looked at.
 Bootstrap order: docs/OPERATIONS.md → docs/roadmap/NOW.md → docs/ACTIVE-GOAL.md → docs/roadmap/PRODUCT-ROADMAP.md → the `active-sprint` charter issue → docs/RUNBOOK-INDEX.md. Ports: owner engine 8776 / QA 8981; sandbox 8866 / 8972; NEVER 8766 (not WorldOS). Canonical repo checkout /Users/m1/WorldOS; the Unity renderer PROJECT lives at /Users/m1/worldos-unity (local Unity 6000.5.6f1 — the GEX44 box is retired).
@@ -61,46 +61,9 @@ QA through `qa/qa_sandbox.py`. Local Mac heavy QA is primary; `support-vm-1` is 
 - Keep up with CodeRabbit and GitHub review threads. Verify each comment against the code, fix valid issues, and rerun focused validation before pushing.
 - Treat generic warning-only bot suggestions as non-blocking unless they identify a real defect or the repository enforces them.
 
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
+## GitNexus (optional)
 
-This project is indexed by GitNexus as **WorldOS** (23838 symbols, 48173 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
-
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
-
-## Always Do
-
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
-
-## Never Do
-
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
-
-## Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/WorldOS/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/WorldOS/clusters` | All functional areas |
-| `gitnexus://repo/WorldOS/processes` | All execution flows |
-| `gitnexus://repo/WorldOS/process/{name}` | Step-by-step execution trace |
-
-## CLI
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->
+GitNexus indexes this repo as `worldos` (pass `repo: "worldos"` to its MCP tools). It is optional (machine
+policy since 2026-10-06): default to `rg`/file reads, use it for caller/impact questions, and verify its
+results against source. Never run `gitnexus analyze` or `npx gitnexus` here; the machine's nightly refresh
+owns the index (runbook `/Users/m1/Codex/runbooks/gitnexus.md`).
