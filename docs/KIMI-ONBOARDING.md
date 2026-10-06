@@ -79,13 +79,13 @@ The skill surface is live-edited (worldos-dev touched Jul 15, blind-adjudicator 
 | Blind adjudicator | `~/.claude/agents/blind-adjudicator.md` | **Port the prompt verbatim** into a Kimi read-only subagent (`plan`/`explore` type) for gate verdicts — self-contained, model-agnostic |
 | Other agent profiles | `~/.claude/agents/{coder,deep-reasoner,fast-worker,codex-worker}.md` | Map frontmatter to Kimi subagent types (`coder`/`plan`/`explore`) |
 | WorldOS memory index | `~/.claude/projects/-Users-lume/memory/worldos-index.md` | Read on any WorldOS resume |
-| Ops runbook | `~/.claude/runbooks/worldos-evaos-ops.md` | GLM lane, GitNexus reindex, Unity persistence |
+| Ops runbook | `~/.claude/runbooks/worldos-evaos-ops.md` | GLM lane, Unity persistence (its GitNexus notes are historical; GitNexus is disabled) |
 | Routing ledger | `~/.claude/routing-ledger.jsonl` | **Shared append-only JSONL** — Kimi appends rows (`{"ts","lane","task","outcome","repo","note"}`) so Claude-side sessions see Kimi dispatches |
 | Fable lane table | `~/.claude/CLAUDE.md` | "Fable = orchestrator only, the brain never types" → the Kimi orchestrator inherits that role; cheaper work delegates to subagents |
 
 Do NOT port: Claude hooks, stop-guards, keepalive ticks (Claude-app mechanics; Kimi has its own turn lifecycle). `.mcp.json` (engine/rules/voice stdio servers) is portable in substance — substitute `${CLAUDE_PLUGIN_ROOT}` → `/Users/m1/WorldOS` if ever wired.
 
-**GitNexus**: optional since 2026-10-06 (AGENTS.md no longer mandates `impact` / `detect_changes`). Kimi has no `mcp__gitnexus__*` tools; use `rg` and file reads. Never run `gitnexus analyze` — the machine's nightly refresh owns the index.
+**GitNexus**: disabled on this machine since 2026-10-06 (no MCP, no skills, no nightly refresh). Use `rg` and file reads, and never run `gitnexus analyze`.
 
 ## 7. Kimi ↔ Claude interop contract (both sides co-drive)
 
@@ -109,6 +109,6 @@ Shared surfaces that make either side's work visible to the other:
 
 1. Scenario CU balance — **refilled 2026-07-20 (5k+)**; the "needs fresh budget" framing is stale. Open remainder: land #1619 (PR #1626, in review) first and defer paint?
 2. GitHub LFS data pack for the box repo (~$5/mo) — buy, or keep tarball-only saves?
-3. GitNexus — **RESOLVED 2026-07-20: the MCP is wired for Kimi** (impact/detect_changes live from the canonical checkout; index rebuild to the tip runs detached).
+3. GitNexus — RESOLVED 2026-07-20 (MCP wired for Kimi); **superseded 2026-10-06: GitNexus is disabled** (no MCP, no skills, no nightly refresh). Use `rg` and file reads.
 4. PR this onboarding doc (+ NOW.md refresh) through the normal loop? — **RESOLVED: landed via #1624.**
 5. Green-light to claim the box on #1386 and start Task #76 — **RETIRED/NOT APPLICABLE** after GEX44 was discarded; use the local Unity lane instead.

@@ -61,9 +61,7 @@ QA through `qa/qa_sandbox.py`. Local Mac heavy QA is primary; `support-vm-1` is 
 - Keep up with CodeRabbit and GitHub review threads. Verify each comment against the code, fix valid issues, and rerun focused validation before pushing.
 - Treat generic warning-only bot suggestions as non-blocking unless they identify a real defect or the repository enforces them.
 
-## GitNexus (optional)
+## GitNexus (disabled)
 
-GitNexus indexes this repo as `worldos` (pass `repo: "worldos"` to its MCP tools). It is optional (machine
-policy since 2026-10-06): default to `rg`/file reads, use it for caller/impact questions, and verify its
-results against source. Never run `gitnexus analyze` or `npx gitnexus` here; the machine's nightly refresh
-owns the index (runbook `/Users/m1/Codex/runbooks/gitnexus.md`).
+GitNexus is disabled on this machine (owner, 2026-10-06): no MCP server, no skills, no nightly index refresh.
+Use `rg` and file reads. Never run `gitnexus analyze` or `npx gitnexus` here.

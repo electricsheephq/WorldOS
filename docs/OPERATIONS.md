@@ -126,8 +126,8 @@ Spend the cheapest instrument that answers the question (tier table + honest sig
   noms): `--dry-run` (gate preview, writes nothing) or `--skip-unscored` (promote only already-scored
   rows). Validate with `python3 tools/library/library_lint.py`.
 - **Release trains:** cut per the roadmap's version map when a sprint's gate passes; CHANGELOG per
-  merge batch. GitNexus is optional and its index refreshes nightly (machine runbook
-  `/Users/m1/Codex/runbooks/gitnexus.md`); no manual re-index.
+  merge batch. GitNexus is disabled on this machine (2026-10-06): no MCP, no skills, no nightly
+  refresh; use `rg` and file reads.
 - **When you need a decision** and the answer isn't in VISION/roadmap: run the `worldos-decide`
   skill (anchor → scorecard → adversarial check → 95% gate). If the decision lacks an eval,
   building the eval IS the next task. Escalate to the owner ONLY genuine taste/priority/business
