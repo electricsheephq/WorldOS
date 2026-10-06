@@ -292,7 +292,7 @@ python3 extensions/renderers/godot/tools/pack_sheet.py --frames <dir>/frames \
   `origin/main`**; never branch-flip the shared checkout. Merges can hit a transient "base branch was
   modified" race → retry.
 - **Godot 4.4+ writes `.gd.uid` files** — commit them. Gitignore `.godot/`, `*.import`, export outputs.
-- **After a merge batch**, refresh GitNexus once: `gitnexus analyze /Users/m1/WorldOS --name worldos --embeddings --index-only`.
+- **GitNexus** is optional and refreshes nightly; never run `gitnexus analyze` yourself (machine runbook `/Users/m1/Codex/runbooks/gitnexus.md`).
 
 <a name="backlog"></a>
 ## 9. The historical issue backlog (reference only until #1165 resolves)
