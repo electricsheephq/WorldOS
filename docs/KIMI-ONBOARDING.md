@@ -85,7 +85,7 @@ The skill surface is live-edited (worldos-dev touched Jul 15, blind-adjudicator 
 
 Do NOT port: Claude hooks, stop-guards, keepalive ticks (Claude-app mechanics; Kimi has its own turn lifecycle). `.mcp.json` (engine/rules/voice stdio servers) is portable in substance — substitute `${CLAUDE_PLUGIN_ROOT}` → `/Users/m1/WorldOS` if ever wired.
 
-**Known gap — GitNexus**: this repo's AGENTS.md mandates GitNexus `impact` before edits and `detect_changes` before committing, but Kimi has no `mcp__gitnexus__*` tools. Fallback: the CLI (`node .gitnexus/run.cjs analyze`, index fresh at Jul 16 17:12) + grep — or the owner grants an explicit waiver / wires the MCP.
+**GitNexus**: optional since 2026-10-06 (AGENTS.md no longer mandates `impact` / `detect_changes`). Kimi has no `mcp__gitnexus__*` tools; use grep and file reads. Never run `gitnexus analyze` — the machine's nightly refresh owns the index.
 
 ## 7. Kimi ↔ Claude interop contract (both sides co-drive)
 
