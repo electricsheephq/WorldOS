@@ -10,6 +10,8 @@
     "yaw": 45
    },
    "boxes": "boxes/crypt_kit_v1_boxes.json",
+   "liveRoom": "crypt",
+   "liveRoomMode": "occluder",
    "effects": [
     {
      "type": "fire_medium",

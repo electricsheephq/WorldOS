@@ -101,6 +101,33 @@ def lint_manifest_entry(key: str, entry: dict, unity_dir: Path) -> list:
             # footprint proxies — the room loses the exact occluders the plate was conditioned on.
             if not side.get("boxes"):
                 fails.append(f"{key}: boxes sidecar has NO occluder volumes (empty/missing `boxes`)")
+    fails += lint_live_room(key, entry)
+    return fails
+
+
+# ROOMS-ARE-THE-SCENE (#1793 Day 3): `liveRoom` names an edit-time-baked kit-room prefab the player
+# instantiates (Resources/LiveRooms/<id>.prefab). The prefab itself lives in the Unity project, not this
+# repo, so CI cannot check it exists — what it CAN make impossible is the silent-typo class: a `liveRoomMode`
+# the client does not understand falls through to "visible", which would ship the room as the PICTURE in a
+# room that was gated as an occluder. Unknown/misspelled values fail loud here instead.
+LIVE_ROOM_MODES = ("visible", "occluder")
+
+
+def lint_live_room(key: str, entry: dict) -> list:
+    fails = []
+    live = entry.get("liveRoom")
+    mode, keep = entry.get("liveRoomMode"), entry.get("liveRoomKeepBackdrop")
+    if live is None:
+        if mode is not None or keep is not None:
+            fails.append(f"{key}: liveRoomMode/liveRoomKeepBackdrop without `liveRoom` — the client never reads them")
+        return fails
+    if not isinstance(live, str) or not live.strip():
+        fails.append(f"{key}: `liveRoom` must be a non-empty room id string")
+    if mode is not None and mode not in LIVE_ROOM_MODES:
+        fails.append(f"{key}: liveRoomMode={mode!r} is not one of {LIVE_ROOM_MODES} — the client would "
+                     f"silently render the room VISIBLE")
+    if keep is not None and not isinstance(keep, bool):
+        fails.append(f"{key}: liveRoomKeepBackdrop must be a bool, got {type(keep).__name__}")
     return fails
 
 
