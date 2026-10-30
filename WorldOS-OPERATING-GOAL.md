@@ -70,7 +70,8 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  RE-MEASURE — the binding step. Run the HARDENED sequential VM sweep (#844: quota-safe,
+     NEXT ACTION:  RE-MEASURE — the binding step. First land the local part-B sweep (#1822; the VM
+                   lane was retired 2026-10-30), then run the HARDENED sequential sweep (#844: quota-safe,
                    429-aborts, ABORTED-not-a-number) at CURRENT main + a same-SHA Mac part-A handoff →
                    full rollup (--handoff-json + --support-preflight-json + --abort-marker) → ruler-stamped
                    row (run_id v1.0.4-rc4-<sha>; lens auto-stamps; ONE branch — scores.db is a committed
