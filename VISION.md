@@ -156,7 +156,7 @@ Tier-0/1 result as a release verdict):
   rotated persona + a ≥6-beat duo (below 6 disarms the FATAL behavioral floors). Iteration signal only.
 - **Tier 2 — the 5-persona sweep + Mac native part-A → RRI** (~$40, ~90min): milestone verdict
   only, after 0+1 pass; ≤3 sweeps per milestone. Heavy QA runs locally on this 14-core / 64 GB Mac;
-  `support-vm-1` is a customer box and is not the default sweep host. Log every scored run to the
+  `support-vm-1` was retired on 2026-10-30. Log every scored run to the
   ledger (`qa/scores_db.py`).
 
 **Release ladder:** Engine Excellent → **Player-Ready Beta** (a real built `.app`; a no-prior-

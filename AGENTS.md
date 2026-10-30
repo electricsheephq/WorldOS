@@ -11,7 +11,7 @@ Bootstrap order: docs/OPERATIONS.md → docs/roadmap/NOW.md → docs/ACTIVE-GOAL
 - Use `/Users/m1/Codex` for Codex artifacts, scratch files, screenshots, reports, and downloaded CI/VM artifacts.
 - Use same-disk local worktrees for GUI/native-app edits that must launch against private art. Lexar worktrees are fine for docs, backend-only, and non-GUI slices that do not launch the app against private art.
 - Before running install, build, or test commands, verify `pwd`. If a GUI/native app run is not in `/Users/m1/WorldOS` or a same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/m1/WorldOS`, explain why.
-- Prefer the local Mac (14 cores / 64 GB) for heavyweight validation, full suites, matrix tests, long integration tests, and persona sweeps; use GitHub Actions when a remote runner is better suited. `support-vm-1` is a customer box, not the default heavy-sweep host.
+- Prefer the local Mac (14 cores / 64 GB) for heavyweight validation, full suites, matrix tests, long integration tests, and persona sweeps; use GitHub Actions when a remote runner is better suited. The support VM lane (support-vm-1) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.
 - Run local tests only for fast feedback, local-only reproduction, validating unpushed edits, or Mac-only `.app` proof. Use the narrowest focused command first.
 - Do not launch multiple heavyweight local suites or persona sweeps in parallel on this Mac.
 - If local test work causes memory pressure, stop it, report the command/path, and switch to a narrower check or GitHub CI.
@@ -25,14 +25,12 @@ Bootstrap order: docs/OPERATIONS.md → docs/roadmap/NOW.md → docs/ACTIVE-GOAL
 - The current `qa/RRI.json` from `f5500ac` is partial/harness-contaminated evidence, not a release verdict.
 - Release evidence requires the RRI contract in `qa/release_readiness.py`: expected/completed/missing personas, disk-backed scores, behavior/UI/image/palette evidence, same build SHA, and non-partial status.
 
-## Support VM
+## Support VM (retired 2026-10-30)
 
-- Target VM: owner-provided 32GB support VM, `support-vm-1`.
-- Connection/auth details are operator-only and should stay outside tracked repo docs.
-- Use `support-vm-1` only for explicitly customer-box or remote-runner work after its credentials/config are intentionally installed and verified there; local heavy QA remains the default.
-- VM preflight must record VM identity, repo checkout path, branch/SHA, Codex CLI version, auth/profile status, `uv`, Node/npm/Playwright availability, private-art status or explicit backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and artifact return path under `/Users/m1/Codex`.
-- The VM cannot prove Mac-only surfaces. `WorldOS.app` build/launch, native #356, and built-app UI play evidence stay on this Mac or macOS CI.
-- VM artifacts can feed RRI only when `run.json`, `score.json`, `session_surface.final.json`, network/image evidence, palette-live evidence, and build SHA are explicit. Otherwise the result remains partial/harness-contaminated.
+- The support VM lane (support-vm-1) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.
+- Historical rules, kept for audit context: VM preflight had to record VM identity, repo checkout path, branch/SHA, Codex CLI version, auth/profile status, `uv`, Node/npm/Playwright availability, private-art status or explicit backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and artifact return path under `/Users/m1/Codex`.
+- The VM could not prove Mac-only surfaces. `WorldOS.app` build/launch, native #356, and built-app UI play evidence stay on this Mac or macOS CI.
+- VM artifacts could feed RRI only when `run.json`, `score.json`, `session_surface.final.json`, network/image evidence, palette-live evidence, and build SHA are explicit. Otherwise the result remains partial/harness-contaminated.
 
 ## GEX44 GPU host (HISTORICAL — retired 2026-08-06)
 
@@ -42,7 +40,7 @@ build, capture, or save against `46.4.26.123`, `/home/unity`, or the retired `ge
 Unity 6000.5.6f1 runs at
 `/Users/m1/worldos-unity` (mirror `/Users/m1/Codex/worldos-unity-mirror`) via
 `extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with the WorldOS macOS menu command and run
-QA through `qa/qa_sandbox.py`. Local Mac heavy QA is primary; `support-vm-1` is a customer box.
+QA through `qa/qa_sandbox.py`. Local Mac heavy QA is primary; `support-vm-1` was retired 2026-10-30.
 
 ## Shared Owned-Repo Policy
 

@@ -14,18 +14,16 @@ universe-system that generates worlds. Source-available commercial product, BG-f
 Godot GT2 is archived as reference/extension material under `extensions/renderers/godot/`.
 **AI asset generation** (3D chars, rigging, painterly backdrops, sprites) → the `asset-gen` skill.
 
-> **⚠ HEAVY QA SWEEPS (5-persona / RRI) → USE THE SUPPORT VM, NOT LOCAL.** The 16 GB Mac OOMs mid-sweep
-> (proven 2026-06-02: cratered to 147 M free, personas 2–5 backends never minted, shipped a junk PARTIAL RRI 2.7).
-> Documented lane: **`WorldOS-GUI-RUNBOOK.md` § "Support VM lane (heavy sweeps)"** + memory note
-> `project_worldos_vm_sweep_lane.md`. The Mac runs the **macOS-only** native Part-A (#356 `.app` launcher +
-> built-app screenshots); the **32 GB evaos-support VM** (`root@178.104.123.213`, repo `/root/worldos-qa/WorldOS`,
-> harness `sweep_v2.sh`) runs the heavy **part-B** 5-persona sweep against the **real OpenWorlds browser GUI**
-> (server.py + playwright/chromium — NOT a degraded proxy). RRI rolls up Mac `--handoff-json` + same-SHA VM dirs.
-> **On resume after a compaction, re-read that runbook section FIRST** — do not rebuild the QA plan from memory
-> or fight local RAM. For per-beat DM latency, see the `worldos-latency-forensics` skill.
+> **Heavy QA runs on the local Mac.** The support VM lane (support-vm-1) was retired on 2026-10-30. See evaos-support-control#1109.
+> The release part-B 5-persona sweep has no local port yet: its harness was VM-only (#1822).
+> (Historical: the old 16 GB Mac OOMed mid-sweep on 2026-06-02, which is why the VM lane existed. The Mac now
+> has 14 cores / 64 GB.)
+> For per-beat DM latency, see the `worldos-latency-forensics` skill.
 
-## VM GATE SWEEP — exact procedure (heavy part-B; the thing you keep re-deriving)
-**The full gate is ONE command on the 32 GB VM. Update THIS section when the harness changes** — it is
+## VM GATE SWEEP — historical procedure (retired 2026-10-30 — do not follow)
+
+**The support VM lane (support-vm-1) was retired on 2026-10-30; local port of this sweep: #1822. See evaos-support-control#1109.** Kept as a record only.
+The full gate was ONE command on the 32 GB VM — it was
 the source of truth so a cold post-compaction agent never re-learns it (it cost a real diagnosis 2026-06-03).
 
 **The VM** (`evaos-support`): `root@178.104.123.213`, key `~/.openclaw/secrets/cloud-deploy-key` (key-only

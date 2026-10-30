@@ -17,7 +17,7 @@
 | Latest fast GUI handoff proof | `handoff-20260607-da05101-current-main-clean` under `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/` |
 | Latest release verdict | None after RRI hardening |
 | Latest RRI attempt | `gate-f5500ac-partial` is partial / harness-contaminated, not release evidence |
-| Latest support-VM preflight | `da05101-preflight` is blocked: VM checkout `e5c0a5f` vs GitHub `da05101`, Codex auth/profile not proven, and #466 requires private art mode `required` |
+| Latest support-VM preflight (lane retired 2026-10-30) | `da05101-preflight` is blocked: VM checkout `e5c0a5f` vs GitHub `da05101`, Codex auth/profile not proven, and #466 requires private art mode `required` |
 | Fast GUI gate command | `python3 qa/app_handoff_gate.py --web-beats 5 --built-beats 5 --codex-moves 1 --art-root /Users/lume/WorldOS-val --scripted-budget 1.00 --codex-budget 3.00 --timeout 90 --codex-timeout 240` |
 | Next release action | #466 clean non-partial RRI on one SHA, pairing same-SHA Mac handoff proof with complete persona/backend artifacts |
 

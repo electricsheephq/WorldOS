@@ -26,7 +26,7 @@ largely gone — GLM is a fine DM for nearly all QA.
 | **Arc smoke** | `qa/run_arc_smoke.sh <run> <adventure> 4` (set the model — defaults Sonnet!) | ~5 m | Does a companion arc ENGAGE (met + approval moves off 0)? |
 | **Combat-sprint median** | `qa/run_combat_sprint.sh <run>` ×3 → median of `*.angrydm.json` | Opus ~5/run | The HONEST mechanical gate (pre-seeded, deterministic coverage). Baseline 3.7. |
 | **3-act full run** | `qa/run_duo.sh` with the embergloom prompt, ≥24 beats (Opus or GLM) | hours | Story + companion + combat over a full authored arc. |
-| **5-persona VM sweep + RRI** | the support-VM lane (`qa/vm/sweep_v2.sh`) — see `WorldOS-GUI-RUNBOOK.md` | hours, VM | The release index (story/mech/sat per persona + the 11 RRI gates). **RELEASE-only.** |
+| **5-persona sweep + RRI** | no runnable lane until the local port lands (#1822); the support-VM lane was retired 2026-10-30 (evaos-support-control#1109) — see `WorldOS-GUI-RUNBOOK.md` | hours | The release index (story/mech/sat per persona + the 11 RRI gates). **RELEASE-only.** |
 
 ## What to run for which change
 | You changed… | Run (fast → slow) |
@@ -38,13 +38,13 @@ largely gone — GLM is a fine DM for nearly all QA.
 | **viewer / OpenWorlds UI** | `qa/ui_playtest.sh` (blind persona) + the viewer tests; for combat UI, `qa/preview_combat.sh` + watch `#battle` |
 | **Unity/current visual renderer** | GPU-VM Unity/visual-critic proof for renderer work; keep Linux CI to deterministic SceneGrid/render-contract tests unless a PR intentionally changes renderer-host code. |
 | **Godot reference/extension material** | Optional/manual only: `godot --headless --path extensions/renderers/godot --import` + the archived conformance/screenshot lane when explicitly touching `extensions/renderers/godot/`. Do not make it a required merge gate. |
-| **a RELEASE** (not just a tag) | the FULL round: `combat_smoke` + beat smoke + a 3-act run + **5-persona VM sweep + RRI** + the Mac native part-A |
+| **a RELEASE** (not just a tag) | the FULL round: `combat_smoke` + beat smoke + a 3-act run + **5-persona sweep + RRI** (local port pending, #1822) + the Mac native part-A |
 
 ## Tags vs releases
 - **Tag liberally** — at every clean milestone (a feature lands + its level-appropriate tests pass).
   A tag is a checkpoint; it does NOT require the full sweep.
 - **Release rarely** — a real release (`gh release`, GA framing) requires the **full round** above,
-  including a non-partial **5-persona VM sweep + RRI** and the Mac native part-A at one SHA. Only then
+  including a non-partial **5-persona sweep + RRI** and the Mac native part-A at one SHA. Only then
   is a CHANGELOG `[Unreleased]` band promoted to a numbered GA.
 
 ## Logging
