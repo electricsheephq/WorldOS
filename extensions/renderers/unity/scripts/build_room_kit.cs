@@ -144,6 +144,8 @@ public static class BuildRoomKit
     internal const string KitHelperFire = "KitRoom_Fire";
     internal const string KitHelperTombGlow = "KitRoom_TombGlow";
     internal const string KitHelperCoolKey = "KitRoom_CoolKey";
+    // the token BuildMacOSPlayer byte-scans for; the live-room bake must leave none of it behind.
+    internal const string QAKitPrefix = "KitRoom_";
 
     // Occluder-sidecar export DERIVED from the built kit scene: per-mass true renderer bounds instead of
     // hand-authored chunky volumes. The felt-truth failure this kills (owner playtest 2026-07-23): the
@@ -379,6 +381,7 @@ public static class BuildRoomKit
 
         // ── PROPS: pillars / sarcophagus / braziers / kit-or-fallback ──────────────────────────────
         var propParent = Child(root, "Props");
+        _propKindById.Clear();
         var braziers = new List<Vector3>();       // world positions for the fire-anchor point lights
         Vector3 sarcGlowPos = Vector3.zero; bool haveSarcGlow = false;   // r3: warm centre-glow over the tomb
         if (props != null)
@@ -389,6 +392,7 @@ public static class BuildRoomKit
                 string kind = (GetStr(p, "kind", "prop") ?? "prop").ToLowerInvariant();
                 if (kind == "wall_run") continue;                              // handled above
                 string pid = GetStr(p, "id", "prop") ?? "prop";
+                _propKindById[pid] = kind;                                     // geometry kind = texture-mapping truth (Day 2)
                 var cells = GetList(p, "cells"); if (cells == null || cells.Count == 0) continue;
                 Footprint fp = FootprintOf(cells, cols, rows); if (!fp.valid) continue;
 
@@ -627,6 +631,8 @@ public static class BuildRoomKit
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.20f, 0.22f, 0.30f);                      // r3 cool stone ambient fill
 
+        ApplyPainterlyRoomTextures(root);
+
         // ── camera (paint contract, 1344x768 fit) so the SAVED scene carries the plate-contract rig ──
         var cam = MainCam(create: true);
         SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
@@ -654,6 +660,90 @@ public static class BuildRoomKit
         Debug.Log($"[KitRoom] BUILT {rootName} @ {cols}x{rows}: floor={nFloor} walls={nWall} doors={nDoor} " +
                   $"pillars={nPillar} sarcophagi={nSarc} braziers={nBrazier} buttresses={nButtress} plinths={nPlinth} " +
                   $"kit_props={nKit} fallbacks={nFallback} material_fixes={nMatFix}");
+    }
+
+    /// <summary>propId → geometry kind for the room being built (filled by BuildRoom's props loop). The placed
+    /// object names carry the propId but not always the kind (e.g. "urn_goods_fallback"), so the texture mapping
+    /// resolves the kind from the geometry first and only falls back to the name.</summary>
+    static readonly Dictionary<string, string> _propKindById = new Dictionary<string, string>();
+
+    static string GeometryKindFor(string placedName)
+    {
+        string best = null; int bestLen = -1;
+        foreach (var kv in _propKindById)
+            if (placedName.StartsWith(kv.Key, StringComparison.OrdinalIgnoreCase) && kv.Key.Length > bestLen) { best = kv.Value; bestLen = kv.Key.Length; }
+        return best;
+    }
+
+    static void ApplyPainterlyRoomTextures(GameObject root)
+    {
+        string raw = Environment.GetEnvironmentVariable("WORLDOS_ROOM_TEXTURES");
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        string dir = raw.Replace('\\', '/').TrimEnd('/');
+        string assets = Application.dataPath.Replace('\\', '/');
+        if (Path.IsPathRooted(dir) && dir.StartsWith(assets + "/", StringComparison.OrdinalIgnoreCase))
+            dir = "Assets" + dir.Substring(assets.Length);
+        if (dir != "Assets" && !dir.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+        { Debug.LogWarning($"[BuildRoomKit] WORLDOS_ROOM_TEXTURES must be under Assets: {raw}"); return; }
+        string diskDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, dir);
+        if (!Directory.Exists(diskDir))
+        { Debug.LogWarning($"[BuildRoomKit] WORLDOS_ROOM_TEXTURES directory not found: {dir}"); return; }
+
+        var shader = Shader.Find("WorldOS/PainterlyRoom");
+        if (shader == null) { Debug.LogError("[BuildRoomKit] WorldOS/PainterlyRoom shader not found."); return; }
+        var cache = new Dictionary<string, Material>();
+        var kinds = new HashSet<string>();
+        int nRenderers = 0, nMaterials = 0;
+        Transform lights = root.transform.Find("Lights");
+        foreach (var rend in root.GetComponentsInChildren<Renderer>(true))
+        {
+            if (rend == null || (lights != null && rend.transform.IsChildOf(lights))) continue;
+            bool skip = false;
+            foreach (var old in rend.sharedMaterials)
+                if (old != null && old.shader != null && old.shader.name == "Unlit/Color") { skip = true; break; }
+            if (skip) continue;
+
+            Transform placed = rend.transform;
+            while (placed.parent != null && placed.parent.parent != root.transform) placed = placed.parent;
+            // Placed names are "<propId>_<KitPiece>" (e.g. gate_brazier_l_Brazier, stone_pillar_ne_Pillar), so the
+            // material class is read from the WHOLE lowercased name, never from the first '_' token.
+            string kind = placed.name.ToLowerInvariant();
+            string geoKind = GeometryKindFor(placed.name);
+            if (!string.IsNullOrEmpty(geoKind)) kind = geoKind.ToLowerInvariant() + "|" + kind;   // kind first, name as fallback
+            // Light sources keep their kit materials (emissive bowls/flames are the beacons the plate is judged by).
+            if (kind.Contains("brazier") || kind.Contains("torch") || kind.Contains("candle") || kind.Contains("fire")
+                || kind.Contains("flame") || kind.Contains("lamp") || kind.Contains("glow") || kind.Contains("ember")) continue;
+            string file = RoomTextureFile(kind), assetPath = dir + "/" + file;
+            if (!cache.TryGetValue(assetPath, out Material mat))
+            {
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+                if (tex == null) Debug.LogWarning($"[BuildRoomKit] PainterlyRoom texture not found: {assetPath}");
+                else
+                {
+                    mat = new Material(shader) { name = "PainterlyRoom_" + Path.GetFileNameWithoutExtension(file) };
+                    mat.SetTexture("_MainTex", tex);
+                    mat.SetFloat("_TriScale", file == "floor.png" || file == "wall.png" || file == "pillar.png" ? 2f : 1f);
+                    nMaterials++;
+                }
+                cache[assetPath] = mat;
+            }
+            if (mat == null) continue;
+            var assigned = new Material[rend.sharedMaterials.Length];
+            for (int i = 0; i < assigned.Length; i++) assigned[i] = mat;
+            rend.sharedMaterials = assigned; nRenderers++; kinds.Add(kind);
+        }
+        Debug.Log($"[BuildRoomKit] PainterlyRoom textures from {dir}: {nRenderers} renderers, {nMaterials} materials, {kinds.Count} kinds");
+    }
+
+    static string RoomTextureFile(string kind)
+    {
+        if (kind.Contains("pillar") || kind.Contains("post") || kind.Contains("column")) return "pillar.png";
+        if (kind.Contains("floor")) return "floor.png";
+        if (kind.Contains("sarcophagus") || kind.Contains("tomb") || kind.Contains("altar") || kind.Contains("dais") || kind.Contains("throne")) return "tomb.png";
+        if (kind.Contains("rubble") || kind.Contains("rock") || kind.Contains("debris")) return "rubble.png";
+        if (kind.Contains("barrel") || kind.Contains("crate") || kind.Contains("table") || kind.Contains("bench") || kind.Contains("bar") || kind.Contains("counter") || kind.Contains("shelf") || kind.Contains("wood")) return "wood.png";
+        if (kind.Contains("wall") || kind.Contains("stone") || kind.Contains("ruin") || kind.Contains("jamb") || kind.Contains("lintel") || kind.Contains("arch") || kind.Contains("door") || kind.Contains("parapet")) return "wall.png";
+        return "wall.png";
     }
 
     // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1263,6 +1353,176 @@ public static class BuildRoomKit
             if (t2 != null) UnityEngine.Object.DestroyImmediate(t2);
             rt.Release(); UnityEngine.Object.DestroyImmediate(rt);
         }
+    }
+
+
+    // ════════════════════════════════════════════════════════════════════════════════════════════════
+    //  BAKE — the live room ships in the player (#1793 Day 3, "the room is the scene")
+    // ════════════════════════════════════════════════════════════════════════════════════════════════
+    // Turn the kit room standing in the editor scene (after BuildRoom + the room's knob set) into a
+    // PREFAB the built player can Resources.Load and instantiate in front of / instead of the painted
+    // plate (CombatSurfaceClient.ApplyRoom). Three constraints shape every step below:
+    //
+    //  1. NEVER mutate the QA root. The scene's KitRoom_<id> is the capture/scoring subject and the
+    //     canonical scene is dirty-in-memory on purpose; everything here happens on a DUPLICATE that is
+    //     destroyed again before this method returns. The scene is never saved.
+    //  2. NOTHING in the prefab may be named `KitRoom_*`. BuildMacOSPlayer byte-scans the built data for
+    //     that token and REFUSES the build (that gate exists because kit rooms shipped inside a player
+    //     three times). The copy and every descendant are renamed KitRoom_ -> LiveRoom_.
+    //  3. NO in-memory materials may survive. The kit builds its materials at runtime (knobs.py then
+    //     mutates them), so they have no asset path — a prefab saved with those references would ship
+    //     with MISSING materials (magenta). Every material without an asset path is written under
+    //     Assets/Resources/LiveRooms/<id>/ and re-pointed before the prefab is saved.
+    //
+    // The fire globals the PainterlyRoom shader reads are captured HERE (from the live shader globals
+    // when the knob script has set them, else re-derived from the room's point lights) and baked onto a
+    // PainterlyRoomLights component + a <id>.json sidecar, so the player never depends on light order.
+    const string LiveRoomPrefix = "LiveRoom_";
+    const string LiveRoomsDir = "Assets/Resources/LiveRooms";
+    // knobs.py contract: w of _WOSFirePos = falloff range, _WOSFireColor = light.color * gain. Only used
+    // on the FALLBACK path (globals not set, e.g. after a script recompile cleared them).
+    static float FireRange() => EnvFloat("WORLDOS_FIRE_RANGE", 11f);
+    static float FireGain() => EnvFloat("WORLDOS_FIRE_GAIN", 3f);
+    static float EnvFloat(string k, float def)
+    {
+        var s = Environment.GetEnvironmentVariable(k);
+        return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : def;
+    }
+
+    [MenuItem("Tools/WorldOS/Kit/Bake Live Room Prefab")]
+    public static void BakeLiveRoomPrefab()
+    {
+        string geoPath = GeoPath();
+        string roomId = Environment.GetEnvironmentVariable("WORLDOS_KIT_ROOM_ID");
+        if (string.IsNullOrEmpty(roomId) && File.Exists(geoPath))
+        {
+            var geo = MiniJson.Parse(File.ReadAllText(geoPath)) as Dictionary<string, object>;
+            if (geo != null) roomId = RoomId(geo, geoPath);
+        }
+        roomId = string.IsNullOrEmpty(roomId) ? "room" : DisambiguateRoomId(Sanitize(roomId));
+
+        var src = GameObject.Find("KitRoom_" + roomId) ?? FindAnyKitRoom();
+        if (src == null) { Debug.LogError("[BakeLiveRoom] no KitRoom_* root in the scene — run Build Room From Kit (+ the room's knob set) first."); return; }
+
+        // (1) duplicate; the QA root is never touched from here on.
+        var copy = UnityEngine.Object.Instantiate(src);
+        copy.name = LiveRoomPrefix + roomId;
+        copy.transform.SetPositionAndRotation(src.transform.position, src.transform.rotation);
+        copy.transform.localScale = src.transform.localScale;
+        try
+        {
+            // The cast proxy (fighter + monsters) is a LOOK reference for the editor capture, never room
+            // geometry — the player spawns its own actors from the registry. Drop it from the copy.
+            int cast = 0;
+            foreach (var t in copy.GetComponentsInChildren<Transform>(true))
+                if (t != null && t != copy.transform && t.name == "Cast") { UnityEngine.Object.DestroyImmediate(t.gameObject); cast++; }
+
+            // (2) rename: no descendant may carry the KitRoom_ token the build gate scans for.
+            int renamed = 0;
+            foreach (var t in copy.GetComponentsInChildren<Transform>(true))
+                if (t != null && t.name.Contains(QAKitPrefix)) { t.name = t.name.Replace(QAKitPrefix, LiveRoomPrefix); renamed++; }
+
+            // (3) materials -> assets, then re-point every renderer at the saved copies.
+            Directory.CreateDirectory(LiveRoomsDir + "/" + roomId);
+            AssetDatabase.Refresh();
+            var saved = new Dictionary<Material, Material>();
+            var seen = new List<Material>();
+            int renderers = 0;
+            foreach (var r in copy.GetComponentsInChildren<Renderer>(true))
+            {
+                renderers++;
+                var mats = r.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var m = mats[i];
+                    if (m == null) continue;
+                    if (!seen.Contains(m)) seen.Add(m);
+                    if (!string.IsNullOrEmpty(AssetDatabase.GetAssetPath(m))) continue;   // already an asset — keep the reference
+                    if (!saved.TryGetValue(m, out var asset))
+                    {
+                        // index-suffixed (not GenerateUniqueAssetPath) so the file set is deterministic
+                        // across bakes and never carries the " 1" spaces Unity's uniquifier appends —
+                        // the kit's braziers legitimately hold a dozen distinct materials all named "Standard".
+                        string mp = $"{LiveRoomsDir}/{roomId}/mat_{saved.Count:00}_{Sanitize(m.name)}.mat";
+                        asset = new Material(m);
+                        asset.name = Path.GetFileNameWithoutExtension(mp);
+                        AssetDatabase.CreateAsset(asset, mp);
+                        saved[m] = asset;
+                    }
+                    mats[i] = asset;
+                }
+                r.sharedMaterials = mats;
+            }
+            AssetDatabase.SaveAssets();
+
+            // (4) fire globals: prefer what the shader is ACTUALLY rendering with (the knob set the room
+            // of record was captured under); fall back to re-deriving them from the room's point lights
+            // the way knobs.py does when the globals are unset (a script recompile clears them).
+            int lights = 0;
+            foreach (var l in copy.GetComponentsInChildren<Light>(true)) lights++;
+            var pos = new Vector4[PainterlyRoomLights.MaxFires];
+            var col = new Vector4[PainterlyRoomLights.MaxFires];
+            int n = 0;
+            string fireSrc = "globals";
+            float gcount = Shader.GetGlobalFloat(PainterlyRoomLights.FireCountGlobal);
+            var gpos = Shader.GetGlobalVectorArray(PainterlyRoomLights.FirePosGlobal);
+            var gcol = Shader.GetGlobalVectorArray(PainterlyRoomLights.FireColorGlobal);
+            if (gcount > 0f && gpos != null && gcol != null && gpos.Length >= (int)gcount && gcol.Length >= (int)gcount)
+            {
+                n = Mathf.Min((int)gcount, PainterlyRoomLights.MaxFires);
+                for (int i = 0; i < n; i++) { pos[i] = gpos[i]; col[i] = gcol[i]; }
+            }
+            else
+            {
+                fireSrc = "lights";
+                float rng = FireRange(), gain = FireGain();
+                foreach (var l in copy.GetComponentsInChildren<Light>(true))
+                {
+                    if (l == null || l.type != LightType.Point) continue;
+                    if (l.name.Contains("CoolKey") || l.name.Contains("TombGlow")) continue;   // key/ambient fills, not fires
+                    if (n >= PainterlyRoomLights.MaxFires) break;
+                    var p = l.transform.position;
+                    pos[n] = new Vector4(p.x, p.y, p.z, rng);
+                    col[n] = new Vector4(l.color.r * gain, l.color.g * gain, l.color.b * gain, 1f);
+                    n++;
+                }
+            }
+            var prl = copy.GetComponent<PainterlyRoomLights>() ?? copy.AddComponent<PainterlyRoomLights>();
+            prl.roomId = roomId; prl.firePos = pos; prl.fireColor = col; prl.fireCount = n;
+
+            // (4b) CAMERA GRADE (#1793 Day 3b). The blind beauty panel judged a frame graded by the Beautify
+            // component that lives ONLY in this editor scene's memory — the player would otherwise ship an
+            // ungraded picture of the same room. Read the live values off the editor camera when the asset is
+            // present; otherwise bake the panel's declared block, so the prefab always names a grade.
+            var grade = new PainterlyRoomLights.CameraGrade();
+            bool gradeRead = PainterlyRoomLights.ReadGrade(MainCam(create: false), grade);
+            prl.grade = grade;
+
+            // (5) the human-readable sidecar (also the runtime fallback if the component is ever reset).
+            var fg = new PainterlyRoomLights.FireGlobals { id = roomId, count = n, pos = pos, color = col, grade = grade };
+            string sidecarPath = $"{LiveRoomsDir}/{roomId}.json";
+            File.WriteAllText(sidecarPath, JsonUtility.ToJson(fg, true));
+            AssetDatabase.ImportAsset(sidecarPath, ImportAssetOptions.ForceUpdate);   // -> a TextAsset the player can Resources.Load
+
+            // (6) refuse to write a prefab that would red the build gate or ship missing materials.
+            foreach (var t in copy.GetComponentsInChildren<Transform>(true))
+                if (t.name.Contains(QAKitPrefix))
+                { Debug.LogError("[BakeLiveRoom] ABORT: '" + t.name + "' still carries " + QAKitPrefix + " — the build scan would refuse this prefab."); return; }
+            foreach (var r in copy.GetComponentsInChildren<Renderer>(true))
+                foreach (var m in r.sharedMaterials)
+                    if (m != null && string.IsNullOrEmpty(AssetDatabase.GetAssetPath(m)))
+                    { Debug.LogError("[BakeLiveRoom] ABORT: material '" + m.name + "' is still in-memory — the prefab would ship with a missing material."); return; }
+
+            string prefabPath = $"{LiveRoomsDir}/{roomId}.prefab";
+            var prefab = PrefabUtility.SaveAsPrefabAsset(copy, prefabPath, out bool ok);
+            AssetDatabase.SaveAssets();
+            if (!ok || prefab == null) { Debug.LogError("[BakeLiveRoom] SaveAsPrefabAsset FAILED -> " + prefabPath); return; }
+
+            Debug.Log($"[BakeLiveRoom] {roomId}: {renderers} renderers, {seen.Count} materials ({saved.Count} newly saved), "
+                      + $"{lights} lights, {n} fires (src={fireSrc}), grade={(gradeRead ? "read-from-camera" : "defaults")}, "
+                      + $"cast groups dropped={cast}, renamed={renamed} -> {prefabPath}");
+        }
+        finally { UnityEngine.Object.DestroyImmediate(copy); }
     }
 
     static Camera MainCam(bool create)
