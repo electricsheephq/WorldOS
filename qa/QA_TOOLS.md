@@ -7,7 +7,7 @@ Default local paths:
 
 - App/private-art checkout: `/Users/m1/WorldOS`.
 - Evidence root: `/Users/m1/Codex`.
-- Heavy persona/backend sweeps: the local Mac or GitHub CI. The support VM lane (support-vm-1, 178.104.123.213) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.
+- Heavy persona/backend sweeps: the local Mac or GitHub CI. The support VM lane (support-vm-1) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109. The release 5-persona sweep has no local port yet (#1822).
 
 ## Fast GUI And Native App Gates
 
@@ -52,7 +52,8 @@ Stable app failure buckets are:
 
 RRI requires a non-partial five-persona result on one build SHA. A handoff gate can feed the native
 app proof through `--handoff-json`, but it cannot fill in missing persona artifacts. The support-VM
-lane (and its preflight) was retired on 2026-10-30; see evaos-support-control#1109.
+lane (and its preflight) was retired on 2026-10-30; see evaos-support-control#1109. Until #1822 lands,
+`qa/release_readiness.py` still requires `--support-preflight-json` for a persona + handoff rollup.
 When a sweep uses remote/persona artifacts plus Mac handoff proof, pass both evidence files into
 the RRI rollup path: `qa/release_gate.sh --handoff-json <handoff.json> --support-preflight-json
 <support_vm_preflight.json> ...`. Missing or stale support-preflight evidence must stay a failed

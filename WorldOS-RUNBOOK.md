@@ -13,7 +13,7 @@
 > checkout and should be used for GUI/native-app testing. Use `/Users/m1/Codex` for evidence,
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
 > permissions can break local AI/browser tests. Heavy backend/persona sweeps run on this Mac or GitHub CI.
-> The support VM lane (support-vm-1, 178.104.123.213) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109. Mac-only built-app proof remains local/macOS CI.
+> The support VM lane (support-vm-1) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109. Mac-only built-app proof remains local/macOS CI.
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the

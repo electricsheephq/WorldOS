@@ -14,13 +14,15 @@ universe-system that generates worlds. Source-available commercial product, BG-f
 Godot GT2 is archived as reference/extension material under `extensions/renderers/godot/`.
 **AI asset generation** (3D chars, rigging, painterly backdrops, sprites) → the `asset-gen` skill.
 
-> **Heavy QA sweeps (5-persona / RRI) run on the local Mac.** The support VM lane (support-vm-1, 178.104.123.213) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.
+> **Heavy QA runs on the local Mac.** The support VM lane (support-vm-1) was retired on 2026-10-30. See evaos-support-control#1109.
+> The release part-B 5-persona sweep has no local port yet: its harness was VM-only (#1822).
 > (Historical: the old 16 GB Mac OOMed mid-sweep on 2026-06-02, which is why the VM lane existed. The Mac now
-> has 14 cores / 64 GB and runs both native Part-A and the part-B 5-persona sweep.)
+> has 14 cores / 64 GB.)
 > For per-beat DM latency, see the `worldos-latency-forensics` skill.
 
 ## VM GATE SWEEP — historical procedure (retired 2026-10-30 — do not follow)
-**The support VM lane (support-vm-1, 178.104.123.213) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.** Kept as a record only.
+
+**The support VM lane (support-vm-1) was retired on 2026-10-30; local port of this sweep: #1822. See evaos-support-control#1109.** Kept as a record only.
 The full gate was ONE command on the 32 GB VM — it was
 the source of truth so a cold post-compaction agent never re-learns it (it cost a real diagnosis 2026-06-03).
 

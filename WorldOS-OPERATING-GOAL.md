@@ -24,8 +24,8 @@
      WORKTREES:    For tracked edits, prefer same-disk local worktrees when GUI/app tests need assets.
                    Use /Users/m1/Codex for evidence/snapshots and Lexar worktrees only for
                    non-GUI/doc/backend slices that do not launch the app against private art.
-     SUPPORT VM:   RETIRED 2026-10-30 (support-vm-1, 178.104.123.213); use the local Mac lane. See
-                   evaos-support-control#1109. Historical record follows: 32GB support VM. Connection/auth details lived
+     SUPPORT VM:   RETIRED 2026-10-30 (support-vm-1); use the local Mac lane. See
+                   evaos-support-control#1109. HISTORICAL RECORD ONLY, do not follow: 32GB support VM. Connection/auth details lived
                    in local operator-only evidence/runbooks, not tracked repo docs. Use it for
                    heavy backend/persona sweeps only after Codex/config/credentials are intentionally
                    installed. The default VM persona lane is Codex DM plus Codex UI player and requires
@@ -297,10 +297,10 @@ verifier; can revert the goal to "fix" anytime.
   `/usr/bin/find` launched by the test/diagnostic environment. Treat that screenshot prompt as harness
   contamination unless a clean run shows `WorldOSApp`/WebKit itself accessing a protected library path.
 - The next gate evidence step is issue #466: a clean non-partial five-persona RRI from one explicit SHA.
-  The easiest current path is a support-VM sweep pinned to `da05101`, gated first by
+  It needs a local part-B sweep first (#1822); the support VM `support-vm-1` was retired 2026-10-30.
+  (Historical, do not follow: the old path was a support-VM sweep pinned to `da05101`, gated first by
   `qa/support_vm_preflight.py --expected-sha da05101`, and paired with the `da05101` handoff JSON. If the
-  sweep runs on a newer `origin/main` tip, rerun the Mac handoff on that same SHA first.
-  (Historical; the support VM `support-vm-1` was retired 2026-10-30.) Heavy backend/persona sweeps belonged on the 32GB support VM once auth/config
+  sweep ran on a newer `origin/main` tip, the Mac handoff was rerun on that same SHA first.) Heavy backend/persona sweeps belonged on the 32GB support VM once auth/config
   are intentionally installed there; connection details are kept outside tracked docs. The 2026-06-07
   repo-owned support preflight for `da05101` wrote
   `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/` (historical path — /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/; that machine is gone, see NOW.md) and returned `verdict=blocked`:

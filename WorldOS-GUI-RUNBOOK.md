@@ -248,7 +248,7 @@ evidence gaps can count as release evidence.
   4/5 derived — a self-report-coverage artifact, not a quality verdict). Read `satisfaction_source`; a derived
   G3-miss is inconclusive.
 - **PARTIAL ≠ product RED.** A host-memory crater (only persona-1 scored) or a hung/incomplete rollup (e.g. the
-  duo step stalls) is harness-contaminated — re-run via the VM lane; never cite a PARTIAL RRI as a quality score.
+  duo step stalls) is harness-contaminated — re-run it on a clean lane (the VM lane was retired 2026-10-30; local port in #1822); never cite a PARTIAL RRI as a quality score.
 
 ## macOS privacy prompt triage
 
@@ -279,7 +279,7 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 
 ## Historical support VM lane (retired 2026-10-30 — do not follow)
 
-> **The support VM lane (support-vm-1, 178.104.123.213) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.** The host was wiped and repurposed; it no longer has WorldOS tooling, credentials, the
+> **The support VM lane (support-vm-1) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.** The host was wiped and repurposed; it no longer has WorldOS tooling, credentials, the
 > Woodpecker agent, or tailnet access. The notes below are kept only as a dated record.
 
 - Do not assume it is ready for an explicitly remote/customer-box run until credentials/config are intentionally installed and verified.

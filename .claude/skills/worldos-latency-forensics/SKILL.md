@@ -91,9 +91,9 @@ between tool calls" read — same conclusion, correct metric.)
 2. **Cache-stability** (one 2-beat run) → confirm the prefix cache holds across beats.
 3. **Effort/flag-wiring probe** → confirm the runner ACTUALLY consumes the flag (see worldos-dev's
    "QA must exercise the flag" — a harness that ignores `WORLDOS_LEAN_BEATS`/effort fakes the A/B).
-4. **Short duo A/B on the VM** (engine-duo, gateway-free) → quality + latency deltas, same SHA + seed,
+4. **Short duo A/B on the local Mac** (engine-duo, gateway-free) → quality + latency deltas, same SHA + seed,
    one credit window (throttling confounds wall-clock).
-5. **ONLY THEN** the 5-persona `.app` gate (heavy — run it on the local Mac; the support VM lane was retired 2026-10-30).
+5. **ONLY THEN** the 5-persona `.app` gate (heavy; the support VM lane that ran its part-B sweep was retired 2026-10-30, local port in #1822).
 Record latency columns (s/beat, cold-open-s, turns/beat) to `qa/scores_db.py` on every run.
 
 Cross-refs: `worldos-dev` (dev/QA loops + VM lane), `first-principles-architectural-decision`

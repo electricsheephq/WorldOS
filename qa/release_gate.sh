@@ -94,7 +94,7 @@ ram_preflight() {
   if [ "$avail" -lt "$floor" ]; then
     local msg="available RAM ${avail}MB is BELOW the safe floor ${floor}MB for a 5-persona sweep — \
 the host will likely OOM mid-sweep and ship a junk PARTIAL RRI. Run the heavy sweep on GitHub CI \
-or the support VM (root@support, ~/worldos-qa) instead, or free RAM first."
+instead, or free RAM first."
     if [ "$strict" = "1" ]; then
       fail "RAM preflight (strict): $msg"
     fi
