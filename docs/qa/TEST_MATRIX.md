@@ -26,7 +26,7 @@ largely gone — GLM is a fine DM for nearly all QA.
 | **Arc smoke** | `qa/run_arc_smoke.sh <run> <adventure> 4` (set the model — defaults Sonnet!) | ~5 m | Does a companion arc ENGAGE (met + approval moves off 0)? |
 | **Combat-sprint median** | `qa/run_combat_sprint.sh <run>` ×3 → median of `*.angrydm.json` | Opus ~5/run | The HONEST mechanical gate (pre-seeded, deterministic coverage). Baseline 3.7. |
 | **3-act full run** | `qa/run_duo.sh` with the embergloom prompt, ≥24 beats (Opus or GLM) | hours | Story + companion + combat over a full authored arc. |
-| **5-persona VM sweep + RRI** | the support-VM lane (`qa/vm/sweep_v2.sh`) — see `WorldOS-GUI-RUNBOOK.md` | hours, VM | The release index (story/mech/sat per persona + the 11 RRI gates). **RELEASE-only.** |
+| **5-persona sweep + RRI** | local Mac (the support-VM lane was retired 2026-10-30, evaos-support-control#1109) — see `WorldOS-GUI-RUNBOOK.md` | hours | The release index (story/mech/sat per persona + the 11 RRI gates). **RELEASE-only.** |
 
 ## What to run for which change
 | You changed… | Run (fast → slow) |

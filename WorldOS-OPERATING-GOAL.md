@@ -24,7 +24,8 @@
      WORKTREES:    For tracked edits, prefer same-disk local worktrees when GUI/app tests need assets.
                    Use /Users/m1/Codex for evidence/snapshots and Lexar worktrees only for
                    non-GUI/doc/backend slices that do not launch the app against private art.
-     SUPPORT VM:   32GB owner-provided support VM (`support-vm-1`). Connection/auth details live
+     SUPPORT VM:   RETIRED 2026-10-30 (support-vm-1, 178.104.123.213); use the local Mac lane. See
+                   evaos-support-control#1109. Historical record follows: 32GB support VM. Connection/auth details lived
                    in local operator-only evidence/runbooks, not tracked repo docs. Use it for
                    heavy backend/persona sweeps only after Codex/config/credentials are intentionally
                    installed. The default VM persona lane is Codex DM plus Codex UI player and requires
@@ -299,7 +300,7 @@ verifier; can revert the goal to "fix" anytime.
   The easiest current path is a support-VM sweep pinned to `da05101`, gated first by
   `qa/support_vm_preflight.py --expected-sha da05101`, and paired with the `da05101` handoff JSON. If the
   sweep runs on a newer `origin/main` tip, rerun the Mac handoff on that same SHA first.
-  Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
+  (Historical; the support VM `support-vm-1` was retired 2026-10-30.) Heavy backend/persona sweeps belonged on the 32GB support VM once auth/config
   are intentionally installed there; connection details are kept outside tracked docs. The 2026-06-07
   repo-owned support preflight for `da05101` wrote
   `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/` (historical path — /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/; that machine is gone, see NOW.md) and returned `verdict=blocked`:

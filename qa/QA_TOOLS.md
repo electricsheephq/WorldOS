@@ -7,7 +7,7 @@ Default local paths:
 
 - App/private-art checkout: `/Users/m1/WorldOS`.
 - Evidence root: `/Users/m1/Codex`.
-- Heavy persona/backend sweeps: GitHub CI or the owner-provided support VM after explicit preflight.
+- Heavy persona/backend sweeps: the local Mac or GitHub CI. The support VM lane (support-vm-1, 178.104.123.213) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.
 
 ## Fast GUI And Native App Gates
 
@@ -48,12 +48,11 @@ Stable app failure buckets are:
 |---|---|---|---|
 | `qa/release_readiness.py` | The Release Readiness Index rollup and only release verdict | Complete same-SHA app/persona evidence, including optional `--handoff-json` Mac proof | You only need fast GUI wiring confidence |
 | `qa/release_gate.sh` | Orchestrate the release sweep over the canonical persona set | Built app, persona runs, behavior/UI/image/palette evidence | The support VM or Mac proof preflight is incomplete |
-| `qa/support_vm_preflight.py` | Read-only readiness artifact before a support-VM persona sweep | VM identity, repo SHA, selected provider/player lane, `origin/main` queryability, tool/auth/art status, return path, teardown plan | You are trying to fix or sync the VM; get operator approval first |
+| `qa/support_vm_preflight.py` | Read-only readiness artifact before a support-VM persona sweep (lane retired 2026-10-30) | VM identity, repo SHA, selected provider/player lane, `origin/main` queryability, tool/auth/art status, return path, teardown plan | You are trying to fix or sync the VM; get operator approval first |
 
 RRI requires a non-partial five-persona result on one build SHA. A handoff gate can feed the native
 app proof through `--handoff-json`, but it cannot fill in missing persona artifacts. The support-VM
-preflight must pass before a VM sweep can count toward #466; if `origin/main` is not queryable from
-the VM, fix the VM repo credentials/sync lane before running personas.
+lane (and its preflight) was retired on 2026-10-30; see evaos-support-control#1109.
 When a sweep uses remote/persona artifacts plus Mac handoff proof, pass both evidence files into
 the RRI rollup path: `qa/release_gate.sh --handoff-json <handoff.json> --support-preflight-json
 <support_vm_preflight.json> ...`. Missing or stale support-preflight evidence must stay a failed

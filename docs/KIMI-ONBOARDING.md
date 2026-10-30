@@ -64,7 +64,7 @@ Source: `~/.claude/tasks/237280f0-e8fe-4529-bb6e-72957d537c61/76.json` (status: 
   through `extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with
   `execute_menu_item "Tools/WorldOS/Build/macOS Player (Universal)"`,
   capture with `manage_camera`, and run QA via `qa/qa_sandbox.py` (8866/8972; owner 8776/8981).
-- Commit renderer source here; `support-vm-1` is only the heavy-backend-sweep fallback.
+- Commit renderer source here; `support-vm-1` was retired on 2026-10-30; heavy sweeps run on the local Mac.
 
 ## 6. Skills & agent profiles — porting decision (read-on-demand, NO symlinks/copies)
 

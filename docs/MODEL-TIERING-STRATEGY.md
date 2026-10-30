@@ -127,7 +127,7 @@ artifact (little combat to score), not an engine defect (Engine-Excellent is met
 digest-correctness (1 engine call, no LLM) → cache-stability (1 two-beat run) → effort/flag-wiring probe
 (confirm the runner consumes the flag — see worldos-dev "QA must exercise the flag") → short duo A/B on the
 32 GB VM (same SHA + seed, one credit window) → ONLY THEN the 5-persona `.app` gate (Mac native Part-A + the
-VM part-B sweep; see the Support VM lane). Hold the scorer constant during any A/B.
+VM part-B sweep; the Support VM lane was retired 2026-10-30). Hold the scorer constant during any A/B.
 
 ## Still open
 - **The #640 lean re-ground root** — the key Opus-latency enabler (re-enable lean safely; repro-first).

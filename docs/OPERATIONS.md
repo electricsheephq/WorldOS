@@ -42,7 +42,7 @@ tests (`uv run --directory servers/engine python -m pytest <files> -q -p no:xdis
 `qa/fast_gate.sh` → push + PR (HEREDOC body) → review-gated merge (CI green + review threads
 resolved; validate bot findings against source before acting — they are hypotheses) → prune.
 Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs LOCALLY on this machine
-(14 cores / 64 GB, per the 2026-08-03 test policy — the support VM is no longer required); see
+(14 cores / 64 GB, per the 2026-08-03 test policy — the support VM `support-vm-1` was retired on 2026-10-30, see evaos-support-control#1109); see
 `WorldOS-GUI-RUNBOOK.md`. Unity work follows `extensions/renderers/unity/CANONICAL.md`
 (read it FIRST — canonical state lives there) + the GUI runbook's box discipline.
 
@@ -230,8 +230,8 @@ operating rule for anything visual and owner-bound, not just that one panel type
 `extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with `execute_menu_item "Tools/WorldOS/Build/macOS Player (Universal)"`,
 capture with `manage_camera`, and run isolated QA on 8866/8972 via `qa/qa_sandbox.py`.
 
-**Local is primary:** this Mac (14 cores / 64 GB) owns Unity and heavy QA; `support-vm-1` is a
-customer box and is not the default heavy-sweep host. Single-tenant discipline is now local:
+**Local is primary:** this Mac (14 cores / 64 GB) owns Unity and heavy QA; `support-vm-1` was
+retired on 2026-10-30 (evaos-support-control#1109). Single-tenant discipline is now local:
 
 - Before opening a headed Editor, run `pgrep -f 'Unity.app/Contents/MacOS/Unity'`. If it returns a
   PID, reuse or coordinate with that one Editor; never launch a second process.

@@ -277,15 +277,11 @@ script/build_and_run.sh --verify
 This proves the local/worktree-built bundle launches without killing an existing app. It is only a smoke:
 release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI sweep.
 
-## Support VM lane (customer-box / explicitly remote; not the default)
+## Historical support VM lane (retired 2026-10-30 — do not follow)
 
-> **Local is primary:** this 14-core / 64 GB Mac owns Unity, visual rendering, and heavy QA. The
-> 32 GB `support-vm-1` is a customer box; use it only for an explicitly remote/customer-box run.
-> This section records that lane's mechanics and is not a reason to move default heavy sweeps off Mac.
+> **The support VM lane (support-vm-1, 178.104.123.213) was retired on 2026-10-30; use the local Mac lane. See evaos-support-control#1109.** The host was wiped and repurposed; it no longer has WorldOS tooling, credentials, the
+> Woodpecker agent, or tailnet access. The notes below are kept only as a dated record.
 
-- Target: owner-provided **32GB support VM** (`support-vm-1`); connection: `root@178.104.123.213`,
-  key `~/.openclaw/secrets/cloud-deploy-key`, repo `/root/worldos-qa/WorldOS`. Further connection/auth
-  detail lives in local operator-only runbooks/evidence, not tracked repo docs.
 - Do not assume it is ready for an explicitly remote/customer-box run until credentials/config are intentionally installed and verified.
   When selected, the support-VM persona lane is Codex DM plus Codex UI player; Claude is only required when
   the preflight is run with `--provider claude` or `--player-agent claude`. The Codex lane requires
@@ -374,7 +370,7 @@ run QA via `qa/qa_sandbox.py` (8866/8972; owner 8776/8981). Keep source authorit
 
 The **Hetzner GEX44 GPU dedicated server** (`evaos-gpu-gex44-1`, provisioned 2026-06-25; RTX 4000 SFF Ada /
 64 GB / Ubuntu 24.04) was the former heavy-QA and Unity render host. This dated record is retained for
-evidence provenance only; use the Local Unity lane and `support-vm-1` above for current work.
+evidence provenance only; use the Local Unity lane above for current work (`support-vm-1` was retired 2026-10-30).
 **Connection/auth details live in `~/.openclaw/secrets/gex44.env` (operator-only)** — never put the endpoint,
 SSH key, or the VNC password in this tracked doc (same convention as the Support VM lane).
 
@@ -546,8 +542,8 @@ took over the developer's only display and the Mac had to be rebooted. Now:
   (`worldos-*`/`WORLDOS_*` MCP ids, `dev.worldos.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
 - `_private/` (the 2.9 GB art) is **never committed**. Building/serving from the local checkout is how the
   art is present; worktrees can read it via `WORLDOS_ART_REPO_ROOT=/Users/m1/WorldOS` when needed.
-- 14-core / 64 GB Mac: local heavy QA is the default. Use GitHub CI or the customer `support-vm-1`
-  only when the run is explicitly remote; never launch multiple heavyweight persona sweeps locally.
+- 14-core / 64 GB Mac: local heavy QA is the default. Use GitHub CI only when the run is explicitly
+  remote (`support-vm-1` was retired 2026-10-30); never launch multiple heavyweight persona sweeps locally.
 - **Verify, don't trust:** ≥2 clean reads for any claim; the RRI scorer reads disk, not the live
   channel; confirm builder PRs actually pushed.
 - The product is the **launchable, played .app**. A green score on any other surface is a
