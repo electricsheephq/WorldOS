@@ -433,7 +433,22 @@ public class CombatSurfaceClient : MonoBehaviour
                        // per-cell footprint proxies (byte-identical prior behavior).
                        public string boxesPath;
                        // #1585/#1647: optional painted-door hotspots (plate-pixel click targets -> door_cell).
-                       public System.Collections.Generic.List<DoorHotspot> doorHotspots; }
+                       public System.Collections.Generic.List<DoorHotspot> doorHotspots;
+                       // ROOMS-ARE-THE-SCENE (#1793 Day 3): optional `liveRoom` — the id of an edit-time-baked
+                       // LIVE room prefab (Resources/LiveRooms/<id>.prefab, build_room_kit.BakeLiveRoomPrefab).
+                       // Present => ApplyRoom instantiates that room's real geometry under a LiveRoom_<id> root
+                       // and the painted backdrop is switched OFF (the room IS the scene, strategy B). The
+                       // OPTIONAL `liveRoomKeepBackdrop` keeps the plate behind the live room (strategy D).
+                       // Absent => byte-identical painted-plate behavior. The occluder path is UNCHANGED either
+                       // way: `boxes` (the kit-derived sidecar) stays the source of the depth proxies.
+                       // `liveRoomMode`: "visible" (default, strategy B — the live room IS the picture) or
+                       // "occluder" (strategy D — the painted plate stays the picture and the same baked kit
+                       // meshes are re-materialled to the depth-only occluder shader, so what masks an actor is
+                       // the room's real geometry instead of sidecar boxes). The crypt ships "occluder" after
+                       // the blind beauty panel missed twice on the live render (Day 3 doctrine outcome).
+                       public string liveRoom;
+                       public string liveRoomMode = "visible";
+                       public bool liveRoomKeepBackdrop; }
     // world-space occluder boxes of the ACTIVE plate ({center,size} rows, kind!=floor), null => legacy path.
     System.Collections.Generic.List<float[]> _plateBoxes;
     string _plateBoxesLocId = "\0";  // the location _plateBoxes reflects (sentinel => unset); guards the stale-leak (#1575)
@@ -592,6 +607,12 @@ public class CombatSurfaceClient : MonoBehaviour
         // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
         // -> no swap, the scene's baked plate stands (byte-identical to pre-W5e).
         LoadPlateManifest();
+        // #1793 Day 3b: the crypt's LOOK is authored in a live editor scene that carries a Beautify post
+        // component on Main Camera. That scene is dirty in memory when a player is built, so the build's
+        // scene copy CAN carry that component into the player — where it would grade every painted plate,
+        // none of which was authored or panel-judged under it. Start it OFF; the grade is switched on only
+        // by a VISIBLE live room, from the values baked onto that room's prefab (ApplyRoom).
+        PainterlyRoomLights.DisableGrade(Camera.main);
         // VFX-ANCHORS: load the OPTIONAL effects registry (type -> prefab asset path). Absent -> no effects
         // resolve -> nothing spawns (byte-identical). Paired with the per-plate `effects` array above.
         LoadEffectsRegistry();
@@ -918,6 +939,13 @@ public class CombatSurfaceClient : MonoBehaviour
         // the boxes are never in _spawned, so the actor despawn path never touches them and vice-versa).
         if (_occRoot != null) { Destroy(_occRoot); _occRoot = null; }
         _occRends.Clear(); _occFoot.Clear(); _occBotY.Clear();   // #1736: the tables die with the proxies they describe
+        // ROOMS-ARE-THE-SCENE strategy D: this room's occluders are the LIVE kit meshes ApplyRoom just
+        // instantiated and re-materialled to WorldOS/OccluderDepth. Building the sidecar boxes as well would
+        // double-occlude (two depth stamps for one wall, and the box is the coarser of the two), so the proxy
+        // path early-outs entirely. Chosen over clearing _plateBoxes because that would fall THROUGH to the
+        // legacy per-cell footprint proxies (_occRaw is non-empty for the crypt) — still a double occluder.
+        if (_liveRoomOccluding)
+        { Debug.Log("[CSC] occluders: live room meshes (" + _dbgLiveRoomRenderers + " renderers, loc=" + _locId + ") — proxy boxes skipped"); return; }
         // UNIFY-THE-FRAMES: the plate-box sidecar takes priority BEFORE the legacy empty-set early-out —
         // a room can have zero legacy occluder props yet a full box sidecar (walls always ship in it);
         // gating the sidecar behind _occRaw would silently drop every wall volume (codex review, #1575).
@@ -2632,6 +2660,12 @@ public class CombatSurfaceClient : MonoBehaviour
 
     void Update()
     {
+        // #1793 Day 3: 1-second moving average of 1/unscaledDeltaTime, published for /debug. Sampled at the
+        // TOP of Update, outside every gate below, so the number is the player's real frame rate whether or
+        // not the QA channel is armed or a click is in flight. Frames/elapsed (not a per-frame mean) so a
+        // single hitch cannot bias it the way averaging instantaneous 1/dt does.
+        _fpsFrames++; _fpsElapsed += Time.unscaledDeltaTime;
+        if (_fpsElapsed >= 1f) { _dbgFps = _fpsFrames / _fpsElapsed; _fpsFrames = 0; _fpsElapsed = 0f; }
         // UNIFY-THE-FRAMES truth overlay (playtest-#9 instrument): G toggles engine-truth rendering over
         // the plate — every cell's floor diamond colored by its live state (walkable/impassable/door) +
         // wireframes of the active occluder volumes. The permanent "is paint lying?" check: no alignment
@@ -2686,7 +2720,10 @@ public class CombatSurfaceClient : MonoBehaviour
                 _dbgCamValid = true;
                 // #1582: occluder count (0 == the latent zero-occluder path), plate-room match, and
                 // the party actor's own viewport point (the client-side visual-registration signal).
-                _dbgOccCount = _occRoot != null ? _occRoot.transform.childCount : 0;
+                // In live-occluder mode the proxies ARE the room's meshes (no OccluderProxies container),
+                // so report those — an honest 0 here would read as the latent zero-occluder path.
+                _dbgOccCount = _liveRoomOccluding ? _dbgLiveRoomRenderers
+                             : (_occRoot != null ? _occRoot.transform.childCount : 0);
                 _dbgPlateLocMatch = (_plateBoxesLocId == _locId);
                 if (!string.IsNullOrEmpty(_qaActorId))
                 {
@@ -2940,6 +2977,9 @@ public class CombatSurfaceClient : MonoBehaviour
     volatile bool _dbgPlateLocMatch;
     volatile bool _dbgActorValid;
     volatile float _dbgActorVX, _dbgActorVY;
+    // #1793 Day 3 fps read: accumulated on the main thread in Update, published once a second.
+    int _fpsFrames; float _fpsElapsed;
+    volatile float _dbgFps = -1f;             // -1 => no full second sampled yet (never a misleading 0)
     volatile string _qaActorId = "";          // first cast token id (set on ApplyJson, main thread)
     int _qaShotCounter;                        // monotonic /shot id -> numbered files, no overwrite races
     volatile string _qaShotPathNext;           // the path the NEXT countdown capture writes
@@ -3015,7 +3055,15 @@ public class CombatSurfaceClient : MonoBehaviour
                       // #1522: parley panel open/closed, so the journey gate can assert the panel is
                       // dismissed after a cross_door without reading pixels. Unconditional (outside the
                       // camera-pose block) — an absent field means an OLD build, never "closed".
-                      .Append(",\"parleyOpen\":").Append(_parleyOpen ? "true" : "false");
+                      .Append(",\"parleyOpen\":").Append(_parleyOpen ? "true" : "false")
+                      // #1793 Day 3 (rooms-are-the-scene): which live room is instantiated, how many
+                      // renderers it put in the scene, and the player's fps. Unconditional (outside the
+                      // camera-pose block) so a gate can tell "no live room" from "old build" by absence.
+                      .Append(",\"liveRoom\":\"").Append(_dbgLiveRoom).Append("\"")
+                      .Append(",\"liveRoomMode\":\"").Append(_dbgLiveRoomMode).Append("\"")
+                      .Append(",\"liveRoomRenderers\":").Append(_dbgLiveRoomRenderers)
+                      .Append(",\"grade\":").Append(_dbgGrade ? "true" : "false")
+                      .Append(",\"fps\":").Append(_dbgFps.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
                     if (_dbgCamValid)  // #1583: camera pose for qa/walk_test.py (omitted on an old build)
                     {
                         var ic = System.Globalization.CultureInfo.InvariantCulture;
@@ -4095,6 +4143,13 @@ public class CombatSurfaceClient : MonoBehaviour
                 // VFX-ANCHORS: OPTIONAL `effects`:[{type, cell:[c,r], scale?, y?}] anchored VFX for this plate.
                 if (row.ContainsKey("boxes") && row["boxes"] is string bp && !string.IsNullOrEmpty(bp))
                     pe.boxesPath = bp;                       // UNIFY-THE-FRAMES: occluder boxes sidecar
+                // ROOMS-ARE-THE-SCENE: `liveRoom` (baked prefab id) + the strategy-D `liveRoomKeepBackdrop`.
+                if (row.ContainsKey("liveRoom") && row["liveRoom"] is string lr && !string.IsNullOrEmpty(lr))
+                    pe.liveRoom = lr;
+                if (row.ContainsKey("liveRoomKeepBackdrop") && row["liveRoomKeepBackdrop"] is bool lkb)
+                    pe.liveRoomKeepBackdrop = lkb;
+                if (row.ContainsKey("liveRoomMode") && row["liveRoomMode"] is string lrm && !string.IsNullOrEmpty(lrm))
+                    pe.liveRoomMode = lrm;
                 if (row.ContainsKey("effects") && row["effects"] is System.Collections.Generic.List<object> fx)
                 {
                     pe.effects = new System.Collections.Generic.List<EffectSpec>();
@@ -4259,6 +4314,9 @@ public class CombatSurfaceClient : MonoBehaviour
         else { oh = (cam != null && cam.orthographic) ? cam.orthographicSize * 2f : bd.transform.localScale.y; ow = oh * ((float)tex.width / tex.height); }
         var ls = bd.transform.localScale;
         bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
+        // ROOMS-ARE-THE-SCENE (#1793 Day 3): swap the LIVE room in (or out) now that the camera rig and the
+        // backdrop quad are final — ApplyRoom decides whether the painted plate above is what the player sees.
+        ApplyRoom(entry, bd);
         Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
         // #1585/#1647 painted-door hotspots: record THIS plate's pixel dims (the space the hotspot px are
         // measured in) + its hotspot set, then (re)build the arch glow markers. The camera rig above is final,
@@ -4335,6 +4393,121 @@ public class CombatSurfaceClient : MonoBehaviour
         // no actor renders a bind (T) pose or floats after the cross-room reposition (the taste-pass defect).
         SettleCastIdleGrounded();
         return true;
+    }
+
+    // ---- ROOMS-ARE-THE-SCENE: the live kit room (#1793 Day 3) -------------------------------------------
+
+    GameObject _liveRoomRoot;                 // the LiveRoom_<id> root this client owns (null => plate room)
+    bool _liveRoomOccluding;                  // strategy D: the live meshes replace the sidecar box proxies
+    volatile string _dbgLiveRoom = "";        // /debug: the live room id currently instantiated ("" => none)
+    volatile string _dbgLiveRoomMode = "";    // /debug: "visible" | "occluder" ("" => no live room)
+    volatile int _dbgLiveRoomRenderers;       // /debug: renderer count under that root (0 => nothing shipped)
+    volatile bool _dbgGrade;                  // /debug: the baked camera grade is applied on Camera.main
+
+    // Instantiate the edit-time-baked live room for this plate entry under a fresh `LiveRoom_<id>` root, and
+    // disable the painted backdrop behind it (strategy B — the room IS the scene). The prefab carries the kit
+    // geometry, the PainterlyRoom materials and a PainterlyRoomLights component that re-arms the shader's fire
+    // globals in the player. Called from ApplyPlate on EVERY swap, so entering a plate-only room tears the
+    // previous live room down and restores the backdrop — no manifest entry can leak a room into the next one.
+    //
+    // Deliberately NOT touched here: the occluder path. `boxes` (the kit-derived sidecar) remains the single
+    // source of the depth proxies, so what masks an actor is identical whether the room is painted or live.
+    void ApplyRoom(PlateEntry entry, GameObject backdrop)
+    {
+        // Tear down whatever is standing — the field first, then a defensive sweep for a root left by an
+        // earlier client instance / a domain reload (Destroy is deferred, so re-entry must not double-count).
+        if (_liveRoomRoot != null) { Object.Destroy(_liveRoomRoot); _liveRoomRoot = null; }
+        foreach (var go in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
+            if (go != null && go.name.StartsWith("LiveRoom_", System.StringComparison.Ordinal)) Object.Destroy(go);
+        _liveRoomOccluding = false;
+        _dbgLiveRoom = ""; _dbgLiveRoomMode = ""; _dbgLiveRoomRenderers = 0;
+
+        var brend = backdrop != null ? backdrop.GetComponent<Renderer>() : null;
+        if (entry == null || string.IsNullOrEmpty(entry.liveRoom))
+        {
+            // Plate room: the backdrop is the picture and the grade travels with the live room, not the scene.
+            if (brend != null) brend.enabled = true;
+            PainterlyRoomLights.DisableGrade(Camera.main); _dbgGrade = false;
+            return;
+        }
+
+        var prefab = Resources.Load<GameObject>("LiveRooms/" + entry.liveRoom);
+        if (prefab == null)
+        {
+            // A missing prefab must degrade to the painted plate, never to an empty black room.
+            Debug.LogWarning("[LiveRoom] Resources/LiveRooms/" + entry.liveRoom + " not found — keeping the painted plate");
+            if (brend != null) brend.enabled = true;
+            PainterlyRoomLights.DisableGrade(Camera.main); _dbgGrade = false;
+            return;
+        }
+        bool occluder = entry.liveRoomMode == "occluder";
+        var root = new GameObject("LiveRoom_" + entry.liveRoom);
+        root.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+        var inst = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, root.transform);
+        inst.name = prefab.name;                                  // no "(Clone)" in the shipped hierarchy
+        inst.transform.localPosition = Vector3.zero;              // the kit bakes world-space; keep it at origin
+        inst.transform.localRotation = Quaternion.identity;
+        _liveRoomRoot = root;
+
+        int swapped = 0, floors = 0;
+        if (occluder)
+        {
+            // STRATEGY D. The plate carries the picture; the room carries the MASK. Re-material every mesh to
+            // the SAME WorldOS/OccluderDepth material the box proxies use (ColorMask 0 + ZWrite, queue 1990),
+            // so the walk-behind pass at 1995 tests against depth written by the real painted geometry rather
+            // than by a coarse box. A missing shader degrades to the box proxies rather than to a visible room.
+            var omat = EnsureOccluderMaterial();
+            if (omat == null)
+            {
+                Debug.LogWarning("[LiveRoom] " + entry.liveRoom + ": WorldOS/OccluderDepth unavailable — falling back to the sidecar box proxies");
+                Object.Destroy(root); _liveRoomRoot = null;
+                if (brend != null) brend.enabled = true;
+                PainterlyRoomLights.DisableGrade(Camera.main); _dbgGrade = false;
+                return;
+            }
+            foreach (var l in root.GetComponentsInChildren<Light>(true)) l.enabled = false;   // the plate is already lit
+            var prl = inst.GetComponent<PainterlyRoomLights>();
+            if (prl != null) prl.enabled = false;    // OnDisable zeroes _WOSFireCount: no fire term, no grade
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                // The floor never occludes an actor (the same rule the box sidecar applies to kind=="floor"),
+                // and a floor quad under the actor's own feet would fight the walk-behind depth test there.
+                if (IsUnderGroup(r.transform, root.transform, "Floor")) { r.enabled = false; floors++; continue; }
+                var ms = r.sharedMaterials;
+                for (int i = 0; i < ms.Length; i++) ms[i] = omat;
+                r.sharedMaterials = ms;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                swapped++;
+            }
+            _liveRoomOccluding = true;
+        }
+
+        _dbgLiveRoom = entry.liveRoom;
+        _dbgLiveRoomMode = occluder ? "occluder" : "visible";
+        _dbgLiveRoomRenderers = root.GetComponentsInChildren<Renderer>(true).Length;
+        // Strategy B hides the plate; strategy D (and `liveRoomKeepBackdrop`) keeps it painted behind the room.
+        if (brend != null) brend.enabled = occluder || entry.liveRoomKeepBackdrop;
+        // #1793 Day 3b: the beauty panel judged a GRADED editor frame, so a VISIBLE live room re-applies the
+        // grade baked onto its prefab. An occluder room shows no live pixels, so it must not re-grade the plate.
+        if (!occluder)
+        {
+            var prl = inst.GetComponent<PainterlyRoomLights>();
+            _dbgGrade = prl != null && PainterlyRoomLights.ApplyGrade(Camera.main, prl.grade);
+            if (prl != null && !_dbgGrade)
+                Debug.LogWarning("[LiveRoom] " + entry.liveRoom + ": camera grade NOT applied (BeautifyEffect.Beautify not in this build)");
+        }
+        else { PainterlyRoomLights.DisableGrade(Camera.main); _dbgGrade = false; }
+        Debug.Log("[LiveRoom] " + entry.liveRoom + " applied: " + _dbgLiveRoomRenderers + " renderers"
+                  + " mode=" + _dbgLiveRoomMode + (occluder ? " (occluders=" + swapped + ", floor renderers off=" + floors + ")" : "")
+                  + " grade=" + _dbgGrade + (brend != null && brend.enabled ? " backdrop=on" : " backdrop=off"));
+    }
+
+    // True when `t` sits under a child of `root` named `group` (the kit's [Floor]/[Walls]/... grouping).
+    static bool IsUnderGroup(Transform t, Transform root, string group)
+    {
+        for (var p = t; p != null && p != root; p = p.parent) if (p.name == group) return true;
+        return false;
     }
 
     // ---- VFX-ANCHORS: per-plate anchored presentation effects (fire / embers / fireflies) ----------------
