@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: Engine tests
         # Phase-1 (DETERMINISTIC-3): coverage is report-only (no --cov-fail-under yet) so it
         # surfaces untested paths without flaking CI. pytest-cov is in the dev group.
@@ -96,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: Install Node (for the JSX behaviour harness)
         # A subset of viewer tests transpile the real .jsx through the VENDORED
         # babel-standalone (viewer/openworlds/vendor/) and run it under node's `vm`.
@@ -133,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: QA release-gate + scoring + wrapper-contract tests
         # Run from the engine venv (pydantic etc. on path) with cwd=servers/engine, so the qa tests'
         # `import server/store` resolves and release_readiness.py subprocesses use the same interpreter.
@@ -200,7 +200,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: Sync rules venv (rapidfuzz/httpx for the offline rules worker)
         env:
           WORLDOS_RULES_OFFLINE: "1"
@@ -225,7 +225,7 @@ jobs:
           # real verdict.
           fetch-depth: 0
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: Create a venv with the qa image lane (Pillow + numpy + pytest)
         run: |
           uv venv .venv-qa-image --python 3.12
