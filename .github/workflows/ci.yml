@@ -8,9 +8,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - name: Engine tests
         # Phase-1 (DETERMINISTIC-3): coverage is report-only (no --cov-fail-under yet) so it
         # surfaces untested paths without flaking CI. pytest-cov is in the dev group.
@@ -94,16 +94,16 @@ jobs:
     # are caught in CI like the engine/rules/voice suites.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - name: Install Node (for the JSX behaviour harness)
         # A subset of viewer tests transpile the real .jsx through the VENDORED
         # babel-standalone (viewer/openworlds/vendor/) and run it under node's `vm`.
         # Babel is vendored and the harness only requires node built-ins (fs, vm), so
         # NO `npm install` is needed — just a node binary on PATH. Without node these
         # tests `skipIf` themselves; we install it so they actually RUN in CI.
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "20"
       - name: Create + activate a venv with the viewer test deps
@@ -131,9 +131,9 @@ jobs:
     # a regression there can no longer merge green.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - name: QA release-gate + scoring + wrapper-contract tests
         # Run from the engine venv (pydantic etc. on path) with cwd=servers/engine, so the qa tests'
         # `import server/store` resolves and release_readiness.py subprocesses use the same interpreter.
@@ -198,9 +198,9 @@ jobs:
     # boundary runs through the rules venv (rapidfuzz), so sync BOTH servers before running.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - name: Sync rules venv (rapidfuzz/httpx for the offline rules worker)
         env:
           WORLDOS_RULES_OFFLINE: "1"
@@ -217,7 +217,7 @@ jobs:
     # of (so those heavy deps never touch the engine/rules/voice suites).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # #1651 CI half: check_coherence_freshness.py below walks git history (last commit touching
           # each paint-coherence report vs the plate's blob sha at HEAD) — needs full history, not the
@@ -225,7 +225,7 @@ jobs:
           # real verdict.
           fetch-depth: 0
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - name: Create a venv with the qa image lane (Pillow + numpy + pytest)
         run: |
           uv venv .venv-qa-image --python 3.12
@@ -270,7 +270,7 @@ jobs:
         run: python qa/registration_score.py score-rooms --evidence-dir "$RUNNER_TEMP/registration" -o "$RUNNER_TEMP/registration/summary.json"
       - name: Upload registration baseline (summary JSON + per-room heatmaps)
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: registration-baseline
           path: ${{ runner.temp }}/registration
@@ -304,6 +304,6 @@ jobs:
   license-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: License / content gate
         run: python3 scripts/license_check.py
