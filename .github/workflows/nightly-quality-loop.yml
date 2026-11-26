@@ -61,10 +61,10 @@ jobs:
       LOOP_BEATS: ${{ github.event.inputs.beats || '8' }}
       LOOP_BUDGET: ${{ github.event.inputs.budget || '1.20' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
 
       - name: Detect live model key
         id: keycheck
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload loop runlog + scorecard
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: nightly-quality-loop-${{ github.run_id }}
           # The loop writes per-run *.runlog / *.tolkien.json / *.score.json / *.gate.txt into
